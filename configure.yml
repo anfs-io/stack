@@ -1,4 +1,4 @@
-#!/usr/bin/env -S ansible-playbook -i hosts.yml -t noop -e @secrets.enc --vault-password-file secrets.pwd
+#!/usr/bin/env -S ansible-playbook -i hosts.yml -t host-install -t user-admin -e @secrets.enc --vault-password-file secrets.pwd
 # This will be modified to work with packer when building an image
 ---
 - name: Install and Configure Localhost
@@ -24,11 +24,15 @@
         var: stow
       tags: [always]
 
-    - name: Ensure that a uid was provided
-      ansible.builtin.fail:
-        msg: "Must provide a valid uid"
-      when: uid is not defined
-      tags: [never] # always]
+        #     - name: Ensure that a uid was provided
+        #       ansible.builtin.fail:
+        #         msg: "Must provide a valid uid"
+        #       when: uid is not defined
+        #       tags: [never] # always]
+
+    - debug:
+        var: stow
+      tags: [always]
 
     - name: "Create dirs in {{ path.home }}"
       ansible.builtin.file:
@@ -62,21 +66,41 @@
     # - ansible.builtin.fail:
     #   tags: [always]
 
+    - name: Install Stow
+      ansible.builtin.package:
+        name: [stow]
+        state: present
+      become: yes
+      tags: [host-install, user-config]
+
     - name: Stow the basics
       ansible.builtin.shell:
         cmd: "stow {{ item }} -t {{ stow.target }}"
         chdir: "{{ stow.src }}"
       args:
         executable: /bin/zsh
-      loop: [bash, git, nvim, ssh, tmux, tmuxinator, zsh]
+      loop: [bash, git, nvim, tmux, tmuxinator, zsh]
       tags: [user-config]
+
+    - name: Install neovim
+      ansible.builtin.include_role:
+        name: neovim
+      tags: [host-install, user-install]
+
+    - name: Install python
+      ansible.builtin.include_role:
+        name: python
+      vars:
+        venvs: [lstack]
+      tags: [host-install, user-admin]
+
 
     - name: Install oh-my-zsh
       ansible.builtin.include_role:
         name: omz
       vars:
         omz_install_dir: "{{ path.share }}/omz"
-      tags: [user-install]
+      tags: [host-install, user-install]
 
     - name: Install Tmux
       ansible.builtin.include_role:
@@ -97,7 +121,8 @@
         name: ruby
       vars:
         rbenv_root: "{{ user.HOME }}/.rbenv"
-      tags: [user-install, user-admin]
+      # tags: [host-install, user-install, user-admin, ruby]
+      tags: [ruby]
 
     - name: Install Python Virtual Environment(s) venv
       ansible.builtin.include_role:
@@ -108,13 +133,13 @@
           path: "{{ path.share }}/python"
       tags: [user-admin]
 
-    - ansible.builtin.include_role:
-        name: "{{ item }}"
-      loop: [lab, ops] # gift, health, lab]
-      tags: [user-admin]
+        # - ansible.builtin.include_role:
+        #     name: "{{ item }}"
+        #   loop: [lab, ops] # gift, health, lab]
+        #   tags: [user-admin]
 
-    - ansible.builtin.fail:
-      tags: [always]
+        # - ansible.builtin.fail:
+        #   tags: [always]
 
 
     - block:

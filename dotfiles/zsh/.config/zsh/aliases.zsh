@@ -9,6 +9,9 @@ source <(fzf --zsh)
 
 # Claude
 alias clc="clear; claude"
+clu() {
+ (cd /usr/local/lib/node_modules/@anthropic-ai; rm -rf claude-code; npm i -g @anthropic-ai/claude-code)
+}
 
 # Clasp
 alias clp="clasp push"

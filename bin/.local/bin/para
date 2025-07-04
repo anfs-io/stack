@@ -1,0 +1,55 @@
+#!/usr/bin/env ruby
+
+require 'yaml'
+require 'pathname'
+
+class Para
+  CONFIG_DIR = Pathname.new('~/.config/para').expand_path
+  
+  def initialize
+    @config = load_config
+  end
+  
+  def init
+    profiles = @config['profiles'] || {}
+    subdirs = ['areas', 'projects', 'resources', 'archives']
+    
+    profiles.each do |profile_name, profile_config|
+      profile_path = Pathname.new(profile_name)
+      profile_path.mkpath
+      
+      subdirs.each do |subdir|
+        subdir_path = profile_path / subdir
+        subdir_path.mkpath
+        
+        subdir_config = profile_config[subdir] if profile_config
+        if subdir_config
+          Dir.chdir(subdir_path) do
+            subdir_config.keys.each do |git_repo|
+              system("git clone #{git_repo}")
+            end
+          end
+        end
+      end
+      puts "Created directory: #{profile_name} with subdirectories"
+    end
+  end
+  
+  private
+  
+  def load_config
+    config = {}
+    return config unless CONFIG_DIR.exist?
+    
+    CONFIG_DIR.glob('*.yaml').each do |file|
+      config.merge!(YAML.load_file(file))
+    end
+    config
+  end
+end
+
+if ARGV[0] == 'init'
+  Para.new.init
+else
+  puts "Usage: para init"
+end
