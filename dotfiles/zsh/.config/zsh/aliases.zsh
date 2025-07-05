@@ -106,3 +106,26 @@ cdp() { zcd "$HOME/pen" }
 cds() { zcd "$HOME/services" }
 '
 }
+
+# Para shell function wrapper
+para() {
+  if [[ "$1" == "cd" ]]; then
+    if [[ -z "$2" ]]; then
+      echo "Usage: para cd REPO_NAME"
+      return 1
+    fi
+
+    local target_dir
+    target_dir=$(command para cd-path "$2" 2>/dev/null)
+
+    if [[ -n "$target_dir" && -d "$target_dir" ]]; then
+      echo "Changing to: $target_dir"
+      cd "$target_dir" || return 1
+    else
+      echo "Repository not found: $2"
+      return 1
+    fi
+  else
+    command para "$@"
+  fi
+}

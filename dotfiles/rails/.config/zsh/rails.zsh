@@ -6,6 +6,7 @@ alias rgm="rails generate model"
 alias rgs="rails generate scaffold"
 alias rsb="rails server -b 0.0.0.0"
 
+alias rua="rubocop -A ."
 alias rce="rails credentials:edit"
 alias rcs="rails credentials:show"
 

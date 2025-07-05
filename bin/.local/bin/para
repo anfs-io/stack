@@ -1,55 +1,328 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 
 require 'yaml'
 require 'pathname'
+require 'ostruct'
 
-class Para
+# Required gems (excluding stdlib)
+required_gems = ['thor']
+
+required_gems.each do |gem_name|
+  require gem_name
+rescue LoadError
+  puts "Installing missing gem: #{gem_name}"
+  system("gem install #{gem_name}")
+  require gem_name
+end
+
+class ParaConfig < OpenStruct
   CONFIG_DIR = Pathname.new('~/.config/para').expand_path
-  
-  def initialize
-    @config = load_config
+
+  def self.load
+    config_data = {}
+    return new(config_data) unless CONFIG_DIR.exist?
+
+    CONFIG_DIR.glob('*.{yaml,yml}').each do |file|
+      file_config = YAML.load_file(file)
+      deep_merge!(config_data, file_config)
+    end
+
+    new(config_data)
   end
-  
-  def init
-    profiles = @config['profiles'] || {}
-    subdirs = ['areas', 'projects', 'resources', 'archives']
-    
+
+  def subdirs
+    (self['subdirs'] || Para::DEFAULT_SUBDIRS).to_a
+  end
+
+  def para_home
+    Pathname.new(self['para_home'] || Para::DEFAULT_PARA_HOME).expand_path
+  end
+
+  def active_profile
+    self['active_profile']
+  end
+
+  def active_subdir
+    self['active_subdir']
+  end
+
+  def profiles
+    self['profiles'] || {}
+  end
+
+  def self.deep_merge!(target, source)
+    source.each do |key, value|
+      if target[key].is_a?(Hash) && value.is_a?(Hash)
+        deep_merge!(target[key], value)
+      else
+        target[key] = value
+      end
+    end
+  end
+end
+
+class GitCommands < Thor
+  def initialize(*args)
+    super
+    @config = ParaConfig.load
+  end
+
+  desc 'status', 'Show git status for all repositories'
+  def status
+    check_all_repos_status
+  end
+
+  desc 'commit', 'Commit changes to all repositories (not implemented)'
+  def commit
+    puts 'Git commit functionality not yet implemented'
+  end
+
+  private
+
+  def check_all_repos_status
+    profiles = @config.profiles
+    profile_subdirs = @config.subdirs
+
+    if profiles.empty?
+      puts 'No profiles configured'
+      return
+    end
+
     profiles.each do |profile_name, profile_config|
-      profile_path = Pathname.new(profile_name)
-      profile_path.mkpath
-      
-      subdirs.each do |subdir|
-        subdir_path = profile_path / subdir
-        subdir_path.mkpath
-        
+      profile_subdirs.each do |subdir|
         subdir_config = profile_config[subdir] if profile_config
-        if subdir_config
-          Dir.chdir(subdir_path) do
-            subdir_config.keys.each do |git_repo|
-              system("git clone #{git_repo}")
-            end
+        next unless subdir_config
+
+        subdir_config.each_key do |git_repo|
+          repo_name = extract_repo_name(git_repo)
+          repo_path = @config.para_home / profile_name / subdir / repo_name
+
+          if repo_path.exist?
+            has_changes = check_repo_status(repo_path)
+            status_text = has_changes ? 'has uncommitted changes' : 'clean'
+            puts "#{profile_name}/#{subdir}/#{repo_name}: #{status_text}"
+          else
+            puts "#{profile_name}/#{subdir}/#{repo_name}: repository not found"
           end
         end
       end
-      puts "Created directory: #{profile_name} with subdirectories"
     end
   end
-  
-  private
-  
-  def load_config
-    config = {}
-    return config unless CONFIG_DIR.exist?
-    
-    CONFIG_DIR.glob('*.yaml').each do |file|
-      config.merge!(YAML.load_file(file))
+
+  def extract_repo_name(git_url)
+    git_url.split('/').last.gsub('.git', '')
+  end
+
+  def check_repo_status(repo_path)
+    Dir.chdir(repo_path) do
+      `git status --porcelain 2>/dev/null`.strip != ''
     end
-    config
+  rescue StandardError
+    false
   end
 end
 
-if ARGV[0] == 'init'
-  Para.new.init
-else
-  puts "Usage: para init"
+class Para < Thor
+  CONFIG_DIR = Pathname.new('~/.config/para').expand_path
+  DEFAULT_SUBDIRS = %w[areas projects resources archives].freeze
+  DEFAULT_PARA_HOME = '~/para'
+
+  def initialize(*args)
+    super
+    @config = ParaConfig.load
+  end
+
+  desc 'init', 'Initialize PARA directory structure based on configuration'
+  def init
+    profiles = @config.profiles
+    profile_subdirs = @config.subdirs
+
+    profiles.each do |profile_name, profile_config|
+      profile_path = @config.para_home / profile_name
+      profile_path.mkpath
+
+      profile_subdirs.each do |subdir|
+        subdir_path = profile_path / subdir
+        subdir_path.mkpath
+
+        subdir_config = profile_config[subdir] if profile_config
+        next unless subdir_config
+
+        Dir.chdir(subdir_path) do
+          subdir_config.each_key do |git_repo|
+            system("git clone #{git_repo}")
+          end
+        end
+      end
+      puts "Created directory: #{profile_name} with #{profile_subdirs.join(', ')}"
+    end
+  end
+
+  desc 'list [PROFILE]', 'List profiles or contents of a specific profile'
+  def list(profile_name = nil)
+    if profile_name
+      matched_profile = find_matching_profile(profile_name)
+      list_profile_contents(matched_profile) if matched_profile
+    else
+      list_profiles
+    end
+  end
+  map 'ls' => 'list'
+
+  desc 'config', 'Show configuration values and file locations'
+  def config
+    show_config
+  end
+
+  desc 'git SUBCOMMAND', 'Git operations on all repositories'
+  subcommand 'git', GitCommands
+
+  desc 'cd-path REPO', '(Internal) Output path to repository', hide: true
+  def cd_path(repo_name)
+    target_path = find_repo_path(repo_name)
+    puts target_path if target_path
+  end
+
+  private
+
+  def find_matching_profile(partial_name)
+    profiles = @config.profiles
+    matches = profiles.keys.select { |name| name.start_with?(partial_name) }
+
+    case matches.size
+    when 0
+      puts "No profile found matching '#{partial_name}'"
+      nil
+    when 1
+      matches.first
+    else
+      puts "Multiple profiles match '#{partial_name}':"
+      matches.each do |match|
+        puts "  #{match}"
+      end
+      nil
+    end
+  end
+
+  def list_profiles
+    profiles = @config.profiles
+    if profiles.empty?
+      puts 'No profiles configured'
+    else
+      puts 'Profiles:'
+      profiles.each_key do |profile_name|
+        puts "  #{profile_name}"
+      end
+    end
+  end
+
+  def list_profile_contents(profile_name)
+    profiles = @config.profiles
+    profile_config = profiles[profile_name]
+
+    unless profile_config
+      puts "Profile '#{profile_name}' not found"
+      return
+    end
+
+    puts "Contents of profile '#{profile_name}':"
+
+    # Show only subdirectories that are actually defined in the profile
+    defined_subdirs = profile_config.keys.select { |key| profile_config[key].is_a?(Hash) }
+
+    if defined_subdirs.empty?
+      puts '  No subdirectories defined in profile'
+      return
+    end
+
+    defined_subdirs.each do |subdir|
+      puts "\n#{subdir.capitalize}:"
+      profile_path = @config.para_home / profile_name / subdir
+
+      if profile_path.exist?
+        entries = profile_path.children.select(&:directory?)
+        if entries.empty?
+          puts '  (empty)'
+        else
+          entries.each do |entry|
+            puts "  #{entry.basename}"
+          end
+        end
+      else
+        puts '  (directory not found)'
+      end
+    end
+  end
+
+  def show_config
+    puts "Configuration Directory: #{ParaConfig::CONFIG_DIR}"
+    puts
+
+    if ParaConfig::CONFIG_DIR.exist?
+      config_files = ParaConfig::CONFIG_DIR.glob('*.{yaml,yml}')
+      if config_files.empty?
+        puts 'No configuration files found'
+      else
+        puts 'Configuration Files:'
+        config_files.each do |file|
+          puts "  #{file}"
+        end
+      end
+    else
+      puts 'Configuration directory does not exist'
+    end
+
+    puts
+    puts 'Loaded Configuration:'
+    if @config.to_h.empty?
+      puts '  (no configuration loaded)'
+    else
+      puts @config.to_h.to_yaml
+    end
+  end
+
+  def find_repo_path(repo_name)
+    profiles = @config.profiles
+
+    # If active profile and subdir are set, search there first
+    if @config.active_profile && @config.active_subdir
+      profile_config = profiles[@config.active_profile]
+      if profile_config && profile_config[@config.active_subdir]
+        subdir_repos = profile_config[@config.active_subdir].keys
+        matching_repos = subdir_repos.select { |repo| extract_repo_name(repo).start_with?(repo_name) }
+
+        if matching_repos.size == 1
+          repo_path = @config.para_home / @config.active_profile / @config.active_subdir / extract_repo_name(matching_repos.first)
+          return repo_path.to_s if repo_path.exist?
+        end
+      end
+    end
+
+    # Search all profiles and subdirs
+    profiles.each do |profile_name, profile_config|
+      next unless profile_config
+
+      @config.subdirs.each do |subdir|
+        subdir_config = profile_config[subdir]
+        next unless subdir_config
+
+        subdir_config.each_key do |git_repo|
+          repo_dir_name = extract_repo_name(git_repo)
+          next unless repo_dir_name.start_with?(repo_name)
+
+          repo_path = @config.para_home / profile_name / subdir / repo_dir_name
+          return repo_path.to_s if repo_path.exist?
+        end
+      end
+    end
+
+    nil
+  end
+
+  def extract_repo_name(git_url)
+    git_url.split('/').last.gsub('.git', '')
+  end
 end
+
+Para.start(ARGV)
