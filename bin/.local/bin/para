@@ -4,6 +4,7 @@
 require 'yaml'
 require 'pathname'
 require 'ostruct'
+require 'set'
 
 # Required gems (excluding stdlib)
 required_gems = ['thor']
@@ -51,6 +52,10 @@ class ParaConfig < OpenStruct
     self['profiles'] || {}
   end
 
+  def level
+    (self['level'] || 'NONE').to_s.upcase
+  end
+
   def self.deep_merge!(target, source)
     source.each do |key, value|
       if target[key].is_a?(Hash) && value.is_a?(Hash)
@@ -94,18 +99,33 @@ class GitCommands < Thor
         subdir_config = profile_config[subdir] if profile_config
         next unless subdir_config
 
-        subdir_config.each_key do |git_repo|
-          repo_name = extract_repo_name(git_repo)
-          repo_path = @config.para_home / profile_name / subdir / repo_name
+        # Check configured repositories
+        configured_repos = Set.new
+        subdir_config.each do |git_repo, label|
+          repo_info = parse_repo_entry(git_repo, label)
+
+          # Try the expected directory name first (may be nested path)
+          repo_path = @config.para_home / profile_name / subdir / repo_info[:directory_name]
+          actual_dir = repo_info[:directory_name]
+
+          # Fall back to repo name if expected directory doesn't exist
+          unless repo_path.exist?
+            repo_path = @config.para_home / profile_name / subdir / repo_info[:repo_name]
+            actual_dir = repo_info[:repo_name] if repo_path.exist?
+          end
 
           if repo_path.exist?
+            configured_repos.add(repo_path.to_s)
             has_changes = check_repo_status(repo_path)
             status_text = has_changes ? 'has uncommitted changes' : 'clean'
-            puts "#{profile_name}/#{subdir}/#{repo_name}: #{status_text}"
+            puts "#{profile_name}/#{subdir}/#{actual_dir}: #{status_text}"
           else
-            puts "#{profile_name}/#{subdir}/#{repo_name}: repository not found"
+            puts "#{profile_name}/#{subdir}/#{repo_info[:directory_name]}: repository not found"
           end
         end
+
+        # Also check for any unconfigured repositories in nested directories
+        check_unconfigured_repos(profile_name, subdir, configured_repos)
       end
     end
   end
@@ -120,6 +140,59 @@ class GitCommands < Thor
     end
   rescue StandardError
     false
+  end
+
+  def check_unconfigured_repos(profile_name, subdir, configured_repos)
+    subdir_path = @config.para_home / profile_name / subdir
+    return unless subdir_path.exist?
+
+    subdir_path.find do |path|
+      next unless path.directory? && (path / '.git').exist?
+
+      next if configured_repos.include?(path.to_s)
+
+      relative_path = path.relative_path_from(subdir_path)
+      has_changes = check_repo_status(path)
+      status_text = has_changes ? 'has uncommitted changes' : 'clean'
+      puts "#{profile_name}/#{subdir}/#{relative_path} (unconfigured): #{status_text}"
+    end
+  rescue StandardError
+    # Ignore errors in directory traversal
+  end
+
+  def extract_repo_name(git_url)
+    git_url.split('/').last.gsub('.git', '')
+  end
+
+  def get_directory_name(git_url, label)
+    return label.strip if label && !label.strip.empty?
+
+    extract_repo_name(git_url)
+  end
+
+  def parse_repo_entry(key, value)
+    # New format: name: repo_url
+    # Old format: repo_url: name (for backward compatibility)
+
+    if value.nil? || value.strip.empty?
+      # Format: repo_url (no custom name)
+      git_url = key
+      directory_name = extract_repo_name(git_url)
+    elsif key.include?('@') || key.start_with?('http')
+      # Old format: repo_url: name (backward compatibility)
+      git_url = key
+      directory_name = get_directory_name(git_url, value)
+    else
+      # New format: name: repo_url
+      git_url = value
+      directory_name = key
+    end
+
+    {
+      git_url: git_url,
+      directory_name: directory_name,
+      repo_name: extract_repo_name(git_url)
+    }
   end
 end
 
@@ -150,8 +223,20 @@ class Para < Thor
         next unless subdir_config
 
         Dir.chdir(subdir_path) do
-          subdir_config.each_key do |git_repo|
-            system("git clone #{git_repo}")
+          subdir_config.each do |git_repo, label|
+            repo_info = parse_repo_entry(git_repo, label)
+            repo_path = Pathname.new(repo_info[:directory_name])
+
+            # Create parent directories if nested path
+            repo_path.parent.mkpath if repo_path.parent.to_s != '.'
+
+            if repo_info[:directory_name] != repo_info[:repo_name]
+              # Custom directory name (possibly nested) - clone with full path
+              system("git clone #{git_repo} #{repo_info[:directory_name]}")
+            else
+              # Default directory name
+              system("git clone #{git_repo}")
+            end
           end
         end
       end
@@ -178,10 +263,19 @@ class Para < Thor
   desc 'git SUBCOMMAND', 'Git operations on all repositories'
   subcommand 'git', GitCommands
 
-  desc 'cd-path REPO', '(Internal) Output path to repository', hide: true
-  def cd_path(repo_name)
-    target_path = find_repo_path(repo_name)
-    puts target_path if target_path
+  desc 'cd-path [REPO]', '(Internal) Output path to repository or para_home', hide: true
+  def cd_path(repo_name = nil)
+    if repo_name
+      target_path = find_repo_path(repo_name)
+      puts target_path if target_path
+    else
+      puts @config.para_home
+    end
+  end
+
+  desc 'get-level', '(Internal) Get logging level setting', hide: true
+  def get_level
+    puts @config.level
   end
 
   private
@@ -241,13 +335,11 @@ class Para < Thor
       profile_path = @config.para_home / profile_name / subdir
 
       if profile_path.exist?
-        entries = profile_path.children.select(&:directory?)
-        if entries.empty?
-          puts '  (empty)'
+        # Show labeled entries if config has them, otherwise discover repositories
+        if profile_config[subdir]
+          show_nested_entries(profile_config[subdir], profile_path)
         else
-          entries.each do |entry|
-            puts "  #{entry.basename}"
-          end
+          discover_and_show_repos(profile_path)
         end
       else
         puts '  (directory not found)'
@@ -289,13 +381,9 @@ class Para < Thor
     if @config.active_profile && @config.active_subdir
       profile_config = profiles[@config.active_profile]
       if profile_config && profile_config[@config.active_subdir]
-        subdir_repos = profile_config[@config.active_subdir].keys
-        matching_repos = subdir_repos.select { |repo| extract_repo_name(repo).start_with?(repo_name) }
-
-        if matching_repos.size == 1
-          repo_path = @config.para_home / @config.active_profile / @config.active_subdir / extract_repo_name(matching_repos.first)
-          return repo_path.to_s if repo_path.exist?
-        end
+        found_path = search_subdir_for_repo(@config.active_profile, @config.active_subdir,
+                                            profile_config[@config.active_subdir], repo_name)
+        return found_path if found_path
       end
     end
 
@@ -307,22 +395,196 @@ class Para < Thor
         subdir_config = profile_config[subdir]
         next unless subdir_config
 
-        subdir_config.each_key do |git_repo|
-          repo_dir_name = extract_repo_name(git_repo)
-          next unless repo_dir_name.start_with?(repo_name)
-
-          repo_path = @config.para_home / profile_name / subdir / repo_dir_name
-          return repo_path.to_s if repo_path.exist?
-        end
+        found_path = search_subdir_for_repo(profile_name, subdir, subdir_config, repo_name)
+        return found_path if found_path
       end
     end
 
     nil
   end
 
+  def search_subdir_for_repo(profile_name, subdir, subdir_config, repo_name)
+    # First, search through configured repositories
+    subdir_config.each do |git_repo, label|
+      repo_info = parse_repo_entry(git_repo, label)
+
+      # Check if search term matches either the directory name or repo name
+      next unless repo_info[:directory_name].start_with?(repo_name) || repo_info[:repo_name].start_with?(repo_name)
+
+      # Try the expected directory name first (may be nested path)
+      repo_path = @config.para_home / profile_name / subdir / repo_info[:directory_name]
+      return repo_path.to_s if repo_path.exist?
+
+      # Fall back to the repo name if expected directory doesn't exist
+      repo_path = @config.para_home / profile_name / subdir / repo_info[:repo_name]
+      return repo_path.to_s if repo_path.exist?
+    end
+
+    # Fallback: recursively search for any git repositories in the subdir
+    subdir_path = @config.para_home / profile_name / subdir
+    if subdir_path.exist?
+      found_path = recursive_repo_search(subdir_path, repo_name)
+      return found_path if found_path
+    end
+
+    nil
+  end
+
+  def recursive_repo_search(base_path, repo_name)
+    base_path.find do |path|
+      next unless path.directory? && path.basename.to_s.start_with?(repo_name)
+
+      # Check if this directory is a git repository
+      git_dir = path / '.git'
+      return path.to_s if git_dir.exist?
+    end
+    nil
+  rescue StandardError
+    nil
+  end
+
+  def show_nested_entries(subdir_config, base_path)
+    shown_repos = Set.new
+
+    # Show configured repositories
+    subdir_config.each do |git_repo, label|
+      repo_info = parse_repo_entry(git_repo, label)
+      expected_path = base_path / repo_info[:directory_name]
+      fallback_path = base_path / repo_info[:repo_name]
+
+      actual_path = nil
+      actual_relative = nil
+
+      # Check expected path first, then fallback
+      if expected_path.exist? && (expected_path / '.git').exist?
+        actual_path = expected_path
+        actual_relative = repo_info[:directory_name]
+      elsif fallback_path.exist? && (fallback_path / '.git').exist?
+        actual_path = fallback_path
+        actual_relative = repo_info[:repo_name]
+      end
+
+      if actual_path
+        shown_repos.add(actual_path.to_s)
+        if label && !label.strip.empty? && repo_info[:directory_name] != repo_info[:repo_name]
+          puts "  #{actual_relative} → #{repo_info[:directory_name]} (#{repo_info[:repo_name]})"
+        else
+          puts "  #{actual_relative}"
+        end
+      else
+        puts "  #{repo_info[:directory_name]} (missing)"
+      end
+    end
+
+    # Show any unconfigured repositories
+    discover_unconfigured_repos(base_path, shown_repos)
+  end
+
+  def discover_and_show_repos(base_path)
+    repos_found = false
+
+    base_path.find do |path|
+      next unless path.directory? && (path / '.git').exist?
+
+      relative_path = path.relative_path_from(base_path)
+      puts "  #{relative_path} (unconfigured)"
+      repos_found = true
+    end
+
+    puts '  (empty)' unless repos_found
+  rescue StandardError
+    puts '  (empty)'
+  end
+
+  def discover_unconfigured_repos(base_path, shown_repos)
+    base_path.find do |path|
+      next unless path.directory? && (path / '.git').exist?
+
+      unless shown_repos.include?(path.to_s)
+        relative_path = path.relative_path_from(base_path)
+        puts "  #{relative_path} (unconfigured)"
+      end
+    end
+  rescue StandardError
+    # Ignore traversal errors
+  end
+
   def extract_repo_name(git_url)
     git_url.split('/').last.gsub('.git', '')
   end
+
+  def get_directory_name(git_url, label)
+    return label.strip if label && !label.strip.empty?
+
+    extract_repo_name(git_url)
+  end
+
+  def parse_repo_entry(key, value)
+    # New format: name: repo_url
+    # Old format: repo_url: name (for backward compatibility)
+
+    if value.nil? || value.strip.empty?
+      # Format: repo_url (no custom name)
+      git_url = key
+      directory_name = extract_repo_name(git_url)
+    elsif key.include?('@') || key.start_with?('http')
+      # Old format: repo_url: name (backward compatibility)
+      git_url = key
+      directory_name = get_directory_name(git_url, value)
+    else
+      # New format: name: repo_url
+      git_url = value
+      directory_name = key
+    end
+
+    {
+      git_url: git_url,
+      directory_name: directory_name,
+      repo_name: extract_repo_name(git_url)
+    }
+  end
 end
+
+# Sample Configuration (~/.config/para/config.yaml):
+#
+# ---
+# # Global settings
+# active_profile: work
+# active_subdir: areas
+# para_home: ~/para
+# subdirs: [areas, projects, resources, archives]
+# level: NONE  # Output level: NONE (silent) or DEBUG (verbose) for 'para cd'
+#
+# profiles:
+#   work:
+#     areas:
+#       # New format: name: repo_url
+#       customer-api: git@github.com:company/customer-service.git
+#       user-service: git@github.com:company/user-management.git
+#
+#       # Nested directories
+#       backend/auth: git@github.com:company/auth-service.git
+#       frontend/dashboard: git@github.com:company/admin-dashboard.git
+#
+#       # Simple repo (uses repo name as directory)
+#       git@github.com:company/legacy-app.git:
+#
+#     projects:
+#       mobile/ios: git@github.com:company/ios-app.git
+#       mobile/android: git@github.com:company/android-app.git
+#       web/client: git@github.com:company/web-client.git
+#
+#     resources:
+#       docs: git@github.com:company/documentation.git
+#       scripts: git@github.com:company/dev-tools.git
+#
+#   personal:
+#     areas:
+#       dotfiles: git@github.com:username/dotfiles.git
+#       blog: git@github.com:username/personal-blog.git
+#
+#     projects:
+#       hobby/game: git@github.com:username/game-project.git
+#       learning/rust: git@github.com:username/rust-practice.git
 
 Para.start(ARGV)
