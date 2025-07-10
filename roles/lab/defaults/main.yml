@@ -1,6 +1,0 @@
----
-git_repos:
-  - repo: git@github.com:maxcole/provider.git
-    dest: "{{ user.HOME }}/dev/lab/provider"
-  - repo: git@github.com:maxcole/customer.git
-    dest: "{{ user.HOME }}/dev/lab/customer"

@@ -1,6 +1,0 @@
----
-git_repos:
-  - repo: git@github.com:maxcole/packer.git
-    dest: "{{ user.HOME }}/dev/ops/packer"
-  - repo: git@github.com:maxcole/tofu.git
-    dest: "{{ user.HOME }}/dev/ops/tofu"

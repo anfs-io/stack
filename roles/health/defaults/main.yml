@@ -1,4 +1,0 @@
----
-git_repos:
-  - src: git@github.com:maxcole/health.git
-    dest: "{{ user.HOME }}/dev/apps"

@@ -1,38 +1,63 @@
+#!/usr/bin/env -S ansible-playbook -i localhost,
 #!/usr/bin/env -S ansible-playbook -i hosts.yml -t host-install -t user-admin -e @secrets.enc --vault-password-file secrets.pwd
 # This will be modified to work with packer when building an image
 ---
 - name: Install and Configure Localhost
-  hosts: localhost
-  connection: local 
+  hosts: "{{ target_hosts | default('localhost') }}"
+  connection: "{{ target_connection | default('local') }}"
+  become: yes
+  become_user: "{{ target_user | default(lookup('env', 'USER')) }}"
   vars:
-    user:
-      HOME: "{{ ansible_env.HOME }}"
-    path:
-      home: "{{ user.HOME }}"
-      config: "{{ user.HOME }}/.config"
-      my_config: "{{ user.HOME }}/config"
-      share: "{{ user.HOME }}/.local/share"
-    stow:
-      src: "{{ path.my_config }}/dotfiles"
-      target: "{{ user.HOME }}"
-    git:
-      prefix: git@github.com
-      repos: {}
+    ansible_pipelining: true
+    allow_world_readable_tmpfiles: true
   tasks:
 
-    - debug:
-        var: stow
+    - ansible.builtin.debug:
+        var: "{{ item }}"
+      loop: [ansible_env, ansible_user_id, ansible_user_dir]
+      tags: [debug, never]
+
+    - name: Set user shell to zsh
+      ansible.builtin.user:
+        name: "{{ target_user | default(lookup('env', 'USER')) }}"
+        shell: /bin/zsh
+      become: yes
+      become_user: root
+
+    - name: Setup XDG directories
+      ansible.builtin.include_role:
+        name: xdg
       tags: [always]
 
-        #     - name: Ensure that a uid was provided
-        #       ansible.builtin.fail:
-        #         msg: "Must provide a valid uid"
-        #       when: uid is not defined
-        #       tags: [never] # always]
+      # TODO: the loop is based on specified roles
+    - name: "Create dirs in {{ ansible_user_dir }}/.config to stow symlinks"
+      ansible.builtin.file:
+        path: "{{ ansible_user_dir }}/.config/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop: [git, nvim, pry, rails, tmux, tmuxinator, zsh]
 
-    - debug:
-        var: stow
-      tags: [always]
+    - name: Install Stow
+      ansible.builtin.package:
+        name: [stow]
+        state: present
+      become: yes
+
+    - name: Stow the basics
+      ansible.builtin.shell:
+        cmd: "stow {{ item }} -t {{ ansible_user_dir }}"
+        chdir: "{{ ansible_user_dir }}/config/dotfiles"
+      args:
+        executable: /bin/zsh
+      loop: [bash, git, nvim, tmux, tmuxinator, zsh]
+
+    - name: Configure Tmux Plugins (user-admin)
+      ansible.builtin.include_role:
+        name: tmux
+      tags: [tmux, never]
+
+
+    - ansible.builtin.fail:
 
     - name: "Create dirs in {{ path.home }}"
       ansible.builtin.file:
@@ -40,15 +65,6 @@
         state: directory
         mode: '0755'
       loop: [.aws, .ssh, .local, .local/share, .local/share/python, .local/bin]
-      tags: [user-config]
-
-    - name: "Create dirs in {{ path.config }} to stow symlinks"
-      ansible.builtin.file:
-        path: "{{ path.config }}/{{ item }}"
-        state: directory
-        mode: '0755'
-      loop: [git, nvim, pry, rails, tmux, tmuxinator, zsh]
-      tags: [user-config]
 
       # NOTE: This is the last thing to do
     - name: Create credentials for encrypted values
@@ -61,122 +77,3 @@
 
           {% endfor %}
       loop: "{{ _secrets }}"
-      tags: [user-admin]
-
-    # - ansible.builtin.fail:
-    #   tags: [always]
-
-    - name: Install Stow
-      ansible.builtin.package:
-        name: [stow]
-        state: present
-      become: yes
-      tags: [host-install, user-config]
-
-    - name: Stow the basics
-      ansible.builtin.shell:
-        cmd: "stow {{ item }} -t {{ stow.target }}"
-        chdir: "{{ stow.src }}"
-      args:
-        executable: /bin/zsh
-      loop: [bash, git, nvim, tmux, tmuxinator, zsh]
-      tags: [user-config]
-
-    - name: Install neovim
-      ansible.builtin.include_role:
-        name: neovim
-      tags: [host-install, user-install]
-
-    - name: Install python
-      ansible.builtin.include_role:
-        name: python
-      vars:
-        venvs: [lstack]
-      tags: [host-install, user-admin]
-
-
-    - name: Install oh-my-zsh
-      ansible.builtin.include_role:
-        name: omz
-      vars:
-        omz_install_dir: "{{ path.share }}/omz"
-      tags: [host-install, user-install]
-
-    - name: Install Tmux
-      ansible.builtin.include_role:
-        name: tmux
-      tags: [user-config, user-install, user-admin]
-
-    - name: Stow Ruby and Python
-      ansible.builtin.shell:
-        cmd: "stow {{ item }} -t {{ stow.target }}"
-        chdir: "{{ stow.src }}"
-      args:
-        executable: /bin/zsh
-      loop: [pry, python, rails, ruby]
-      tags: [user-config]
-
-    - name: Install Ruby
-      ansible.builtin.include_role:
-        name: ruby
-      vars:
-        rbenv_root: "{{ user.HOME }}/.rbenv"
-      # tags: [host-install, user-install, user-admin, ruby]
-      tags: [ruby]
-
-    - name: Install Python Virtual Environment(s) venv
-      ansible.builtin.include_role:
-        name: python
-      vars:
-        venvs: [lstack]
-        python:
-          path: "{{ path.share }}/python"
-      tags: [user-admin]
-
-        # - ansible.builtin.include_role:
-        #     name: "{{ item }}"
-        #   loop: [lab, ops] # gift, health, lab]
-        #   tags: [user-admin]
-
-        # - ansible.builtin.fail:
-        #   tags: [always]
-
-
-    - block:
-      - name: Find all sub-directories
-        ansible.builtin.find:
-          paths: packages
-          recurse: no
-          file_type: directory
-        register: packages_dir
-
-      - set_fact:
-          packages: "{{ packages_dir.files | map(attribute='path') }}"
-      when: packages is not defined
-      tags: [never, user-admin]
-
-    - debug:
-        var: "{{ item }}"
-      loop: [packages, mods]
-      tags: [never, user-admin]
-
-    - include_tasks:
-        file: package.yml
-      vars:
-        package: "{{ item }}"
-      loop: "{{ packages.keys() }}"
-      tags: [never, user-admin]
-
-    - include_role:
-        name: "{{ item }}"
-      vars:
-        ansible_become: yes
-        ansible_become_user: "{{ uid }}"
-      loop: "{{ mods.keys() }}"
-      tags: [never]
-        
-
-    - ansible.builtin.debug:
-        var: "{{ item }}"
-      loop: [roles, packages]
-      tags: [user-config]
