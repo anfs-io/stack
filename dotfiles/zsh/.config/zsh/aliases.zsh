@@ -40,7 +40,11 @@ alias vif='nvim $(fzf -m --preview="batcat --color=always {}")'
 
 # Tmux
 ta() {
-  tmux attach -t ${1}
+  if (( $# == 0 )); then
+    tmux attach
+  else
+    tmux attach -t ${1}
+  fi
 }
 alias tls="tmux list-sessions"
 # -a shows hidden files; -l follow symlinks; -I ignore
@@ -55,11 +59,15 @@ alias dconf="(cd ~/config/dotfiles; nvim .)"
 alias lsar="lsa -R"
 
 zconf() {
-  file="aliases.zsh"
-  if (( $# == 1 )); then
-    file="${1}.zsh"
+  if [[ $1 == "ls" ]]; then
+    ls ~/.config/zsh
+  else
+    file="aliases.zsh"
+    if (( $# == 1 )); then
+      file="${1}.zsh"
+    fi
+    (cd ~/.config/zsh; nvim ${file}) # ; cd -
   fi
-  (cd ~/.config/zsh; nvim ${file}) # ; cd -
 }
 
 zsrc() {
@@ -92,57 +100,4 @@ zcd() {
     cd $res
   fi
   unset FZF_DEFAULT_COMMAND
-}
-
-cdh() {
-echo '
-cda() { zcd "$HOME/dev/apps" }
-cdc() { zcd "$HOME/.config" }
-cdl() { zcd "$HOME/dev/lab" }
-cdmc() { zcd "$HOME/config" }
-cdn() { zcd "$HOME/notes" }
-cdo() { zcd "$HOME/dev/ops" }
-cdp() { zcd "$HOME/pen" }
-cds() { zcd "$HOME/services" }
-'
-}
-
-pcd() { para cd "$@" }
-pls() { para ls "$@" }
-
-# Para shell function wrapper
-para() {
-  if [[ "$1" == "cd" ]]; then
-    local target_dir
-    local level
-
-    # Get the logging level setting
-    level=$(command para get-level 2>/dev/null)
-
-    if [[ -z "$2" ]]; then
-      # No repo specified - go to para_home
-      target_dir=$(command para cd-path 2>/dev/null)
-    else
-      # Repo specified - find specific repository
-      target_dir=$(command para cd-path "$2" 2>/dev/null)
-    fi
-
-    if [[ -n "$target_dir" && -d "$target_dir" ]]; then
-      # Show output based on level setting
-      if [[ "$level" == "DEBUG" ]]; then
-        echo "Changing to: $target_dir"
-      fi
-      cd "$target_dir" || return 1
-    else
-      # Always show error messages regardless of level
-      if [[ -z "$2" ]]; then
-        echo "Para home directory not found"
-      else
-        echo "Repository not found: $2"
-      fi
-      return 1
-    fi
-  else
-    command para "$@"
-  fi
 }
