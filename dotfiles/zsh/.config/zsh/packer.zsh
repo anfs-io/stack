@@ -4,7 +4,8 @@
 export PACKER_CONFIG_DIR="$HOME/.local/share/packer"
 
 # packer_dir() { ~/dev/ops/packer/.builds/base/proxmox-iso }
-packer_dir() { ~/dev/ops/packer/.builds/base/debian-bookworm }
+# packer_dir() { ~/dev/ops/packer/.builds/base/debian-bookworm }
+packer_dir() { "$PARA_HOME/professional/areas/home-lab/provider/packer" }
 
 pc() {
   cd ~/packer

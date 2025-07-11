@@ -1,3 +1,4 @@
+export PARA_HOME="$HOME/para"
 
 pcd() { para cd "$@" }
 pls() { para ls "$@" }

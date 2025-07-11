@@ -74,20 +74,12 @@ zsrc() {
   for file in ~/.config/zsh/*; do
     source $file
   done
+  for file in ~/.config/zsh-ext/*; do
+    source $file
+  done
 }
 
 alias ag="alias | grep ${1}"
-
-cda() { zcd "$HOME/dev/apps" }
-cdb() { zcd "$HOME/dev/business" }
-cdc() { zcd "$HOME/.config" }
-cdd() { zcd "$HOME/dev" }
-cdl() { zcd "$HOME/dev/lab" }
-cdmc() { zcd "$HOME/config" }
-cdn() { zcd "$HOME/notes" }
-cdo() { zcd "$HOME/dev/ops" }
-cdp() { zcd "$HOME/pen" }
-cds() { zcd "$HOME/services" }
 
 # cd to a specific dir and invoke fzf
 zcd() {
