@@ -47,6 +47,11 @@ ta() {
   fi
 }
 alias tls="tmux list-sessions"
+
+function tssh() {
+  eval $(tmux showenv -s SSH_AUTH_SOCK)
+}
+
 # -a shows hidden files; -l follow symlinks; -I ignore
 alias tsa="tree -a -l -I .git -I tmp -I claude-commands -I .DS_Store -I ._.DS_Store"
 
