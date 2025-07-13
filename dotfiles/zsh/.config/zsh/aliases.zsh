@@ -48,14 +48,13 @@ ta() {
 }
 alias tls="tmux list-sessions"
 
-function tssh() {
-  eval $(tmux showenv -s SSH_AUTH_SOCK)
-}
+# Restore connection to the ssh agent socket inside Tmux
+alias tssh='eval $(tmux showenv -s SSH_AUTH_SOCK)'
+
+alias mx=tmuxinator
 
 # -a shows hidden files; -l follow symlinks; -I ignore
 alias tsa="tree -a -l -I .git -I tmp -I claude-commands -I .DS_Store -I ._.DS_Store"
-
-alias mx=tmuxinator
 
 
 # General Aliases and helpers
