@@ -97,3 +97,19 @@ zcd() {
   fi
   unset FZF_DEFAULT_COMMAND
 }
+
+
+# Tofu workspace function
+tws() {
+    if [[ $# -eq 0 ]]; then
+        tofu workspace show
+    else
+        tofu workspace select "$1"
+    fi
+}
+
+# Tofu aliases
+alias twls='tofu workspace list'
+alias twa='tofu apply'
+alias twaa='tofu apply --auto-approve'
+alias twp='tofu plan'
