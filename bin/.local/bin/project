@@ -1,0 +1,103 @@
+#!/usr/bin/env ruby
+
+require 'pry'
+require 'thor'
+require 'ostruct'
+require 'fileutils'
+
+class Project < Thor
+  def initialize(*args)
+    super
+    @config = OpenStruct.new(path: '/opt/claude')
+  end
+
+  def self.exit_on_failure?
+    true
+  end
+
+  private
+
+  def debug_puts(message)
+    puts message if options[:debug]
+  end
+
+  public
+
+  desc "new NAME", "Create a new project with NAME"
+  option :path, aliases: ['-p'], type: :string, desc: "Override default path"
+  option :force, aliases: ['-f'], type: :boolean, desc: "Force creation, removing existing project if it exists"
+  option :debug, aliases: ['-d'], type: :boolean, desc: "Enable debug output"
+  def new(name)
+    @config.path = options[:path] if options[:path]
+    
+    # Check if path exists
+    unless Dir.exist?(@config.path)
+      puts "Error: Path '#{@config.path}' does not exist"
+      exit 1
+    end
+    
+    # Define paths
+    base_path = File.join(@config.path, name)
+    local_base = File.join(Dir.pwd, name)
+    
+    # Check if either path already exists
+    if Dir.exist?(base_path) || Dir.exist?(local_base)
+      if options[:force]
+        puts "Removing existing project '#{name}' at '#{base_path}'" if Dir.exist?(base_path)
+        puts "Removing existing local project '#{name}' at '#{local_base}'" if Dir.exist?(local_base)
+        FileUtils.rm_rf(base_path) if Dir.exist?(base_path)
+        FileUtils.rm_rf(local_base) if Dir.exist?(local_base)
+      else
+        puts "Error: Project '#{name}' already exists at '#{base_path}'" if Dir.exist?(base_path)
+        puts "Error: Local project '#{name}' already exists at '#{local_base}'" if Dir.exist?(local_base)
+        exit 1
+      end
+    end
+    
+    # Create directory structure in specified path
+    FileUtils.mkdir_p(base_path)
+    
+    # Create subdirectories with .keep files in the path
+    path_subdirs = [
+      'content',
+      'stories/backlog',
+      'stories/ready', 
+      'stories/in-progress',
+      'stories/done'
+    ]
+    
+    path_subdirs.each do |subdir|
+      dir_path = File.join(base_path, subdir)
+      FileUtils.mkdir_p(dir_path)
+      FileUtils.touch(File.join(dir_path, '.keep'))
+    end
+    
+    # Create directory structure in current working directory
+    FileUtils.mkdir_p(local_base)
+    
+    # Create subdirectories with .keep files in current directory
+    local_subdirs = [
+      '.claude',
+      'apps'
+    ]
+    
+    local_subdirs.each do |subdir|
+      dir_path = File.join(local_base, subdir)
+      FileUtils.mkdir_p(dir_path)
+      FileUtils.touch(File.join(dir_path, '.keep'))
+    end
+    
+    # Change to the new directory
+    Dir.chdir(local_base)
+    
+    # Create softlinks
+    FileUtils.ln_s(File.join(base_path, 'content'), 'content')
+    FileUtils.ln_s(File.join(base_path, 'stories'), 'stories')
+    
+    debug_puts "Project '#{name}' created successfully!"
+    debug_puts "Path: #{base_path}"
+    debug_puts "Local: #{local_base}"
+  end
+end
+
+Project.start(ARGV)
