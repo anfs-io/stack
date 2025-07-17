@@ -54,7 +54,7 @@ alias tssh='eval $(tmux showenv -s SSH_AUTH_SOCK)'
 alias mx=tmuxinator
 
 # -a shows hidden files; -l follow symlinks; -I ignore
-alias tsa="tree -a -l -I tmp -I .git -I .terraform -I .DS_Store -I ._.DS_Store"
+alias tsa="tree -a -l -I tmp -I .git -I .terraform -I .DS_Store -I ._.DS_Store -I apps"
 
 
 # General Aliases and helpers
