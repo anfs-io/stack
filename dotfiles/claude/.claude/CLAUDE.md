@@ -1,5 +1,0 @@
-## Ruby
-- Maintain a cache of the latest versions of all gems on rubygems.org. you can get the list using `gem list -r`. When we start a new ruby or rails project or when you need to add a new gem to the project first check the age of the gem cache. if it is older than 1 week automatically update the cache before starting the project or adding a new gem to the project
-
-## Infrastructure
-- We are using opentofu rather than terraform so the binary is `tofu`
