@@ -16,6 +16,7 @@ vim.keymap.set('n', '<c-l>', ':wincmd l<CR>')
 vim.keymap.set('n', '<leader>w', '<Esc>:w<cr><Space>')
 vim.keymap.set('n', '<leader>wq', '<Esc>:wq<cr><Space>')
 vim.keymap.set('n', '<leader>wqa', '<Esc>:wqa<cr><Space>')
+vim.keymap.set('n', '<leader>qa', '<Esc>:q!<cr><Space>')
 
 
 vim.wo.number = true
@@ -24,7 +25,10 @@ vim.wo.relativenumber = true
 vim.opt.conceallevel = 1
 
 
--- Copy default register to tmux
-vim.keymap.set('n', '<leader>tt', function()
+-- Yank the default register to the tmux buffer
+vim.keymap.set('n', '<leader>ty', function()
   vim.fn.system('tmux load-buffer -', vim.fn.getreg('"'))
 end, { desc = 'Copy register to tmux' })
+
+-- Paste the tmux buffer
+vim.keymap.set('n', '<leader>tp', ':read !tmux show-buffer<CR>', { desc = 'Paste tmux buffer' })
