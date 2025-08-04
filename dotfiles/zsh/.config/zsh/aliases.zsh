@@ -109,17 +109,55 @@ zcd() {
 }
 
 
-# Tofu workspace function
-tws() {
-    if [[ $# -eq 0 ]]; then
-        tofu workspace show
+# Tofu functions
+tf() {
+  # Check if TF_BIN is already set
+  if [[ -z "$TF_BIN" ]]; then
+    # Check for tofu first, then terraform
+    if command -v tofu >/dev/null 2>&1; then
+      export TF_BIN=tofu
+    elif command -v terraform >/dev/null 2>&1; then
+      export TF_BIN=terraform
     else
-        tofu workspace select "$1"
+      echo "Error: Neither 'tofu' nor 'terraform' found in PATH"
+      return 1
     fi
+  fi
+
+  ${TF_BIN} "$@"
 }
 
-# Tofu aliases
-alias twls='tofu workspace list'
-alias twa='tofu apply'
-alias twaa='tofu apply --auto-approve'
-alias twp='tofu plan'
+alias tf-console='tf console'
+alias tf-init='tf init'
+alias tf-list='tf workspace list'
+
+_tf_exec() {
+  local action="$1"
+  local extra_args="$3"  # Add support for extra arguments
+  local space
+
+  # If parameter provided, use it; otherwise use current workspace
+  if [[ -n "$2" ]]; then
+    space="$2"
+
+    # Check if tfvars file exists
+    if [[ ! -f "${space}.tfvars" ]]; then
+      echo "Error: ${space}.tfvars file not found"
+      return 1
+    fi
+
+    # Switch to the specified workspace
+    tf workspace select -or-create ${space}
+  else
+    # Use current workspace
+    space=$(${tf_bin} workspace show)
+  fi
+
+  # Execute the terraform/tofu command with the appropriate tfvars file
+  tf ${action} -var-file ${space}.tfvars ${extra_args}
+}
+
+tf-apply() { _tf_exec "apply" "$1" }
+tf-apply-auto() { _tf_exec "apply" "$1" "-auto-approve" }
+tf-destroy() { _tf_exec "destroy" "$1" }
+tf-plan() { _tf_exec "plan" "$1" }

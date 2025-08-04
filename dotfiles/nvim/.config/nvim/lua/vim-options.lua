@@ -25,10 +25,10 @@ vim.wo.relativenumber = true
 vim.opt.conceallevel = 1
 
 
--- Yank the default register to the tmux buffer
+-- t(mux)y(yank) Yank the default register to tmux buffer
 vim.keymap.set('n', '<leader>ty', function()
   vim.fn.system('tmux load-buffer -', vim.fn.getreg('"'))
 end, { desc = 'Copy register to tmux' })
 
--- Paste the tmux buffer
+-- t(tmux)p(aste) - Paste from tmux buffer
 vim.keymap.set('n', '<leader>tp', ':read !tmux show-buffer<CR>', { desc = 'Paste tmux buffer' })
