@@ -8,5 +8,5 @@ sudo priviledges
 ## Commands
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/maxcole/config/refs/heads/main/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/maxcole/rjayroach-config/refs/heads/main/bootstrap.sh | bash -s -- install
 ```
