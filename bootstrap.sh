@@ -11,7 +11,7 @@ fi
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
-dirs=("git" "nvim" "tmuxinator")
+dirs=("git" "nvim" "tmuxinator" "zsh")
 for dir in "${dirs[@]}"; do
   mkdir -p $HOME/.config/$dir
 done
@@ -21,7 +21,7 @@ done
     # TODO: Fix the packages failing b/c stow doesn't own the dir
 
 # packages: [bash, git, nvim, tmux, tmuxinator, zsh]
-packages=("bash" "git") #  "zsh")
+packages=("bash" "git" "nvim" "tmux" "tmuxinator" "zsh")
 
 for pkg in "${packages[@]}"; do
   stow -d $SCRIPT_DIR/dotfiles -t $HOME $pkg
