@@ -37,8 +37,13 @@ alias gpl="git pull"
 
 # git add, commit, push
 gacp() {
+  echo $#
   local message=""
-  vared -p "Git commit message: " message
+  if (( $# == 1 )); then
+    message=$1
+  else
+    vared -p "Git commit message: " message
+  fi
   git add .
   git commit -m "${message}"
   git push
