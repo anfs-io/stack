@@ -35,6 +35,15 @@ alias dvls="docker volume ls"
 alias gmv="git mv"
 alias gpl="git pull"
 
+# git add, commit, push
+gacp() {
+  local message=""
+  vared -p "Git commit message: " message
+  git add .
+  git commit -m "${message}"
+  git push
+}
+
 # Neovim
 nconf() {
   file="init.lua"
