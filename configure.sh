@@ -28,7 +28,8 @@ scripts() {
 }
 
 setup() {
-  sudo usermod -s /bin/zsh "$(whoami)"
+  local user=$(whoami)
+  sudo usermod -s /bin/zsh $user
   sudo apt install git stow -y
   git clone git@github.com:maxcole/rjayroach-home.git $REPO_DIR
   $REPO_DIR/$SCRIPT_NAME dotfiles scripts
