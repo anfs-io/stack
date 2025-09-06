@@ -37,7 +37,6 @@ alias gpl="git pull"
 
 # git add, commit, push
 gacp() {
-  echo $#
   local message=""
   if (( $# == 1 )); then
     message=$1
