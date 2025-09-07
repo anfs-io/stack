@@ -3,5 +3,3 @@
 	email = rjayroach@gmail.com
 [init]
 	defaultBranch = main
-[safe]
-	directory = /etc/ansible/roles
