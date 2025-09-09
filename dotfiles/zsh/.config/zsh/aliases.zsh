@@ -5,7 +5,13 @@ export PATH=~/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin
 export EDITOR=nvim
 bindkey -v
 
-source <(fzf --zsh)
+if command -v mise >/dev/null 2>&1; then
+  eval "$(mise activate zsh)"
+fi
+
+if command -v fzf >/dev/null 2>&1; then
+  source <(fzf --zsh)
+fi
 
 # Clasp
 alias clp="clasp push"
@@ -15,23 +21,6 @@ alias bat=batcat
 # Docker
 alias dcd="docker compose down"
 alias dvls="docker volume ls"
-
-# Git
-alias gmv="git mv"
-alias gpl="git pull"
-
-# git add, commit, push
-gacp() {
-  local message=""
-  if (( $# == 1 )); then
-    message=$1
-  else
-    vared -p "Git commit message: " message
-  fi
-  git add .
-  git commit -m "${message}"
-  git push
-}
 
 # Neovim
 nconf() {

@@ -19,7 +19,7 @@ detect_arch() {
 }
 
 # Detect the OS
-detect_os() {
+os() {
   if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     echo "linux"
   elif [[ "$OSTYPE" == "darwin"* ]]; then
@@ -33,19 +33,26 @@ setup_xdg() {
   mkdir -p $HOME/.cache $HOME/.config $HOME/.local $HOME/.local/share $HOME/.local/state $HOME/.local/bin
 }
 
-
-# Dependencies
-deps_linux() {
+# mise; shared with pcs-bootstrap/controller.sh
+mise_linux() {
   sudo install -dm 755 /etc/apt/keyrings
   wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/mise-archive-keyring.gpg 1> /dev/null
   echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=$(detect_arch)] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
   sudo apt update
 
-  # general
-  sudo apt install git neovim stow -y
-
-  # mise
   sudo apt install curl gpg mise -y
+}
+
+# Dependencies
+deps_linux() {
+  mise_linux
+
+  # general
+  sudo apt install git neovim stow tree -y
+
+  # ruby
+  sudo apt install build-essential zlib1g-dev libssl-dev libreadline-dev libyaml-dev \
+    libsqlite3-dev sqlite3 libxml2-dev libxslt1-dev libcurl4-openssl-dev libffi-dev git -y
 
   # tmux
   sudo apt install entr tmux -y
@@ -82,9 +89,9 @@ deps_macos() {
 deps() {
   local user=$(whoami)
 
-  if [[ "$(detect_os)" == "linux" ]]; then
+  if [[ "$(os)" == "linux" ]]; then
     deps_linux
-  elif [[ "$(detect_os)" == "macos" ]]; then
+  elif [[ "$(os)" == "macos" ]]; then
     deps_macos
   fi
 
