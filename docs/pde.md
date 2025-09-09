@@ -8,5 +8,5 @@ sudo priviledges
 ## Commands
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/maxcole/rjayroach-home/refs/heads/main/configure.sh | bash -s -- setup
+wget -qO- https://raw.githubusercontent.com/maxcole/rjayroach-home/refs/heads/main/install.sh | bash -s -- all
 ```

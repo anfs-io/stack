@@ -3,7 +3,7 @@
 
 require 'pathname'
 
-data_dir = Pathname.new(ENV['HOME']).join('.cache/bip39')
+data_dir = Pathname.new(Dir.home).join('.cache/bip39')
 data_dir.mkpath
 data_path = data_dir.join('words.txt')
 

@@ -27,6 +27,8 @@ alias clv="claude --version"
 # Clasp
 alias clp="clasp push"
 
+alias bat=batcat
+
 # Docker
 alias dcd="docker compose down"
 alias dvls="docker volume ls"
@@ -99,12 +101,14 @@ zconf() {
 }
 
 zsrc() {
-  for file in ~/.config/zsh/*; do
+  for file in $HOME/.config/zsh/*; do
     source $file
   done
-  for file in ~/.config/zsh-ext/*; do
-    source $file
-  done
+  if [[ -d "$HOME/.config/zsh-ext" ]]; then
+    for file in $HOME/.config/zsh-ext/*; do
+      source $file
+    done
+  fi
 }
 
 alias ag="alias | grep ${1}"
