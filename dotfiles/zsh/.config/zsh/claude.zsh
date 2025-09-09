@@ -1,17 +1,7 @@
 # Claude
 
-alias cl="clear; claude"
-alias clc="clear; claude --continue"
-alias cldsp="clear; claude --dangerously-skip-permissions"
-alias clr="clear; claude --resume"
-
-clu() {
-  local base_dir="$HOME/.local/share/npm"
-  if [[ "$1" == "-g" ]]; then
-    base_dir="/usr/local"
-  fi
-  rm -rf "${base_dir}/lib/node_modules/@anthropic-ai/claude-code"
-  npm i -g @anthropic-ai/claude-code
-}
-
-alias clv="claude --version"
+alias cc-="clear; claude"
+alias cc-continue="clear; claude --continue"
+alias cc-dangerously-skip-permissions="clear; claude --dangerously-skip-permissions"
+alias cc-resume="clear; claude --resume"
+alias cc-version="claude --version"
