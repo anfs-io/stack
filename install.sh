@@ -28,10 +28,12 @@ scripts() {
 
 # Run Once to set the shell, install deps, clone the repo and run the functions
 setup() {
+  sudo apt install git stow zsh -y
   local user=$(whoami)
   sudo usermod -s /bin/zsh $user
-  sudo apt install git stow -y
-  git clone $REPO_URL $REPO_DIR
+  if [[ ! -d "$REPO_DIR" ]]; then
+    git clone $REPO_URL $REPO_DIR
+  fi
 }
 
 # Parse command line arguments
