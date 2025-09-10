@@ -17,10 +17,10 @@ fi
 rn() {
   rails new --rc=$HOME/.config/rails/rc -T $*
   if [ $? -eq 0 ]; then
-    # local result='ok'
-    cp -a $HOME/config/packages/gift $HOME/config/packages/$1
-    mv $HOME/config/packages/$1/dotfiles/.config/tmuxinator/gift.yml $HOME/config/packages/$1/dotfiles/.config/tmuxinator/$1.yml 
-    stow -t $HOME -d $HOME/config/packages/$1 dotfiles
+    # TODO: curl/wget a tmuxinator file for a rails project to this dir
+    # then create a mise.toml with
+    # [tasks.tmux]
+    # run ln -s in the $HOME/.config/tmuxinator
   else
     # local result='not ok'
   fi
