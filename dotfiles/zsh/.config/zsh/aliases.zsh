@@ -6,8 +6,6 @@ export EDITOR=nvim
 bindkey -v
 
 
-alias git-repos="find ~ -maxdepth 5 -path ~/.local -prune -o -type d -execdir test -d {}/.git \; -print -prune"
-
 if command -v fzf >/dev/null 2>&1; then
   source <(fzf --zsh)
 fi

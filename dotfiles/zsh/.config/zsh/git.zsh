@@ -3,6 +3,8 @@
 alias gmv="git mv"
 alias gpl="git pull"
 
+alias git-repos="find ~ -maxdepth 5 -path ~/.local -prune -o -type d -execdir test -d {}/.git \; -print -prune | sort"
+
 # git add, commit, push
 gacp() {
   local message=""
