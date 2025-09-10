@@ -49,10 +49,16 @@ alias tsa="tree -a -l -I tmp -I .git -I .terraform -I .DS_Store -I \"._*\" -I .o
 alias cls="clear"
 alias lsar="lsa -R"
 
+zinstall() {
+  $HOME/rjayroach/home/install.sh dotfiles scripts
+}
+
 zconf() {
-  local dir=$(dirname "${(%):-%x}")
+  local dir=$(dirname $(readlink -f "${(%):-%x}") )
   if [[ $1 == "ls" ]]; then
     ls $dir
+  elif [[ $1 == "pwd" ]]; then
+    echo $dir
   else
     file="aliases.zsh"
     if (( $# == 1 )); then
