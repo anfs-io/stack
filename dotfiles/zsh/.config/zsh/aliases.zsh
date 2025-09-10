@@ -8,10 +8,6 @@ bindkey -v
 
 alias git-repos="find ~ -maxdepth 5 -path ~/.local -prune -o -type d -execdir test -d {}/.git \; -print -prune"
 
-if command -v mise >/dev/null 2>&1; then
-  eval "$(mise activate zsh)"
-fi
-
 if command -v fzf >/dev/null 2>&1; then
   source <(fzf --zsh)
 fi
@@ -104,4 +100,30 @@ zcd() {
     cd $res
   fi
   unset FZF_DEFAULT_COMMAND
+}
+
+# Function to ensure a line exists in a file
+# Usage: line_in_file <filename> <line>
+# Set VERBOSE=true to enable output messages
+line_in_file() {
+  local filename="$1"
+  local line="$2"
+
+  # Validate arguments
+  if [ $# -ne 2 ]; then
+    echo "Usage: line_in_file <filename> <line>" >&2
+    return 1
+  fi
+
+  # Create file if it doesn't exist
+  touch "$filename"
+
+  # Check if line already exists
+  if grep -Fxq "$line" "$filename"; then
+    verbose "Line already exists in ${filename}: $line"
+  else
+    # Line doesn't exist, append it
+    echo "$line" >> "$filename"
+    verbose "Added line to ${filename}: $line"
+  fi
 }
