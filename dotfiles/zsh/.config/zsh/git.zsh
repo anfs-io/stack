@@ -15,3 +15,11 @@ gacp() {
   git commit -m "${message}"
   git push
 }
+
+git-clone() {
+  local repo_dir=$HOME/$(echo "$1" | sed 's/[-\.]/\//g')
+  if [ ! -d $repo_dir ]; then
+    git clone git@github.com:maxcole/$1.git $repo_dir
+  fi
+  echo $repo_dir
+}
