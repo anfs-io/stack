@@ -1,0 +1,8 @@
+[tools]
+claude = "latest"
+localstack = "latest"
+node = "latest"
+ruby = "latest"
+
+[env]
+MISE_RUBY_DEFAULT_PACKAGES_FILE = "{{ env.HOME }}/.config/ruby/default-gems"

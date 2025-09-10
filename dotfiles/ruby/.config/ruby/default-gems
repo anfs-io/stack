@@ -2,12 +2,14 @@ amazing_print
 bundler
 factory_bot_rails
 guard
-pq
+pg
 pry
 pry-doc
 rails
 rbs
 rspec-rails
+rubocop-rails
+rubocop-rspec_rails
 ruby-lsp-rails
 ruby-lsp-rspec
 tailwindcss-rails

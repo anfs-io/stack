@@ -40,7 +40,7 @@ mise_linux() {
   echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=$(detect_arch)] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
   sudo apt update
 
-  sudo apt install curl gpg mise -y
+  sudo apt install cosign curl gpg mise -y
 }
 
 # Dependencies
@@ -110,13 +110,13 @@ configure() {
 
 # Create dirs in ~/.config so stow does NOT softlink the entire directory to this repo
 dotfiles() {
-  dirs=("git" "nvim" "tmuxinator" "zsh")
+  dirs=("git" "mise/conf.d" "nvim" "ruby" "tmuxinator" "zsh")
   for dir in "${dirs[@]}"; do
     mkdir -p $HOME/.config/$dir
   done
 
   # Stow the packages found in ./dotfiles to ~
-  packages=("bash" "git" "nvim" "tmux" "tmuxinator" "zsh")
+  packages=("bash" "git" "mise" "nvim" "ruby" "tmux" "tmuxinator" "zsh")
   for pkg in "${packages[@]}"; do
     stow -d $REPO_DIR/dotfiles -t $HOME $pkg
   done

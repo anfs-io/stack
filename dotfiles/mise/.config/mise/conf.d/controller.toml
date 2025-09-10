@@ -1,0 +1,6 @@
+[tools]
+ansible = "latest"
+opentofu = "latest"
+pipx = "latest"
+python = "latest"
+docker-cli = "latest"
