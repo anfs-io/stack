@@ -5,6 +5,9 @@ export PATH=~/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin
 export EDITOR=nvim
 bindkey -v
 
+
+alias git-repos="find ~ -maxdepth 5 -path ~/.local -prune -o -type d -execdir test -d {}/.git \; -print -prune"
+
 if command -v mise >/dev/null 2>&1; then
   eval "$(mise activate zsh)"
 fi
@@ -21,19 +24,6 @@ alias bat=batcat
 # Docker
 alias dcd="docker compose down"
 alias dvls="docker volume ls"
-
-# Neovim
-nconf() {
-  file="init.lua"
-  if (( $# == 1 )); then
-    file="lua/plugins/${1}.lua"
-  fi
-  (cd ~/.config/nvim; nvim ${file})
-}
-
-alias vi=nvim
-alias vif='nvim $(fzf -m --preview="batcat --color=always {}")'
-
 
 
 # Tmux
@@ -57,18 +47,18 @@ alias tsa="tree -a -l -I tmp -I .git -I .terraform -I .DS_Store -I \"._*\" -I .o
 
 # General Aliases and helpers
 alias cls="clear"
-alias dconf="(cd $HOME/rjayroach/home/dotfiles; nvim .)"
 alias lsar="lsa -R"
 
 zconf() {
+  local dir=$(dirname "${(%):-%x}")
   if [[ $1 == "ls" ]]; then
-    ls ~/.config/zsh
+    ls $dir
   else
     file="aliases.zsh"
     if (( $# == 1 )); then
       file="${1}.zsh"
     fi
-    (cd ~/.config/zsh; nvim ${file}) # ; cd -
+    (cd $dir; nvim ${file})
   fi
 }
 
@@ -83,7 +73,19 @@ zsrc() {
   fi
 }
 
-alias ag="alias | grep ${1}"
+
+# case-insensitive list of defined aliases
+ag() {
+  if [[ -z "$1" ]]; then
+    echo "Usage: ag <pattern>"
+    echo "Search for aliases matching the given pattern"
+    return 1
+  fi
+
+  echo "Aliases matching '$1':"
+  alias | grep --color=auto -i "$1" | sort
+}
+
 
 # cd to a specific dir and invoke fzf
 zcd() {
