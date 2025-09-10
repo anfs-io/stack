@@ -13,6 +13,8 @@ pcs-control() {
     return
   fi
 
+  wget -qO- https://raw.githubusercontent.com/maxcole/pcs-bootstrap/refs/heads/main/controller.sh | bash -s -- all
+
   local repo_dir=$(git-clone $1-controller)
   (cd $repo_dir/ansible; ./controller.yml)
 }

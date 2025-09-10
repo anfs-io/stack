@@ -7,41 +7,11 @@ REPO_URL="git@github.com:maxcole/rjayroach-home.git"
 REPO_DIR=$HOME/rjayroach/home
 SCRIPT_NAME=`basename "$0"`
 
-# Detect the CPU architecture
-detect_arch() {
-  local arch=$(uname -m)
-
-  if [[ "$arch" == "aarch64" || "$arch" == "arm64" ]]; then
-    echo "arm64"
-  else
-    echo "amd64"
-  fi
-}
-
-# Detect the OS
-os() {
-  if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    echo "linux"
-  elif [[ "$OSTYPE" == "darwin"* ]]; then
-    echo "macos"
-  else
-    echo "unsupported"
-  fi
-}
-
-setup_xdg() {
-  mkdir -p $HOME/.cache $HOME/.config $HOME/.local $HOME/.local/share $HOME/.local/state $HOME/.local/bin
-}
-
-# mise; shared with pcs-bootstrap/controller.sh
-mise_linux() {
-  sudo install -dm 755 /etc/apt/keyrings
-  wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | sudo tee /etc/apt/keyrings/mise-archive-keyring.gpg 1> /dev/null
-  echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=$(detect_arch)] https://mise.jdx.dev/deb stable main" | sudo tee /etc/apt/sources.list.d/mise.list
-  sudo apt update
-
-  sudo apt install cosign curl gpg mise -y
-}
+# Download and source the script
+if [ ! -f /tmp/pcs-library.sh ]; then
+  wget -O /tmp/pcs-library.sh https://raw.githubusercontent.com/maxcole/pcs-bootstrap/refs/heads/main/library.sh
+fi
+source /tmp/pcs-library.sh
 
 # Dependencies
 deps_linux() {
