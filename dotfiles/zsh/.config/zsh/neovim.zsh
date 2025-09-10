@@ -1,15 +1,18 @@
 # Neovim
 
 nconf() {
+  local config_dir=$HOME/.config/nvim/lua/plugins
+
   if [[ $1 == "ls" ]]; then
-    ls ~/.config/nvim/lua/plugins
-  else
-    file="init.lua"
-    if (( $# == 1 )); then
-      file="lua/plugins/${1}.lua"
-    fi
-    (cd ~/.config/nvim; nvim ${file})
+    ls $config_dir
+    return
   fi
+
+  file="init.lua"
+  if (( $# == 1 )); then
+    file="lua/plugins/${1}.lua"
+  fi
+  (cd $config_dir; nvim ${file})
 }
 
 alias vi=nvim

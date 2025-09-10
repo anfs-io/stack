@@ -18,7 +18,7 @@ deps_linux() {
   mise_linux
 
   # general
-  sudo apt install git neovim stow tree -y
+  sudo apt install batcat git neovim stow tree -y
 
   # ruby
   sudo apt install build-essential zlib1g-dev libssl-dev libreadline-dev libyaml-dev \
