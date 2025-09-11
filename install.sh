@@ -19,7 +19,7 @@ deps_linux() {
   mise_linux
 
   # general
-  sudo apt install git neovim stow tree -y
+  sudo apt install batcat git neovim stow tree -y
 
   # ruby
   sudo apt install build-essential zlib1g-dev libssl-dev libreadline-dev libyaml-dev \
@@ -81,13 +81,13 @@ configure() {
 
 # Create dirs in ~/.config so stow does NOT softlink the entire directory to this repo
 dotfiles() {
-  dirs=("git" "mise/conf.d" "nvim" "ruby" "tmuxinator" "zsh")
+  dirs=("git" "mise/conf.d" "nvim" "rails" "ruby" "tmuxinator" "zsh")
   for dir in "${dirs[@]}"; do
     mkdir -p $HOME/.config/$dir
   done
 
   # Stow the packages found in ./dotfiles to ~
-  packages=("bash" "git" "mise" "nvim" "ruby" "tmux" "tmuxinator" "zsh")
+  packages=("bash" "git" "mise" "nvim" "rails" "ruby" "tmux" "tmuxinator" "zsh")
   for pkg in "${packages[@]}"; do
     stow -d $SCRIPT_DIR/dotfiles -t $HOME $pkg
   done

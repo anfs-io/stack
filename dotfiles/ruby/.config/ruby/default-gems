@@ -3,8 +3,8 @@ bundler
 factory_bot_rails
 guard
 pg
-pry
 pry-doc
+pry-rails
 rails
 rbs
 rspec-rails
