@@ -63,12 +63,14 @@ zconf() {
 }
 
 zsrc() {
+  setopt local_options nullglob
   for file in $HOME/.config/zsh/*; do
-    source $file
+    source "$file"  # No need to check -f since nullglob only returns existing files
+    # [[ -f "$file" ]] && source "$file"
   done
   if [[ -d "$HOME/.config/zsh-ext" ]]; then
     for file in $HOME/.config/zsh-ext/*; do
-      source $file
+      source "$file"  # No need to check -f since nullglob only returns existing files
     done
   fi
 }
