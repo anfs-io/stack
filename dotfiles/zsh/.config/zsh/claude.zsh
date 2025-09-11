@@ -1,12 +1,18 @@
 # Claude commands (prefixed with cc-)
 
+export CLAUDE_DIR=$HOME/claude
+
+
+# claude code convenience aliases
 alias cc-="clear; claude"
 alias cc-continue="clear; claude --continue"
 alias cc-dangerously-skip-permissions="clear; claude --dangerously-skip-permissions"
 alias cc-resume="clear; claude --resume"
 alias cc-version="claude --version"
 
-export CLAUDE_DIR=$HOME/claude
+
+# custom aliases and functions for managing $CLAUDE_DIR and projects
+alias cc-ls="tree -L 2 $CLAUDE_DIR/projects"
 
 cc-export() {
   mkdir -p $CLAUDE_DIR
@@ -31,6 +37,11 @@ cc-mount() {
 }
 
 cc-bind() {
+  if [[ "$1" == "ls" ]]; then
+    mount |grep $CLAUDE_DIR
+    return
+  fi
+
   local lpath=(${(s:/:)PWD})  # Get current working directory and split by '/'
 
   # Check if we have exactly 4 parts (including empty first element from leading /)

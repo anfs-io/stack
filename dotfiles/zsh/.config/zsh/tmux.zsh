@@ -4,6 +4,7 @@ alias mx=tmuxinator
 
 alias tls="tmux list-sessions"
 
+alias trs="tmux rename-session $1"
 alias trw="tmux rename-window $1"
 
 # Restore connection to the ssh agent socket inside Tmux
