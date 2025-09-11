@@ -16,10 +16,8 @@ source /tmp/pcs-library.sh
 
 # Dependencies
 deps_linux() {
-  mise_linux
-
   # general
-  sudo apt install batcat git neovim stow tree -y
+  sudo apt install bat git neovim stow tree -y
 
   # ruby
   sudo apt install build-essential zlib1g-dev libssl-dev libreadline-dev libyaml-dev \
@@ -30,6 +28,9 @@ deps_linux() {
   if [ ! -d $HOME/.local/share/tmux/plugins/tpm ]; then
     git clone https://github.com/tmux-plugins/tpm $HOME/.local/share/tmux/plugins/tpm
   fi
+
+  mise_linux
+  mise install
 
   # zsh
   sudo apt install fzf zsh -y
