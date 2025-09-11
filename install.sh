@@ -5,7 +5,8 @@ set -e
 
 REPO_URL="git@github.com:maxcole/rjayroach-home.git"
 REPO_DIR=$HOME/rjayroach/home
-SCRIPT_NAME=`basename "$0"`
+SCRIPT_DIR=$(dirname "$0")
+SCRIPT_NAME=$(basename "$0")
 
 # Download and source the script
 if [ ! -f /tmp/pcs-library.sh ]; then
@@ -88,13 +89,13 @@ dotfiles() {
   # Stow the packages found in ./dotfiles to ~
   packages=("bash" "git" "mise" "nvim" "ruby" "tmux" "tmuxinator" "zsh")
   for pkg in "${packages[@]}"; do
-    stow -d $REPO_DIR/dotfiles -t $HOME $pkg
+    stow -d $SCRIPT_DIR/dotfiles -t $HOME $pkg
   done
 }
 
 scripts() {
   mkdir -p $HOME/.local/bin
-  stow -d $REPO_DIR -t $HOME scripts
+  stow -d $SCRIPT_DIR -t $HOME scripts
 }
 
 # Parse command line arguments

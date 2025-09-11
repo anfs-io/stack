@@ -23,3 +23,8 @@ git-clone() {
   fi
   echo $repo_dir
 }
+
+git-status() {
+  git fetch
+  git status
+}
