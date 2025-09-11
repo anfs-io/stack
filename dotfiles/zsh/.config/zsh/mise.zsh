@@ -11,13 +11,13 @@ alias mtd="mise trust ."
 
 mconf() {
   local config_dir=$HOME/.config/mise/conf.d
+  local file="dev.toml"
 
   if [[ $1 == "ls" ]]; then
     ls $config_dir
     return
   fi
 
-  file="dev.toml"
   if (( $# == 1 )); then
     file="${1}.toml"
   fi

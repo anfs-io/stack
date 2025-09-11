@@ -30,3 +30,7 @@ git-status() {
   git fetch
   git status
 }
+
+max-clone() {
+  git clone git@github.com:maxcole/$1.git
+}

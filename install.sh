@@ -81,7 +81,7 @@ configure() {
 
 # Create dirs in ~/.config so stow does NOT softlink the entire directory to this repo
 dotfiles() {
-  dirs=("git" "mise/conf.d" "nvim" "rails" "ruby" "tmuxinator" "zsh")
+  dirs=("git" "mise/conf.d" "nvim" "rails" "ruby" "tmux" "tmuxinator" "zsh")
   for dir in "${dirs[@]}"; do
     mkdir -p $HOME/.config/$dir
   done

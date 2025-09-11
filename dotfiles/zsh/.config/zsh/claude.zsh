@@ -26,7 +26,8 @@ cc-export() {
 
 cc-mount() {
   local ip_add=$(hostname -I | awk '{print $1}')
-  echo "sudo mount -t nfs -o resvport,rw,nosuid $ip_add:$CLAUDE_DIR $(hostname)"
+  # echo "sudo mount -t nfs -o resvport,rw,nosuid $ip_add:$CLAUDE_DIR $(hostname)"
+  echo "sudo mount -t nfs -o resvport,rw,nosuid $ip_add:$CLAUDE_DIR claude"
 }
 
 cc-bind() {

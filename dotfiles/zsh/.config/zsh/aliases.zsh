@@ -3,8 +3,8 @@
 # echo ${0:a:h} # The dir of this script
 export PATH=~/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export EDITOR=nvim
+export DOTFILES_HOME=$HOME/rjayroach/home
 bindkey -v
-
 
 if command -v fzf >/dev/null 2>&1; then
   source <(fzf --zsh)
@@ -19,22 +19,6 @@ alias bat=batcat
 alias dcd="docker compose down"
 alias dvls="docker volume ls"
 
-
-# Tmux
-ta() {
-  if (( $# == 0 )); then
-    tmux attach
-  else
-    tmux attach -t ${1}
-  fi
-}
-alias tls="tmux list-sessions"
-
-# Restore connection to the ssh agent socket inside Tmux
-alias tssh='eval $(tmux showenv -s SSH_AUTH_SOCK)'
-
-alias mx=tmuxinator
-
 # -a shows hidden files; -l follow symlinks; -I ignore
 alias tsa="tree -a -l -I tmp -I .git -I .terraform -I .DS_Store -I \"._*\" -I .obsidian -I apps"
 
@@ -42,10 +26,6 @@ alias tsa="tree -a -l -I tmp -I .git -I .terraform -I .DS_Store -I \"._*\" -I .o
 # General Aliases and helpers
 alias cls="clear"
 alias lsar="lsa -R"
-
-zinstall() {
-  $HOME/rjayroach/home/install.sh dotfiles scripts
-}
 
 zconf() {
   local dir=$(dirname $(readlink -f "${(%):-%x}") )
@@ -73,6 +53,14 @@ zsrc() {
       source "$file"  # No need to check -f since nullglob only returns existing files
     done
   fi
+}
+
+zupdate() {
+  pushd $DOTFILES_HOME &>/dev/null
+  git pull
+  ./install.sh dotfiles scripts
+  zsrc
+  popd &>/dev/null
 }
 
 
