@@ -30,7 +30,7 @@ deps_linux() {
   fi
 
   mise_linux
-  mise install
+  eval "$(mise activate zsh)" && mise install
 
   # zsh
   sudo apt install fzf zsh -y

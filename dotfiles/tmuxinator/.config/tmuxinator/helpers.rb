@@ -1,30 +1,17 @@
-# ~/.tmuxinator/helpers.rb
+# helpers.rb
 require 'ostruct'
 
-class TmuxinatorConfig < OpenStruct
-  def initialize(filename:, project_root: nil, profile: nil, section: nil, **options)
-    @profile = profile
-    @section = section
-    @filename = filename
-    @custom_project_root = project_root
+class TmuxinatorProject < OpenStruct
+  attr_reader :filename, :name, :root
+
+  def initialize(filename:, name: nil, root: nil, count: 4, **options)
+    @filename = File.realpath(filename)
+    @name = name || File.basename(@filename, '.yml')
+    @root = root || @filename.split('/')[0..count].join('/')
     super(options)
   end
   
-  # Path helpers
-  def para_root = ENV['PARA_HOME'] || "#{ENV['HOME']}/para"
-  
-  def subdir(*paths) = File.join(project_root, *paths)
-  
-  # Auto-configuration helpers
-  def project_name = File.basename(@filename, '.yml')
-  
-  def project_root
-    return @custom_project_root if @custom_project_root
-
-    # Convert filename to path: rws-infra-ansible.yml -> rws/infra/ansible
-    project_path = project_name.gsub('-', '/')
-    File.join(para_root, @profile, @section, project_path)
-  end
+  def subdir(*paths) = File.join(root, *paths)
   
   # Command helpers
   def rails_cmd(cmd) = "bundle exec rails #{cmd}"
