@@ -1,17 +1,31 @@
 # helpers.rb
 require 'ostruct'
+require 'pathname'
 
 class TmuxinatorProject < OpenStruct
-  attr_reader :filename, :name, :root
+  attr_reader :path, :file, :name, :root, :repo, :remote_prefix
 
-  def initialize(filename:, name: nil, root: nil, count: 4, **options)
-    @filename = File.realpath(filename)
-    @name = name || File.basename(@filename, '.yml')
-    @root = root || @filename.split('/')[0..count].join('/')
+  def initialize(path:, name: nil, root: nil, repo: nil, remote_prefix: nil, **options)
+    @path = path
+    @file = Pathname.new(@path) # .realpath # returns the actual path of a symlink
+    @name = name || @file.basename('.yml').to_s
+    root ||= "#{Dir.home}/#{@name.sub('-', '/')}"
+    @root = Pathname.new(root)
+    @remote_prefix = remote_prefix || ENV['TMUXINATOR_GIT_REMOTE_PREFIX']
+    @repo = repo || "#{@remote_prefix}/#{@name}.git"
     super(options)
   end
-  
-  def subdir(*paths) = File.join(root, *paths)
+
+  def setup
+    return self if root.exist?
+
+    puts "Project not found. Cloning from #{repo} to #{root}"
+    require 'git'
+    Git.clone(repo, root)
+    self
+  end
+
+  def subdir(*paths) = root.join(*paths)
   
   # Command helpers
   def rails_cmd(cmd) = "bundle exec rails #{cmd}"

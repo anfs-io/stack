@@ -1,6 +1,7 @@
 amazing_print
 bundler
 factory_bot_rails
+git
 guard
 pg
 pry-doc

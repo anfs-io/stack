@@ -88,7 +88,7 @@ dotfiles() {
   done
 
   # Stow the packages found in ./dotfiles to ~
-  packages=("bash" "git" "mise" "nvim" "rails" "ruby" "tmux" "tmuxinator" "zsh")
+  packages=("bash" "claude" "git" "mise" "nvim" "rails" "ruby" "tmux" "tmuxinator" "zsh")
   for pkg in "${packages[@]}"; do
     stow -d $SCRIPT_DIR/dotfiles -t $HOME $pkg
   done

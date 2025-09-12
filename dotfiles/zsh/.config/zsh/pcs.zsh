@@ -5,16 +5,5 @@ pcs-adopt() {
 }
 
 pcs-control() {
-  valid=("rws" "roteoh")
-  valid_string="|$(IFS='|'; echo "${valid[*]}")|"
-
-  if [[ "$valid_string" != *"|$1|"* ]]; then
-    echo "arg must be 'rws' or 'roteoh'"
-    return
-  fi
-
   wget -qO- https://raw.githubusercontent.com/maxcole/pcs-bootstrap/refs/heads/main/controller.sh | bash -s -- all
-
-  local repo_dir=$(git-clone $1-controller)
-  (cd $repo_dir/ansible; ./controller.yml)
 }

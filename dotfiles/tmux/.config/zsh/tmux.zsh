@@ -1,5 +1,7 @@
 # Tmux
 
+export TMUXINATOR_GIT_REMOTE_PREFIX="git@github.com:maxcole"
+
 alias mx=tmuxinator
 
 alias tls="tmux list-sessions"

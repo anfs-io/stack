@@ -1,0 +1,27 @@
+# rws-controller.yml
+<% 
+  require "#{File.dirname(path)}/helpers.rb"
+  project = TmuxinatorProject.new(path: path).setup # path is a value from Tmuxinator
+%>
+
+name: <%= project.name %>
+root: <%= project.root %>
+
+# Global settings
+attach: true
+tmux_command: tmux
+
+windows:
+  - ansible:
+      root: <%= project.subdir('ansible') %>
+      layout: <%= project.layout(:claude) %>
+      panes:
+        - claude
+        - 
+        - nvim .
+  - terraform:
+      root: <%= project.subdir('terraform') %>
+      layout: <%= project.layout(:even_horizontal) %>
+      panes:
+        - 
+        - nvim .
