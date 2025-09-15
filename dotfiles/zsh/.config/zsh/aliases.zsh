@@ -3,12 +3,25 @@
 # echo ${0:a:h} # The dir of this script
 export PATH=~/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export EDITOR=nvim
-export DOTFILES_HOME=$HOME/rjayroach/home
 bindkey -v
 
 if command -v fzf >/dev/null 2>&1; then
   source <(fzf --zsh)
 fi
+
+# Project directories and aliases
+export CONFIG_DIR=$HOME/.config
+export CODE_DIR=$HOME/code
+export PROJECTS_DIR=$CODE_DIR/projects
+export PROJECTS_GIT_REMOTE_PREFIX="git@github.com:maxcole"
+export DOTFILES_PATH=rjayroach/config
+export DOTFILES_HOME=$CODE_DIR/$DOTFILES_PATH
+
+alias pcs="cd $PROJECTS_DIR/pcs"
+alias rjayroach="cd $PROJECTS_DIR/rjayroach"
+alias roteoh="cd $PROJECTS_DIR/roteoh"
+alias rws="cd $PROJECTS_DIR/rws"
+
 
 # Clasp
 alias clp="clasp push"
@@ -30,6 +43,7 @@ alias lsar="lsa -R"
 zconf() {
   local dir=$(dirname $(readlink -f "${(%):-%x}") )
   if [[ $1 == "ls" ]]; then
+    dir="$CONFIG_DIR/zsh"
     ls $dir
   elif [[ $1 == "pwd" ]]; then
     echo $dir
@@ -37,30 +51,47 @@ zconf() {
     file="aliases.zsh"
     if (( $# == 1 )); then
       file="${1}.zsh"
+      if [ ! -f "$dir/$file" ]; then
+        dir="$CONFIG_DIR/zsh"
+      fi
     fi
     (cd $dir; nvim ${file})
   fi
 }
 
+zlinks() {
+  local cmd="find \$HOME -type l -exec ls -la {} \\; 2>/dev/null | grep '$DOTFILES_PATH' | awk '{print \$9}'"
+
+  if [[ "$1" == "--delete" ]]; then
+    cmd="$cmd | xargs rm"
+  fi
+
+  eval $cmd
+}
+
 zsrc() {
+  # No need to check if files exist since nullglob only returns existing files
   setopt local_options nullglob
-  for file in $HOME/.config/zsh/*; do
-    source "$file"  # No need to check -f since nullglob only returns existing files
-    # [[ -f "$file" ]] && source "$file"
+
+  for file in $CONFIG_DIR/zsh/*; do
+    source "$file"
   done
-  if [[ -d "$HOME/.config/zsh-ext" ]]; then
-    for file in $HOME/.config/zsh-ext/*; do
-      source "$file"  # No need to check -f since nullglob only returns existing files
+
+  if [[ -d "$CONFIG_DIR/zsh-ext" ]]; then
+    for file in $CONFIG_DIR/zsh-ext/*; do
+      source "$file"
     done
   fi
 }
 
 zupdate() {
-  pushd $DOTFILES_HOME &>/dev/null
-  git pull
+  pushd $DOTFILES_HOME &> /dev/null
+  if [[ $# -eq 1 && "$1" == "pull" ]]; then
+    git pull
+  fi
   ./install.sh dotfiles scripts
   zsrc
-  popd &>/dev/null
+  popd &> /dev/null
 }
 
 
@@ -74,44 +105,4 @@ ag() {
 
   echo "Aliases matching '$1':"
   alias | grep --color=auto -i "$1" | sort
-}
-
-
-# cd to a specific dir and invoke fzf
-zcd() {
-  export FZF_DEFAULT_COMMAND='find . -type d -not -path "*.git*" -not -path "*tmp*" -not -path "*node_modules*"'
-  cd $1
-  local res=`fzf`
-  if [ -z $res ]; then
-    cd -
-  else
-    cd $res
-  fi
-  unset FZF_DEFAULT_COMMAND
-}
-
-# Function to ensure a line exists in a file
-# Usage: line_in_file <filename> <line>
-# Set VERBOSE=true to enable output messages
-line_in_file() {
-  local filename="$1"
-  local line="$2"
-
-  # Validate arguments
-  if [ $# -ne 2 ]; then
-    echo "Usage: line_in_file <filename> <line>" >&2
-    return 1
-  fi
-
-  # Create file if it doesn't exist
-  touch "$filename"
-
-  # Check if line already exists
-  if grep -Fxq "$line" "$filename"; then
-    verbose "Line already exists in ${filename}: $line"
-  else
-    # Line doesn't exist, append it
-    echo "$line" >> "$filename"
-    verbose "Added line to ${filename}: $line"
-  fi
 }

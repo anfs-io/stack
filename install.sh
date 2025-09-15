@@ -3,8 +3,12 @@ set -e
 
 # TODO: Add a second stow to loop on which has packages without the leading .config with dest $HOME/.config
 
+CODE_URL="git@github.com:maxcole/claude.git"
+CODE_DIR=$HOME/code
+
 REPO_URL="git@github.com:maxcole/rjayroach-home.git"
-REPO_DIR=$HOME/rjayroach/home
+REPO_DIR=$CODE_DIR/projects/rjayroach/home
+
 SCRIPT_DIR=$(dirname "$0")
 SCRIPT_NAME=$(basename "$0")
 
@@ -65,6 +69,10 @@ deps() {
     deps_linux
   elif [[ "$(os)" == "macos" ]]; then
     deps_macos
+  fi
+
+  if [[ ! -d "$CODE_DIR" ]]; then
+    git clone $CODE_URL $CODE_DIR
   fi
 
   if [[ ! -d "$REPO_DIR" ]]; then

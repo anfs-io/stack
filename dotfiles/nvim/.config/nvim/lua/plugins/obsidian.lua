@@ -21,8 +21,8 @@ return {
   opts = {
     workspaces = {
       {
-        name = "claude",
-        path = "~/claude",
+        name = "code",
+        path = "$CODE_DIR",
       },
       -- {
       --   name = "work",

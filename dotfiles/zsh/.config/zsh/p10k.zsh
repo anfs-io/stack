@@ -85,7 +85,8 @@
     gcloud                  # google cloud cli account and project (https://cloud.google.com/)
     google_app_cred         # google application credentials (https://cloud.google.com/docs/authentication/production)
     toolbox                 # toolbox name (https://github.com/containers/toolbox)
-    context                 # user@hostname
+    # context                 # user@hostname
+    custom_context          # user@hostname -f
     nordvpn                 # nordvpn connection status, linux only (https://nordvpn.com/)
     ranger                  # ranger shell (https://github.com/ranger/ranger)
     yazi                    # yazi shell (https://github.com/sxyazi/yazi)
@@ -117,6 +118,11 @@
     # wifi                  # wifi speed
     # example               # example user-defined segment (see prompt_example function below)
   )
+
+  # Custom prompt that runs hostname -f
+  typeset -g POWERLEVEL9K_CUSTOM_CONTEXT="echo \$(whoami)@\$(hostname -f)"
+  typeset -g POWERLEVEL9K_CUSTOM_CONTEXT_FOREGROUND=180
+  typeset -g POWERLEVEL9K_CUSTOM_CONTEXT_BACKGROUND=0
 
   # Defines character set used by powerlevel10k. It's best to let `p10k configure` set it for you.
   typeset -g POWERLEVEL9K_MODE=nerdfont-v3

@@ -1,6 +1,6 @@
 # rjayroach-home.yml
 <% 
-  require "#{File.dirname(path)}/helpers.rb"
+  require "#{File.dirname(path)}/tmuxinator_project.rb"
   project = TmuxinatorProject.new(path: path).setup # path is a value from Tmuxinator
 %>
 
@@ -16,11 +16,11 @@ windows:
       root: <%= project.subdir('dotfiles') %>
       layout: <%= project.layout(:even_horizontal) %>
       panes:
-        -
-        -
+        - tree -a -L 3
+        - cd tmuxinator/.config/tmuxinator; nvim .
   - scripts:
-      root: <%= project.subdir('scripts') %>
+      root: <%= project.subdir('scripts/.local/bin') %>
       layout: <%= project.layout(:even_horizontal) %>
       panes:
         -
-        -
+        - nvim .

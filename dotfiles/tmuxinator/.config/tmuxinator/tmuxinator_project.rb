@@ -3,16 +3,17 @@ require 'ostruct'
 require 'pathname'
 
 class TmuxinatorProject < OpenStruct
-  attr_reader :path, :file, :name, :root, :repo, :remote_prefix
+  attr_accessor :path, :file, :name, :root, :repo, :remote_prefix
 
   def initialize(path:, name: nil, root: nil, repo: nil, remote_prefix: nil, **options)
     @path = path
     @file = Pathname.new(@path) # .realpath # returns the actual path of a symlink
     @name = name || @file.basename('.yml').to_s
-    root ||= "#{Dir.home}/#{@name.sub('-', '/')}"
+    root ||= "#{ENV.fetch('PROJECTS_DIR', Dir.home)}/#{@name.gsub('-', '/')}"
     @root = Pathname.new(root)
-    @remote_prefix = remote_prefix || ENV['TMUXINATOR_GIT_REMOTE_PREFIX']
-    @repo = repo || "#{@remote_prefix}/#{@name}.git"
+    @remote_prefix = remote_prefix || ENV.fetch('PROJECTS_GIT_REMOTE_PREFIX')
+    repo ||= @name
+    @repo = "#{@remote_prefix}/#{repo}.git"
     super(options)
   end
 

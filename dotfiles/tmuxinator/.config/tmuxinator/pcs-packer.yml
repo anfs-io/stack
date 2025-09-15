@@ -1,0 +1,51 @@
+# pcs-packer.yml
+<%
+  require "#{File.dirname(path)}/tmuxinator_project.rb"
+  project = TmuxinatorProject.new(path: path).setup # path is a value from Tmuxinator
+%>
+
+name: <%= project.name %>
+root: <%= project.root %>
+
+# Global settings
+attach: true
+tmux_command: tmux
+
+windows:
+  - main:
+      root: <%= project.root %>
+      layout: <%= project.layout(:even_horizontal) %>
+      # layout: <%= project.layout(:claude) %>
+      panes:
+        # - claude
+        -
+        - # nvim .
+  # - vars:
+  #     root: <%= project.subdir('vars') %>
+  #     layout: <%= project.layout(:even_horizontal) %>
+  #     # root: ~/para/professional/areas/rws/packer/vars
+  #     panes:
+  #       -
+  #       - nvim
+  - builds:
+      root: <%= project.subdir('builds/base') %>
+      layout: <%= project.layout(:even_horizontal) %>
+      panes:
+        -
+        - # nvim
+  # - builders:
+  #     root: <%= project.subdir('builders/proxmox-iso') %>
+  #     layout: <%= project.layout(:even_horizontal) %>
+  #     # layout: even-horizontal
+  #     # root: ~/para/professional/areas/rws/packer/builders/proxmox-iso
+  #     panes:
+  #       - nvim
+  #       -
+  # - distros:
+  #     root: <%= project.subdir('distros/debian/bookworm') %>
+  #     layout: <%= project.layout(:even_horizontal) %>
+  #     # layout: even-horizontal
+  #     # root: ~/para/professional/areas/rws/packer/
+  #     panes:
+  #       - nvim
+  #       -

@@ -1,6 +1,6 @@
 # roteoh-controller.yml
 <% 
-  require "#{File.dirname(path)}/helpers.rb"
+  require "#{File.dirname(path)}/tmuxinator_project.rb"
   project = TmuxinatorProject.new(path: path).setup # path is a value from Tmuxinator
 %>
 
