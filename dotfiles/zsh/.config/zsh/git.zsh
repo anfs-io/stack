@@ -3,8 +3,6 @@
 alias gmv="git mv"
 alias gpl="git pull"
 
-alias git-repos="find ~ -maxdepth 5 -path ~/.local -prune -o -type d -execdir test -d {}/.git \; -print -prune | sort"
-
 # git add, commit, push
 gacp() {
   local message=""
@@ -18,12 +16,22 @@ gacp() {
   git push
 }
 
-git-clone() {
-  local repo_dir=$HOME/$(echo "$1" | sed 's/[-\.]/\//g')
-  if [ ! -d $repo_dir ]; then
-    git clone git@github.com:maxcole/$1.git $repo_dir
-  fi
-  echo $repo_dir
+git-repos() {
+  local search_dir="${1:-$PROJECTS_DIR}"
+  local current_dir=$PWD
+
+  find "$search_dir" -maxdepth 3 -name ".git" -type d | while read gitdir; do
+    local repo_path=$(dirname "$gitdir")
+    local xstatus=""
+
+    cd "$repo_path"
+    if ! git diff-index --quiet HEAD 2>/dev/null || [[ -n $(git ls-files --others --exclude-standard) ]]; then
+      xstatus=" - has-modifications"
+    fi
+
+    echo "$repo_path$xstatus"
+  done
+  cd $current_dir
 }
 
 git-status() {
@@ -32,5 +40,5 @@ git-status() {
 }
 
 max-clone() {
-  git clone git@github.com:maxcole/$1.git
+  git clone $PROJECTS_GIT_REMOTE_PREFIX/$1.git
 }

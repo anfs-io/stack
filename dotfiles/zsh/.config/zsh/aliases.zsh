@@ -14,13 +14,13 @@ export CONFIG_DIR=$HOME/.config
 export CODE_DIR=$HOME/code
 export PROJECTS_DIR=$CODE_DIR/projects
 export PROJECTS_GIT_REMOTE_PREFIX="git@github.com:maxcole"
-export DOTFILES_PATH=rjayroach/config
+export DOTFILES_PATH=rjayroach/home
 export DOTFILES_HOME=$CODE_DIR/$DOTFILES_PATH
 
-alias pcs="cd $PROJECTS_DIR/pcs"
-alias rjayroach="cd $PROJECTS_DIR/rjayroach"
-alias roteoh="cd $PROJECTS_DIR/roteoh"
-alias rws="cd $PROJECTS_DIR/rws"
+pcs() { cd "$PROJECTS_DIR/pcs/$1" }
+rjayroach() { cd "$PROJECTS_DIR/rjayroach/$1" }
+roteoh() { cd "$PROJECTS_DIR/roteoh$1" }
+rws() { cd "$PROJECTS_DIR/rws/$1" }
 
 
 # Clasp
