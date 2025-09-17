@@ -2,6 +2,17 @@
 <% 
   require "#{File.dirname(path)}/tmuxinator_project.rb"
   project = TmuxinatorProject.new(path: path).setup # path is a value from Tmuxinator
+
+  # Clone the pcs-terraform-modules to the pcs dir
+  pcs_modules_dir = project.projects_dir.join('pcs/terraform-modules')
+  unless pcs_modules_dir.join('.git').exist?
+    repo = "#{project.remote_prefix}/pcs-terraform-modules.git"
+    require 'git'
+    Git.clone(repo, pcs_modules_dir)
+  end
+
+  modules_dir = project.root.join('terraform/modules')
+  project.symlink(from: modules_dir, to: pcs_modules_dir)
 %>
 
 name: <%= project.name %>

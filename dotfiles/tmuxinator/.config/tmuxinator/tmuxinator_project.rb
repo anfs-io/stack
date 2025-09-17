@@ -8,9 +8,9 @@ class TmuxinatorProject < OpenStruct
 
   def initialize(path:, name: nil, root: nil, repo: nil, remote_prefix: nil, **options)
     @path = path
-    @file = Pathname.new(@path) # .realpath # returns the actual path of a symlink
-    @name = name || @file.basename('.yml').to_s
-    root ||= "#{projects_dir}/#{@name.gsub('-', '/')}"
+    @file = Pathname.new(@path) # The absolute path to the tmuxinator file, e.g. /home/user/.config/tmuxinator/rws-controller.yml
+    @name = name || @file.basename('.yml').to_s # The name minux path and extenstion, e.g. rws-controller
+    root ||= "#{projects_dir}/#{@name.gsub('-', '/')}" # /home/user/code/projects/rws/controller
     @root = Pathname.new(root)
     @remote_prefix = remote_prefix || ENV.fetch('PROJECTS_GIT_REMOTE_PREFIX')
     repo ||= @name
@@ -27,6 +27,33 @@ class TmuxinatorProject < OpenStruct
     require 'git'
     Git.clone(repo, root)
     self
+  end
+
+  def parent_setup?
+    parent = root.parent
+    unless parent.join('.git').exist?
+      puts "Run parent tmuxinator project first or directly clone the parent repo to #{parent}"
+      Kernel.exit
+    end
+    true
+  end
+
+  def symlink(from:, to:)
+    return if from.symlink?
+
+    rename_to_orig(from) if from.exist? # it is not a symlink so move it
+
+    from.make_symlink(to)
+    puts "symlinked #{from} to #{to}"
+    puts "\nrestart"
+    Kernel.exit
+  end
+
+  def rename_to_orig(from)
+    to_string = "#{from.split.last}.orig"
+    to = from.parent.join(to_string)
+    from.rename(to_dir)
+    puts "renamed #{from} to #{to}"
   end
 
   def subdir(*paths) = root.join(*paths)

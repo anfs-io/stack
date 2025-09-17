@@ -1,7 +1,8 @@
 # roteoh-test-rtest.yml
 <% 
   require "#{File.dirname(path)}/tmuxinator_project.rb"
-  project = TmuxinatorProject.new(path: path).setup # path is a value from Tmuxinator
+  project = TmuxinatorProject.new(path: path) # path is a value from Tmuxinator
+  project.setup if project.parent_setup?
 %>
 
 name: <%= project.name %>

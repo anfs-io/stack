@@ -2,18 +2,8 @@
 <% 
   require "#{File.dirname(path)}/tmuxinator_project.rb"
   project = TmuxinatorProject.new(path: path, repo: 'pcs.infra').setup # path is a value from Tmuxinator
-  ansible_dir = Pathname.new(Dir.home).join('.ansible/collections/ansible_collections/pcs/infra')
-  if not ansible_dir.symlink?
-    if ansible_dir.exist?
-      orig_dir = ansible_dir.parent.join('infra.orig')
-      ansible_dir.rename(orig_dir)
-      puts "renamed #{ansible_dir} to #{orig_dir}"
-    end
-    ansible_dir.make_symlink(project.root)
-    puts "symlinked #{ansible_dir} to #{project.root}"
-    puts "\nrestart"
-    Kernel.exit
-  end
+  collections_dir = Pathname.new(Dir.home).join('.ansible/collections/ansible_collections/pcs/infra')
+  project.symlink(from: collections_dir, to: project.root)
 %>
 
 name: <%= project.name %>
