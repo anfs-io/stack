@@ -17,11 +17,29 @@ windows:
       layout: <%= project.layout(:claude) %>
       panes:
         - claude
-        - 
+        - tree
+        - nvim .
+  - unifi:
+      root: <%= project.projects_dir.join('pcs/infra/roles/unifi') %>
+      layout: <%= project.layout(:even_horizontal) %>
+      panes:
+        - tree
+        - nvim .
+  - proxmox:
+      root: <%= project.projects_dir.join('pcs/infra/roles/proxmox') %>
+      layout: <%= project.layout(:even_horizontal) %>
+      panes:
+        - tree
+        - nvim .
+  - netboot:
+      root: <%= project.projects_dir.join('pcs/infra/roles/netbootxyz') %>
+      layout: <%= project.layout(:even_horizontal) %>
+      panes:
+        - tree
         - nvim .
   - terraform:
       root: <%= project.subdir('terraform') %>
       layout: <%= project.layout(:even_horizontal) %>
       panes:
-        - 
+        - tree
         - nvim .

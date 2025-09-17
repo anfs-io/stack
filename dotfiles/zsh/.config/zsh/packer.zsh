@@ -1,20 +1,16 @@
-# packer repo commands
-
-# packer cache dir
-export PACKER_CONFIG_DIR="$HOME/.local/share/packer"
+# Packer
 
 # packer_dir() { ~/dev/ops/packer/.builds/base/proxmox-iso }
 # packer_dir() { ~/dev/ops/packer/.builds/base/debian-bookworm }
-packer_dir() { "$PARA_HOME/professional/areas/home-lab/provider/packer" }
+export PACKER_DIR="$PROJECTS_DIR/pcs/packer"
 
-pc() {
-  cd ~/packer
-  ./packer.yml "$@"
-  packer_dir
-}
+# export PACKER_CONFIG_DIR="$HOME/.local/share/packer"
+export PACKER_CACHE_DIR="$HOME/.cache/packer"
+
+pc() { (cd $PACKER_DIR; ./packer.yml "$@") }
 
 pb() {
-  packer_dir
+  cd $PACKER_DIR
   packer build -var-file=./_build.pkrvars.hcl .
 }
 
@@ -24,7 +20,7 @@ pcb() {
 }
 
 pt() {
-  cd ~/packer
+  cd $PACKER_DIR
   tree .builds
 }
 

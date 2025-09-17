@@ -1,5 +1,7 @@
 # shortcuts for pcs functions
 
+alias pcs-site="echo $PCS_SITE"
+
 pcs-adopt() {
   wget -qO- https://raw.githubusercontent.com/maxcole/pcs-bootstrap/refs/heads/main/adopt.sh | sudo bash -s -- all
 }

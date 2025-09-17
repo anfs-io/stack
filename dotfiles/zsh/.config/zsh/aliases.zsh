@@ -19,9 +19,19 @@ export DOTFILES_HOME=$CODE_DIR/$DOTFILES_PATH
 
 pcs() { cd "$PROJECTS_DIR/pcs/$1" }
 rjayroach() { cd "$PROJECTS_DIR/rjayroach/$1" }
-roteoh() { cd "$PROJECTS_DIR/roteoh$1" }
+roteoh() { cd "$PROJECTS_DIR/roteoh/$1" }
 rws() { cd "$PROJECTS_DIR/rws/$1" }
 
+# alias ip_addr="echo $(hostname -I | awk '{print $1}')"
+alias ip_addr="echo $(ip route get 8.8.8.8 | awk '{print $7}' | head -1)"
+
+ostype() {
+  case "$(uname)" in
+    Darwin) echo "mac" ;;
+    Linux)  echo "linux" ;;
+    *)      echo "unknown" ;;
+  esac
+}
 
 # Clasp
 alias clp="clasp push"

@@ -1,4 +1,5 @@
-# helpers.rb
+# tmuxinator_project.rb
+
 require 'ostruct'
 require 'pathname'
 
@@ -9,13 +10,15 @@ class TmuxinatorProject < OpenStruct
     @path = path
     @file = Pathname.new(@path) # .realpath # returns the actual path of a symlink
     @name = name || @file.basename('.yml').to_s
-    root ||= "#{ENV.fetch('PROJECTS_DIR', Dir.home)}/#{@name.gsub('-', '/')}"
+    root ||= "#{projects_dir}/#{@name.gsub('-', '/')}"
     @root = Pathname.new(root)
     @remote_prefix = remote_prefix || ENV.fetch('PROJECTS_GIT_REMOTE_PREFIX')
     repo ||= @name
     @repo = "#{@remote_prefix}/#{repo}.git"
     super(options)
   end
+
+  def projects_dir() = @projects_dir ||= Pathname.new(ENV.fetch('PROJECTS_DIR', Dir.home))
 
   def setup
     return self if root.exist?

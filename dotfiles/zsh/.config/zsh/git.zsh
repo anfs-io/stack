@@ -16,24 +16,6 @@ gacp() {
   git push
 }
 
-git-repos() {
-  local search_dir="${1:-$PROJECTS_DIR}"
-  local current_dir=$PWD
-
-  find "$search_dir" -maxdepth 3 -name ".git" -type d | while read gitdir; do
-    local repo_path=$(dirname "$gitdir")
-    local xstatus=""
-
-    cd "$repo_path"
-    if ! git diff-index --quiet HEAD 2>/dev/null || [[ -n $(git ls-files --others --exclude-standard) ]]; then
-      xstatus=" - has-modifications"
-    fi
-
-    echo "$repo_path$xstatus"
-  done
-  cd $current_dir
-}
-
 git-status() {
   git fetch
   git status

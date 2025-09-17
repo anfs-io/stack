@@ -8,8 +8,6 @@ alias cc-resume="clear; claude --resume"
 alias cc-version="claude --version"
 
 # Custom aliases and functions
-alias cc-ls="tree -L 2 $PROJECTS_DIR"
-
 cc-export() {
   if [[ ! -d $CODE_DIR ]]; then
     echo "$CODE_DIR not found. Exiting"
@@ -30,11 +28,45 @@ cc-export() {
 }
 
 cc-mount() {
-  if [[ ! -d $CODE_DIR ]]; then
-    echo "$CODE_DIR not found. Nothing to mount"
-    return
+  if [[ $1 == "ls" ]]; then
+    if [[ $# -ne 2 ]]; then
+      echo "must provide IP address of remote host"
+      return
+    fi
+    if command -v showmount >/dev/null 2>&1; then
+      showmount -e $2
+    else
+      echo "install NFS packages and retry"
+    fi
   fi
+  # Exports list on 172.31.16.20:
+  # /home/ansible/claude                172.31.0.0/16
+}
 
-  local ip_add=$(hostname -I | awk '{print $1}')
-  echo "sudo mount -t nfs -o resvport,rw,nosuid $ip_add:$CODE_DIR claude"
+cc-mount-orig() {
+  if sudo exportfs -v | grep -q "$CODE_DIR"; then
+    echo "sudo mount -t nfs -o resvport,rw,nosuid $ip_addr:$CODE_DIR claude"
+  else
+    echo "$CODE_DIR not found. Run cc-export first"
+  fi
+}
+
+alias cc-projects="tree -L 2 $PROJECTS_DIR"
+
+cc-repos() {
+  local search_dir="${1:-$PROJECTS_DIR}"
+  local current_dir=$PWD
+
+  find "$search_dir" -maxdepth 5 -name ".git" -type d | while read gitdir; do
+    local repo_path=$(dirname "$gitdir")
+    local xstatus=""
+
+    cd "$repo_path"
+    if ! git diff-index --quiet HEAD 2>/dev/null || [[ -n $(git ls-files --others --exclude-standard) ]]; then
+      xstatus=" - has-modifications"
+    fi
+
+    echo "$repo_path$xstatus"
+  done
+  cd $current_dir
 }

@@ -1,9 +1,31 @@
 
+## Deployment Types
 
-## Requirements
+### macOS Host (user roberto)
+
+- May have been adopted (or 
+- May be actively managed
+
+- will have ssh private keys
+
+### Linux Development Host (user roberto)
+
+- May have been adopted
+- May be actively managed
+- May be a Control Host
+
+
+### Linux Control Host (user ansible)
+
+- Must be adopted
+- Must be actively managed
+
+
 
 ssh credentials for GH repo access
+
 sudo priviledges
+
 
 ## Commands
 

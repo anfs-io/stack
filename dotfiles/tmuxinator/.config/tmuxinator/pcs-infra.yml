@@ -2,6 +2,18 @@
 <% 
   require "#{File.dirname(path)}/tmuxinator_project.rb"
   project = TmuxinatorProject.new(path: path, repo: 'pcs.infra').setup # path is a value from Tmuxinator
+  ansible_dir = Pathname.new(Dir.home).join('.ansible/collections/ansible_collections/pcs/infra')
+  if not ansible_dir.symlink?
+    if ansible_dir.exist?
+      orig_dir = ansible_dir.parent.join('infra.orig')
+      ansible_dir.rename(orig_dir)
+      puts "renamed #{ansible_dir} to #{orig_dir}"
+    end
+    ansible_dir.make_symlink(project.root)
+    puts "symlinked #{ansible_dir} to #{project.root}"
+    puts "\nrestart"
+    Kernel.exit
+  end
 %>
 
 name: <%= project.name %>
@@ -16,7 +28,7 @@ windows:
       root: <%= project.subdir('playbooks') %>
       layout: <%= project.layout(:even_horizontal) %>
       panes:
-        - 
+        -
         - nvim .
   - roles:
       root: <%= project.subdir('roles') %>
