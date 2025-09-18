@@ -17,6 +17,7 @@ export PROJECTS_GIT_REMOTE_PREFIX="git@github.com:maxcole"
 export DOTFILES_PATH=rjayroach/home
 export DOTFILES_HOME=$CODE_DIR/$DOTFILES_PATH
 
+config() { cd "$CONFIG_DIR/$1" }
 pcs() { cd "$PROJECTS_DIR/pcs/$1" }
 rjayroach() { cd "$PROJECTS_DIR/rjayroach/$1" }
 roteoh() { cd "$PROJECTS_DIR/roteoh/$1" }

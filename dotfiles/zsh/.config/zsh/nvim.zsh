@@ -11,7 +11,11 @@ nconf() {
   fi
 
   if (( $# == 1 )); then
-    config_dir=$plugins_dir
+    if [[ "$1" == "options" ]]; then
+      config_dir=$config_dir/lua
+    else
+      config_dir=$plugins_dir
+    fi
     file="${1}.lua"
   fi
   (cd $config_dir; nvim "${file}")
