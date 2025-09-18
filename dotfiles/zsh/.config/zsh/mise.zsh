@@ -8,9 +8,10 @@ eval "$(mise activate zsh)"
 
 alias mra="mise run all"
 alias mtd="mise trust ."
+alias mui="mise upgrade --interactive"
 
 mconf() {
-  local config_dir=$HOME/.config/mise/conf.d
+  local config_dir=$CONFIG_DIR/mise/conf.d
   local file="dev.toml"
 
   if [[ $1 == "ls" ]]; then
