@@ -13,7 +13,8 @@ fi
 export CONFIG_DIR=$HOME/.config
 export CODE_DIR=$HOME/code
 export PROJECTS_DIR=$CODE_DIR/projects
-export PROJECTS_GIT_REMOTE_PREFIX="git@github.com:maxcole"
+export PROJECTS_GITHUB_ORG="maxcole"
+export PROJECTS_GIT_REMOTE_PREFIX="git@github.com:$PROJECTS_GITHUB_ORG"
 export DOTFILES_PATH=rjayroach/home
 export DOTFILES_HOME=$PROJECTS_DIR/$DOTFILES_PATH
 

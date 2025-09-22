@@ -1,6 +1,10 @@
 # Code aliases and functions (prefixed with co-)
 # Convenience functions for managing projects in the $CODE_DRI and $PROJECTS_DIR
 
+co-clone() {
+  git clone $PROJECTS_GIT_REMOTE_PREFIX/$1.git
+}
+
 co-export() {
   if [[ ! -d $CODE_DIR ]]; then
     echo "$CODE_DIR not found. Exiting"

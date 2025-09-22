@@ -6,6 +6,7 @@ fi
 
 eval "$(mise activate zsh)"
 
+alias mi="mise install"
 alias mra="mise run all"
 alias mtd="mise trust ."
 alias mui="mise upgrade --interactive"

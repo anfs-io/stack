@@ -19,4 +19,5 @@ pyactivate() {
 }
 
 # pyactivate lstack
+# TODO: move this to mise
 # source $HOME/.local/share/python/lstack/bin/activate

@@ -60,10 +60,15 @@ class Project < Thor
       Dir.chdir(path.parent) { system(rails_cmd) }
       # Add Solana project creation logic here
     end
+
   end
   # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
   no_commands do
+    def github_cmd = "gh repo create #{projects_github_org}/#{@project_name} --private --source=. --remote=upstream"
+
+    def projects_github_org = ENV.fetch('PROJECTS_GITHUB_ORG', '')
+
     def final_name = name.last
 
     def rails_cmd

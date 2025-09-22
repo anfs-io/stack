@@ -20,7 +20,3 @@ git-status() {
   git fetch
   git status
 }
-
-max-clone() {
-  git clone $PROJECTS_GIT_REMOTE_PREFIX/$1.git
-}
