@@ -91,13 +91,13 @@ configure() {
 
 # Create dirs in ~/.config so stow does NOT softlink the entire directory to this repo
 dotfiles() {
-  dirs=("git" "mise/conf.d" "nvim" "pry" "rails" "ruby" "tmux" "tmuxinator" "zsh")
+  dirs=("git" "mise/conf.d" "nvim" "ruby" "tmux" "tmuxinator" "zsh")
   for dir in "${dirs[@]}"; do
     mkdir -p $HOME/.config/$dir
   done
 
   # Stow the packages found in ./dotfiles to ~
-  packages=("bash" "claude" "git" "mise" "nvim" "pry" "rails" "ruby" "tmux" "tmuxinator" "zsh")
+  packages=("bash" "claude" "git" "mise" "nvim" "ruby" "tmux" "tmuxinator" "zsh")
   for pkg in "${packages[@]}"; do
     stow -d $SCRIPT_DIR/dotfiles -t $HOME $pkg
   done
