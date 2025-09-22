@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 # TODO: Add a second stow to loop on which has packages without the leading .config with dest $HOME/.config
 
@@ -21,7 +21,7 @@ source /tmp/pcs-library.sh
 # Dependencies
 deps_linux() {
   # general
-  sudo apt install bat git neovim stow tree -y
+  sudo apt install bat git stow tree -y
 
   # ruby
   sudo apt install build-essential zlib1g-dev libssl-dev libreadline-dev libyaml-dev \
@@ -37,7 +37,12 @@ deps_linux() {
   # eval "$(mise activate zsh)" && mise install
   mise install
 
-  # zsh
+  deps_zsh
+  deps_github_cli
+  deps_neovim
+}
+
+deps_zsh() {
   sudo apt install fzf zsh -y
   sudo usermod -s /bin/zsh $user
 
@@ -83,7 +88,7 @@ deps() {
   setup_xdg
 }
 
-github_cli() {
+deps_github_cli() {
   (type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \
 	&& sudo mkdir -p -m 755 /etc/apt/keyrings \
 	&& out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -95,11 +100,39 @@ github_cli() {
 	&& sudo apt install gh -y
 }
 
+
+deps_neovim() {
+  # Check for FUSE (required for AppImages)
+  if ! ldconfig -p | grep -q libfuse.so.2; then
+    echo "FUSE2 is not installed. Installing libfuse2..."
+    sudo apt-get update && sudo apt-get install -y libfuse2
+  fi
+
+  # nvim release arch
+  local nvim_arch="x86_64"
+  if [[ "$(arch)" == "arm64" ]]; then
+    nvim_arch="arm64"
+  fi
+
+  # Neovim version - using 'stable' to always get the latest stable release
+  local nvim_version="stable"
+  local download_url="https://github.com/neovim/neovim/releases/download/${nvim_version}/nvim-linux-${nvim_arch}.appimage"
+  local install_path="${HOME}/.local/bin/nvim"
+
+  # Create ~/.local/bin if it doesn't exist
+  curl -L -o "$install_path" "$download_url"
+  chmod +x "$install_path" # Make it executable
+  echo "Neovim (${nvim_version}) installed successfully to ${install_path}"
+  "$install_path" --version | head -n 1 # Test the installation
+}
+
+
 configure() {
   nvim --headless "+Lazy! sync" +qa
   tmux -c $HOME/.local/share/tmux/plugins/tpm/bin/install_plugins
   tmux -c $HOME/.local/share/tmux/plugins/tpm/tpm
 }
+
 
 # Create dirs in ~/.config so stow does NOT softlink the entire directory to this repo
 dotfiles() {
