@@ -1,12 +1,12 @@
-# roteoh-test-rtest.yml
-<% 
+# <%= @project_name %>.yml
+<%%
   require "#{File.dirname(path)}/tmuxinator_project.rb"
   project = TmuxinatorProject.new(path: path) # path is a value from Tmuxinator
   project.setup if project.parent_setup?
 %>
 
-name: <%= project.name %>
-root: <%= project.root %>
+name: <%%= project.name %>
+root: <%%= project.root %>
 
 # Global settings
 attach: true
@@ -14,13 +14,13 @@ tmux_command: tmux
 
 windows:
   - claude:
-      layout: <%= project.layout(:claude) %>
+      layout: <%%= project.layout(:claude) %>
       panes:
         - rails console
         - foreman start -f Procfile.dev
         - tail -f log/development.log
   - app:
-      layout: <%= project.layout(:claude) %>
+      layout: <%%= project.layout(:claude) %>
       panes:
         - claude
         - 

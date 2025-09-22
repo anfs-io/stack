@@ -44,7 +44,7 @@ co-mount-orig() {
   fi
 }
 
-alias co-projects="tree -L 2 $PROJECTS_DIR"
+co-projects() { tree -d -L 2 $PROJECTS_DIR/$1 }
 
 co-repos() {
   local search_dir="${1:-$PROJECTS_DIR}"

@@ -30,6 +30,8 @@ class TmuxinatorProject < OpenStruct
   end
 
   def parent_setup?
+    return true unless has_parent_project
+
     parent = root.parent
     unless parent.join('.git').exist?
       puts "Run parent tmuxinator project first or directly clone the parent repo to #{parent}"
@@ -37,6 +39,8 @@ class TmuxinatorProject < OpenStruct
     end
     true
   end
+
+  def has_parent_project() = @name.split('-').size > 2
 
   def symlink(from:, to:)
     return if from.symlink?

@@ -1,14 +1,20 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'erb'
 require 'pathname'
-require 'pry'
 require 'thor'
 
+# Create a new Project following my naming conventions
 class Project < Thor
-  desc "new PROJECT_NAME", "Create a new project"
-  method_option :type, aliases: "-t", required: true, enum: ["rails", "solana"], desc: "Type of project to create"
+  desc 'new PROJECT_NAME', 'Create a new project'
+  method_option :type, aliases: '-t', required: true, enum: %w[rails solana], desc: 'Type of project to create'
+  method_option :force, aliases: '-f', type: :boolean, default: false,
+                        desc: 'Force create project by removing existing directory'
+  # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
   def new(project_name)
     @project_name = project_name
-    project_type = options[:type]
+    @project_type = options[:type]
 
     unless valid?
       puts "Project name must have at least two parts separated by hyphens. Example: #{@project_name}-test"
@@ -16,62 +22,78 @@ class Project < Thor
     end
 
     if path.exist?
-      puts "Project already exists at #{path}"
-      return
+      if options[:force]
+        puts "Removing existing project at #{path}"
+        path.rmtree
+      else
+        puts "Project already exists at #{path}"
+        puts 'Use --force to overwrite the existing project'
+        return
+      end
     end
 
-    puts "About to create a new #{project_type} project '#{final_name}' in #{path.parent}\nAre you sure? (y/n): "
-    answer = STDIN.gets.chomp.downcase
-    unless answer == 'y' || answer == 'yes'
-      puts "Aborting..."
+    puts "About to create a new #{@project_type} project '#{final_name}' in #{path.parent}\nAre you sure? (y/n): "
+    answer = $stdin.gets.chomp.downcase
+    unless %w[y yes].include?(answer)
+      puts 'Aborting...'
       return
     end
 
     path.parent.mkpath
 
-    case project_type
-    when "rails"
+    case @project_type
+    when 'rails'
       puts "Creating new Rails project: #{final_name}"
       puts "Running #{rails_cmd}"
       Dir.chdir(path.parent) { system(rails_cmd) }
-      if has_parent_project
-        # this project has a parent project 
-        # so add the code to tmuxinator to handle this
-      end
-    when "solana"
+      # Render ERB template
+      template_file = templates_dir.join('tmuxinator.yml.erb')
+      output_file = tmuxinator_dir.join("#{@project_name}.yml")
+
+      erb = ERB.new(template_file.read)
+      result = erb.result(binding)
+
+      File.write(output_file, result)
+      puts "Generated tmuxinator config: #{output_file}"
+    when 'solana'
       puts "Creating new Solana project: #{final_name}"
       Dir.chdir(path.parent) { system(rails_cmd) }
       # Add Solana project creation logic here
     end
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
 
   no_commands do
-    def final_name() = name.last
+    def final_name = name.last
+
     def rails_cmd
-      cmd = "rails new "
-      cmd = cmd.concat("--rc=#{rails_rc_path} ") if rails_rc_path.exist?
+      cmd = 'rails new '
+      cmd.concat("--rc=#{rails_rc_path} ") if rails_rc_path.exist?
       cmd.concat(final_name)
     end
 
-    def rails_rc_path() = Pathname.new(Dir.home).join('.config/rails/rc')
+    def rails_rc_path = Pathname.new(Dir.home).join('.config/rails/rc')
 
-    def path() = Pathname.new(projects_dir).join(name.join('/'))
+    def path = Pathname.new(projects_dir).join(name.join('/'))
 
-    def name() = @project_name.split('-')
+    def name = @project_name.split('-')
 
-    def parent_project() = name[0..1].join('-')
+    def parent_project = name[0..1].join('-')
 
-    def valid?() = name.size > 1
+    def valid? = name.size > 1
 
-    def repo() = "#{git_remote_prefix}/#{@project_name}"
+    def repo = "#{git_remote_prefix}/#{@project_name}"
 
-    def projects_dir() = ENV.fetch('PROJECTS_DIR', Dir.home)
+    def projects_dir = ENV.fetch('PROJECTS_DIR', Dir.home)
 
-    def git_remote_prefix() = ENV.fetch('PROJECTS_GIT_REMOTE_PREFIX', '')
+    def git_remote_prefix = ENV.fetch('PROJECTS_GIT_REMOTE_PREFIX', '')
 
-    def has_parent_project() = name.size > 2
+    def templates_dir = dotfiles_home.join('templates', @project_type)
+
+    def tmuxinator_dir = dotfiles_home.join('dotfiles/tmuxinator/.config/tmuxinator')
+
+    def dotfiles_home = Pathname.new(ENV.fetch('DOTFILES_HOME', Dir.home))
   end
-
 end
 
 Project.start(ARGV)
