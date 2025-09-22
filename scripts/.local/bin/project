@@ -1,126 +1,77 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
-
-require 'thor'
-require 'ostruct'
-require 'fileutils'
 require 'pathname'
+require 'pry'
+require 'thor'
 
 class Project < Thor
-  def initialize(*args)
-    super
-    @config = OpenStruct.new(path: Pathname.new(Dir.home).join('claude', 'projects').to_s)
-  end
+  desc "new PROJECT_NAME", "Create a new project"
+  method_option :type, aliases: "-t", required: true, enum: ["rails", "solana"], desc: "Type of project to create"
+  def new(project_name)
+    @project_name = project_name
+    project_type = options[:type]
 
-  def self.exit_on_failure?
-    true
-  end
-
-  private
-
-  def debug_puts(message)
-    puts message if options[:debug]
-  end
-
-  public
-
-  desc 'new NAME', 'Create a new project with NAME'
-  option :path, aliases: ['-p'], type: :string, desc: 'Override default path'
-  option :force, aliases: ['-f'], type: :boolean, desc: 'Force creation, removing existing project if it exists'
-  option :debug, aliases: ['-d'], type: :boolean, desc: 'Enable debug output'
-  def new(name)
-    @config.path = options[:path] if options[:path]
-
-    # Check if path exists
-    unless Dir.exist?(@config.path)
-      puts "Error: Path '#{@config.path}' does not exist"
-      exit 1
-    end
-
-    # Define paths
-    base_path = File.join(@config.path, name)
-    local_base = File.join(Dir.pwd, name)
-
-    # Check if either path already exists
-    if Dir.exist?(base_path) || Dir.exist?(local_base)
-      if options[:force]
-        puts "Removing existing project '#{name}' at '#{base_path}'" if Dir.exist?(base_path)
-        puts "Removing existing local project '#{name}' at '#{local_base}'" if Dir.exist?(local_base)
-        FileUtils.rm_rf(base_path) if Dir.exist?(base_path)
-        FileUtils.rm_rf(local_base) if Dir.exist?(local_base)
-      else
-        puts "Error: Project '#{name}' already exists at '#{base_path}'" if Dir.exist?(base_path)
-        puts "Error: Local project '#{name}' already exists at '#{local_base}'" if Dir.exist?(local_base)
-        exit 1
-      end
-    end
-
-    # Create directory structure in specified path
-    FileUtils.mkdir_p(base_path)
-
-    # Create subdirectories with .keep files in the path
-    path_subdirs = [
-      'content',
-      'stories/backlog',
-      'stories/ready',
-      'stories/in-progress',
-      'stories/done'
-    ]
-
-    path_subdirs.each do |subdir|
-      dir_path = File.join(base_path, subdir)
-      FileUtils.mkdir_p(dir_path)
-      FileUtils.touch(File.join(dir_path, '.keep'))
-    end
-
-    #     # Create directory structure in current working directory
-    #     FileUtils.mkdir_p(local_base)
-    #
-    #     # Create subdirectories with .keep files in current directory
-    #     local_subdirs = [
-    #       '.claude',
-    #       'apps'
-    #     ]
-    #
-    #     local_subdirs.each do |subdir|
-    #       dir_path = File.join(local_base, subdir)
-    #       FileUtils.mkdir_p(dir_path)
-    #       FileUtils.touch(File.join(dir_path, '.keep'))
-    #     end
-    #
-    #     # Change to the new directory
-    #     Dir.chdir(local_base)
-    #
-    #     # Create softlinks
-    #     FileUtils.ln_s(File.join(base_path, 'content'), 'content')
-    #     FileUtils.ln_s(File.join(base_path, 'stories'), 'stories')
-
-    debug_puts "Project '#{name}' created successfully!"
-    debug_puts "Path: #{base_path}"
-    debug_puts "Local: #{local_base}"
-  end
-
-  desc 'clean', 'Remove Mac OS files that start with ._'
-  option :debug, aliases: ['-d'], type: :boolean, desc: 'Enable debug output'
-  option :noop, aliases: ['-n'], type: :boolean, desc: 'Show what would be done without actually doing it'
-  def clean
-    files = Dir.glob('**/._*')
-
-    if files.empty?
-      puts 'No Mac OS files found to clean'
+    unless valid?
+      puts "Project name must have at least two parts separated by hyphens. Example: #{@project_name}-test"
       return
     end
 
-    options[:noop] ? 'Would remove' : 'Removing'
-    debug_puts "Found #{files.length} Mac OS files to #{options[:noop] ? 'remove' : 'remove'}:"
-    files.each do |file|
-      debug_puts "  #{file}"
-      FileUtils.rm_f(file) unless options[:noop]
+    if path.exist?
+      puts "Project already exists at #{path}"
+      return
     end
 
-    result = options[:noop] ? 'Would clean' : 'Cleaned'
-    puts "#{result} #{files.length} Mac OS files"
+    puts "About to create a new #{project_type} project '#{final_name}' in #{path.parent}\nAre you sure? (y/n): "
+    answer = STDIN.gets.chomp.downcase
+    unless answer == 'y' || answer == 'yes'
+      puts "Aborting..."
+      return
+    end
+
+    path.parent.mkpath
+
+    case project_type
+    when "rails"
+      puts "Creating new Rails project: #{final_name}"
+      puts "Running #{rails_cmd}"
+      Dir.chdir(path.parent) { system(rails_cmd) }
+      if has_parent_project
+        # this project has a parent project 
+        # so add the code to tmuxinator to handle this
+      end
+    when "solana"
+      puts "Creating new Solana project: #{final_name}"
+      Dir.chdir(path.parent) { system(rails_cmd) }
+      # Add Solana project creation logic here
+    end
   end
+
+  no_commands do
+    def final_name() = name.last
+    def rails_cmd
+      cmd = "rails new "
+      cmd = cmd.concat("--rc=#{rails_rc_path} ") if rails_rc_path.exist?
+      cmd.concat(final_name)
+    end
+
+    def rails_rc_path() = Pathname.new(Dir.home).join('.config/rails/rc')
+
+    def path() = Pathname.new(projects_dir).join(name.join('/'))
+
+    def name() = @project_name.split('-')
+
+    def parent_project() = name[0..1].join('-')
+
+    def valid?() = name.size > 1
+
+    def repo() = "#{git_remote_prefix}/#{@project_name}"
+
+    def projects_dir() = ENV.fetch('PROJECTS_DIR', Dir.home)
+
+    def git_remote_prefix() = ENV.fetch('PROJECTS_GIT_REMOTE_PREFIX', '')
+
+    def has_parent_project() = name.size > 2
+  end
+
 end
 
 Project.start(ARGV)

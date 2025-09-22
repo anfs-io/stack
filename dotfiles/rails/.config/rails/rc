@@ -1,1 +1,1 @@
--m $HOME/.config/rails/template.rb --css=tailwind
+-m $HOME/.config/rails/template.rb --css=tailwind -T
