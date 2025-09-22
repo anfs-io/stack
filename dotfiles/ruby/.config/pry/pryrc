@@ -1,4 +1,4 @@
-def ke() = Kernel.exit
+def ke = Kernel.exit
 
 if defined?(Rails)
   def r

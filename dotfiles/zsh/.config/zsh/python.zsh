@@ -19,4 +19,4 @@ pyactivate() {
 }
 
 # pyactivate lstack
-source $HOME/.local/share/python/lstack/bin/activate
+# source $HOME/.local/share/python/lstack/bin/activate
