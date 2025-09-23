@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# TODO: Add a second stow to loop on which has packages without the leading .config with dest $HOME/.config
-
 CODE_URL="git@github.com:maxcole/claude.git"
 CODE_DIR=$HOME/code
 
@@ -12,11 +10,45 @@ REPO_DIR=$CODE_DIR/projects/rjayroach/home
 SCRIPT_DIR=$(dirname "$0")
 SCRIPT_NAME=$(basename "$0")
 
+STOW_DIRS=("git" "mise/conf.d" "nvim" "ruby" "tmux" "tmuxinator" "zsh")
+STOW_PACKAGES=("bash" "git" "mise" "nvim" "ruby" "tmux" "tmuxinator" "ventoy" "zsh")
+
 # Download and source the script
 if [ ! -f /tmp/pcs-library.sh ]; then
   wget -O /tmp/pcs-library.sh https://raw.githubusercontent.com/maxcole/pcs-bootstrap/refs/heads/main/library.sh
 fi
 source /tmp/pcs-library.sh
+
+
+# Run Once to set the shell, install deps, clone the repo and run the functions
+deps() {
+  local user=$(whoami)
+
+  if [[ "$(os)" == "macos" ]]; then
+    deps_macos
+  elif [[ "$(os)" == "linux" ]]; then
+    deps_linux
+  fi
+
+  if [[ ! -d "$CODE_DIR" ]]; then
+    git clone $CODE_URL $CODE_DIR
+  fi
+
+  if [[ ! -d "$REPO_DIR" ]]; then
+    git clone $REPO_URL $REPO_DIR
+  fi
+
+  setup_xdg
+}
+
+deps_macos() {
+  if ! command -v python3 >/dev/null 2>&1; then
+    debug "ERROR!!"
+    debug ""
+    debug "python interpreter not found. Run 'xcode-select --install' from a terminal then rerun this script"
+    exit 1
+  fi
+}
 
 # Dependencies
 deps_linux() {
@@ -33,7 +65,7 @@ deps_linux() {
     git clone https://github.com/tmux-plugins/tpm $HOME/.local/share/tmux/plugins/tpm
   fi
 
-  mise_linux
+  deps_mise
   # eval "$(mise activate zsh)" && mise install
   mise install
 
@@ -41,6 +73,7 @@ deps_linux() {
   deps_github_cli
   deps_neovim
 }
+
 
 deps_zsh() {
   sudo apt install fzf zsh -y
@@ -58,35 +91,6 @@ deps_zsh() {
   fi
 }
 
-deps_macos() {
-  if ! command -v python3 >/dev/null 2>&1; then
-    debug "ERROR!!"
-    debug ""
-    debug "python interpreter not found. Run 'xcode-select --install' from a terminal then rerun this script"
-    exit 1
-  fi
-}
-
-# Run Once to set the shell, install deps, clone the repo and run the functions
-deps() {
-  local user=$(whoami)
-
-  if [[ "$(os)" == "linux" ]]; then
-    deps_linux
-  elif [[ "$(os)" == "macos" ]]; then
-    deps_macos
-  fi
-
-  if [[ ! -d "$CODE_DIR" ]]; then
-    git clone $CODE_URL $CODE_DIR
-  fi
-
-  if [[ ! -d "$REPO_DIR" ]]; then
-    git clone $REPO_URL $REPO_DIR
-  fi
-
-  setup_xdg
-}
 
 deps_github_cli() {
   (type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \
@@ -102,6 +106,12 @@ deps_github_cli() {
 
 
 deps_neovim() {
+  local install_path="${HOME}/.local/bin/nvim"
+
+  if [ -f $install_path ]; then
+    return
+  fi
+
   # Check for FUSE (required for AppImages)
   if ! ldconfig -p | grep -q libfuse.so.2; then
     echo "FUSE2 is not installed. Installing libfuse2..."
@@ -111,15 +121,16 @@ deps_neovim() {
   # nvim release arch
   local nvim_arch="x86_64"
   if [[ "$(arch)" == "arm64" ]]; then
+    sudo apt-get install -y fuse3
     nvim_arch="arm64"
   fi
 
   # Neovim version - using 'stable' to always get the latest stable release
   local nvim_version="stable"
   local download_url="https://github.com/neovim/neovim/releases/download/${nvim_version}/nvim-linux-${nvim_arch}.appimage"
-  local install_path="${HOME}/.local/bin/nvim"
 
   # Create ~/.local/bin if it doesn't exist
+  mkdir -p $HOME/.local/bin
   curl -L -o "$install_path" "$download_url"
   chmod +x "$install_path" # Make it executable
   echo "Neovim (${nvim_version}) installed successfully to ${install_path}"
@@ -134,16 +145,14 @@ configure() {
 }
 
 
-# Create dirs in ~/.config so stow does NOT softlink the entire directory to this repo
 dotfiles() {
-  dirs=("git" "mise/conf.d" "nvim" "ruby" "tmux" "tmuxinator" "zsh")
-  for dir in "${dirs[@]}"; do
+  # Create dirs in ~/.config so stow does NOT softlink the entire directory to this repo
+  for dir in "${STOW_DIRS[@]}"; do
     mkdir -p $HOME/.config/$dir
   done
 
   # Stow the packages found in ./dotfiles to ~
-  packages=("bash" "claude" "git" "mise" "nvim" "ruby" "tmux" "tmuxinator" "ventoy" "zsh")
-  for pkg in "${packages[@]}"; do
+  for pkg in "${STOW_PACKAGES[@]}"; do
     stow -d $SCRIPT_DIR/dotfiles -t $HOME $pkg
   done
 }
@@ -157,7 +166,7 @@ scripts() {
 functions_to_call=()
 
 if [ $# -eq 1 -a "$1" = "all" ]; then
-  functions_to_call+=("deps" "dotfiles" "scripts")
+  functions_to_call+=("deps" "dotfiles" "scripts" "configure")
 elif [ $# -gt 0 ]; then
   functions_to_call=("$@")
 else
