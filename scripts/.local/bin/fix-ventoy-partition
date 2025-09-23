@@ -1,0 +1,57 @@
+#!/bin/bash
+
+# Fix Ventoy partition bootable flags
+# Usage: ./fix-ventoy-partition /dev/sdX
+
+set -e
+
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 <device>"
+    echo "Example: $0 /dev/sda"
+    exit 1
+fi
+
+DEVICE="$1"
+
+# Validate device exists
+if [ ! -b "$DEVICE" ]; then
+    echo "Error: Device $DEVICE does not exist or is not a block device"
+    exit 1
+fi
+
+# Check if this looks like a Ventoy disk
+if ! sudo fdisk -l "$DEVICE" 2>/dev/null | grep -q VTOYEFI; then
+    echo "Warning: This doesn't appear to be a Ventoy disk (no VTOYEFI partition found)"
+    read -p "Continue anyway? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+fi
+
+echo "Current partition table:"
+sudo fdisk -l "$DEVICE" | grep -E "(Device|$DEVICE)"
+
+echo
+echo "Fixing Ventoy partition bootable flags on $DEVICE..."
+
+# Remove bootable flag from partition 1 (data partition)
+echo "  Removing bootable flag from data partition (${DEVICE}1)..."
+sudo sfdisk --part-attrs "$DEVICE" 1 ''
+
+# Add bootable flag to partition 2 (EFI partition)
+echo "  Setting bootable flag on EFI partition (${DEVICE}2)..."
+sudo sfdisk --part-attrs "$DEVICE" 2 LegacyBIOSBootable
+
+# Update partition table
+echo "  Updating partition table..."
+sudo partprobe "$DEVICE"
+
+echo
+echo "✓ Partition flags fixed!"
+echo
+echo "Updated partition table:"
+sudo fdisk -l "$DEVICE" | grep -E "(Device|$DEVICE)"
+
+echo
+echo "The EFI partition should now be bootable and the USB should boot automatically."

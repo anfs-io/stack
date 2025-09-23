@@ -320,6 +320,11 @@ class VentoyManager < Thor
       # Give system time to update partition table
       sleep 2
       system("sudo partprobe #{device}")
+
+      # Fix partition bootable flags - EFI partition should be bootable, not the data partition
+      puts "Fixing partition bootable flags..."
+      fix_partition_flags(device)
+
       show_ventoy_info(device)
     else
       puts "\nInstallation output:"
@@ -550,6 +555,24 @@ class VentoyManager < Thor
     base_device = device.gsub(/\d+$/, '')
     output = `sudo fdisk -l #{base_device} 2>/dev/null`
     output.include?('VTOYEFI')
+  end
+
+  def fix_partition_flags(device)
+    base_device = device.gsub(/\d+$/, '')
+
+    # Remove bootable flag from partition 1 (data partition)
+    puts "  Removing bootable flag from data partition..."
+    sudo_command("sfdisk --part-attrs #{base_device} 1 ''")
+
+    # Add bootable flag to partition 2 (EFI partition)
+    puts "  Setting bootable flag on EFI partition..."
+    sudo_command("sfdisk --part-attrs #{base_device} 2 LegacyBIOSBootable")
+
+    # Update partition table
+    sudo_command("partprobe #{base_device}")
+    sleep 1
+
+    puts "✓ Partition flags fixed - EFI partition is now bootable"
   end
 
   def show_ventoy_info(device)
