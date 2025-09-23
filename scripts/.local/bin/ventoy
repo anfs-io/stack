@@ -560,13 +560,9 @@ class VentoyManager < Thor
   def fix_partition_flags(device)
     base_device = device.gsub(/\d+$/, '')
 
-    # Remove bootable flag from partition 1 (data partition)
-    puts "  Removing bootable flag from data partition..."
-    sudo_command("sfdisk --part-attrs #{base_device} 1 ''")
-
-    # Add bootable flag to partition 2 (EFI partition)
+    # Set bootable flag on partition 2 (EFI partition) and remove from others
     puts "  Setting bootable flag on EFI partition..."
-    sudo_command("sfdisk --part-attrs #{base_device} 2 LegacyBIOSBootable")
+    sudo_command("sfdisk -A #{base_device} 2")
 
     # Update partition table
     sudo_command("partprobe #{base_device}")
