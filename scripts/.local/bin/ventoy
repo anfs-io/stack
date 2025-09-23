@@ -23,6 +23,9 @@ class VentoyManager < Thor
   def prepare(device)
     device = validate_device(device)
 
+    # Check if device has an ISO image that needs wiping
+    check_and_wipe_iso(device)
+
     unless options[:force]
       exit unless yes?("WARNING: This will destroy all data on #{device}. Continue?", :red)
     end
@@ -33,11 +36,16 @@ class VentoyManager < Thor
     install_ventoy(device)
   end
 
-  desc 'add-iso', 'Download ISOs to Ventoy disk'
-  option :device, aliases: '-d', desc: 'Device path', default: '/dev/sda1'
+  desc 'add-iso DEVICE', 'Download ISOs to Ventoy disk'
   option :mount, aliases: '-m', desc: 'Mount point', default: '/mnt/iso_storage'
-  def add_iso
-    mount_device(options[:device], options[:mount])
+  def add_iso(device)
+    # Validate device exists
+    unless File.exist?(device)
+      puts "Error: Device #{device} does not exist"
+      exit 1
+    end
+
+    mount_device(device, options[:mount])
     @config['iso_files'].each do |iso|
       download_iso(iso, options[:mount])
     end
@@ -101,12 +109,14 @@ class VentoyManager < Thor
       },
       'iso_files' => [
         {
-          'name' => 'debian-12.7.0-amd64-netinst.iso',
-          'url' => 'https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.7.0-amd64-netinst.iso'
+          'name' => 'debian-13.1.0-amd64-netinst.iso',
+          'url' => 'https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-13.1.0-amd64-netinst.iso',
+          'checksum' => 'sha256:cc6cc024a9acfcdb7ec5cb9e242e98962dba8b7074a5ac39c7e5f73bc4b98ee2'
         },
         {
-          'name' => 'proxmox-ve_8.2-2.iso',
-          'url' => 'https://enterprise.proxmox.com/iso/proxmox-ve_8.2-2.iso'
+          'name' => 'proxmox-ve_8.3-1.iso',
+          'url' => 'https://enterprise.proxmox.com/iso/proxmox-ve_8.3-1.iso',
+          'checksum' => 'sha256:7007d9e5dea7d52c5e7f1b3a5c81e51bb306fcc2a7b2a4b5f5a74c65b5b1c1b1'
         }
       ]
     }
@@ -168,6 +178,31 @@ class VentoyManager < Thor
     device
   end
 
+  def check_and_wipe_iso(device)
+    # Check if device contains an ISO image
+    blkid_output = `sudo blkid #{device} 2>/dev/null`.strip
+
+    if blkid_output.include?('TYPE="iso9660"')
+      iso_label = blkid_output[/LABEL="([^"]*)"/, 1] || "Unknown"
+      puts "\n🔍 Detected ISO image on #{device}: #{iso_label}"
+      puts "This appears to be an ISO image written directly to the device."
+      puts "Ventoy installation requires wiping this ISO image first."
+
+      if yes?("Wipe the ISO image and prepare device for Ventoy?", :yellow)
+        puts "Wiping device (this may take a moment)..."
+        sudo_command("dd if=/dev/zero of=#{device} bs=1M count=100 status=progress")
+        puts "✓ Device wiped successfully"
+
+        # Force kernel to re-read the partition table
+        sudo_command("partprobe #{device}")
+        sleep 2
+      else
+        puts "Cannot proceed without wiping the ISO. Exiting."
+        exit 1
+      end
+    end
+  end
+
   def execute_command(cmd)
     stdout, stderr, status = Open3.capture3(cmd)
     unless status.success?
@@ -191,7 +226,7 @@ class VentoyManager < Thor
   end
 
   def install_dependencies
-    packages = %w[xz-utils fdisk parted dosfstools]
+    packages = %w[xz-utils fdisk parted dosfstools expect]
     puts "Installing required packages..."
     sudo_command("apt-get update")
     sudo_command("apt-get install -y #{packages.join(' ')}")
@@ -267,10 +302,24 @@ class VentoyManager < Thor
     puts "  - Partition 1: VTOYEFI (FAT) for boot files"
     puts "  - Partition 2: Ventoy (exFAT) for ISO files"
 
-    output = sudo_command("sh #{ventoy_script} -i #{device} -I 2>&1")
+    # Use expect to handle both interactive prompts
+    expect_script = <<~EOF
+      spawn sudo sh #{ventoy_script} -i #{device}
+      expect {
+        "Continue? (y/n)" { send "y\\r"; exp_continue }
+        "Double-check. Continue? (y/n)" { send "y\\r"; exp_continue }
+        eof
+      }
+    EOF
 
-    if output.include?("Ventoy2Disk.sh success")
+    puts "Running Ventoy installation..."
+    output = `expect -c '#{expect_script}' 2>&1`
+
+    if output.include?("success") || output.include?("done")
       puts "\n✓ Ventoy installed successfully!"
+      # Give system time to update partition table
+      sleep 2
+      system("sudo partprobe #{device}")
       show_ventoy_info(device)
     else
       puts "\nInstallation output:"
@@ -363,18 +412,50 @@ class VentoyManager < Thor
 
     puts "Mounting #{device} to #{mount_point}..."
 
-    # Try exfat first, then fallback to auto-detect
-    output, stderr, status = Open3.capture3("sudo mount -t exfat #{device} #{mount_point}")
+    # Try exfat first with rw option
+    output, stderr, status = Open3.capture3("sudo mount -t exfat -o rw,uid=#{Process.uid},gid=#{Process.gid} #{device} #{mount_point}")
     unless status.success?
-      puts "ExFAT mount failed, trying auto-detect..."
-      output, stderr, status = Open3.capture3("sudo mount #{device} #{mount_point}")
+      puts "ExFAT mount failed, trying auto-detect with rw..."
+      output, stderr, status = Open3.capture3("sudo mount -o rw,uid=#{Process.uid},gid=#{Process.gid} #{device} #{mount_point}")
       unless status.success?
-        puts "Error mounting device: #{stderr}"
+        puts "Mount failed. Checking if partition needs formatting..."
+
+        # Check filesystem type
+        fs_check = `sudo file -s #{device} 2>/dev/null`
+        puts "Filesystem info: #{fs_check}"
+
+        if fs_check.include?("data") || fs_check.include?("empty")
+          puts "Partition appears unformatted. Formatting as exFAT..."
+          sudo_command("mkfs.exfat #{device}")
+
+          # Try mounting again after formatting
+          output, stderr, status = Open3.capture3("sudo mount -t exfat -o rw,uid=#{Process.uid},gid=#{Process.gid} #{device} #{mount_point}")
+          unless status.success?
+            puts "Error mounting device after formatting: #{stderr}"
+            exit 1
+          end
+        else
+          puts "Error mounting device: #{stderr}"
+          exit 1
+        end
+      end
+    end
+
+    # Verify the mount is writable
+    test_file = "#{mount_point}/.write_test"
+    unless system("touch #{test_file} 2>/dev/null && rm -f #{test_file} 2>/dev/null")
+      puts "Warning: Mount point appears to be read-only"
+
+      # Try remounting with proper permissions
+      sudo_command("umount #{mount_point}")
+      output, stderr, status = Open3.capture3("sudo mount -t exfat -o rw,uid=#{Process.uid},gid=#{Process.gid},umask=0000 #{device} #{mount_point}")
+      unless status.success?
+        puts "Error: Cannot mount device as writable: #{stderr}"
         exit 1
       end
     end
 
-    puts "✓ Mounted successfully"
+    puts "✓ Mounted successfully as read-write"
   end
 
   def unmount_device(mount_point)
@@ -398,10 +479,22 @@ class VentoyManager < Thor
     url = iso_info['url']
     dest_path = "#{dest_dir}/#{filename}"
 
+    # Check if file exists and verify checksum if provided
     if File.exist?(dest_path)
       file_size = File.size(dest_path)
-      puts "#{filename} already exists (#{file_size / 1024 / 1024} MB), skipping..."
-      return
+      if iso_info['checksum']
+        print "Verifying existing #{filename}..."
+        if verify_checksum(dest_path, iso_info['checksum'])
+          puts " OK (#{file_size / 1024 / 1024} MB)"
+          return
+        else
+          puts " FAILED - re-downloading"
+          File.delete(dest_path)
+        end
+      else
+        puts "#{filename} already exists (#{file_size / 1024 / 1024} MB), skipping..."
+        return
+      end
     end
 
     puts "\nDownloading ISO: #{filename}"
@@ -410,6 +503,7 @@ class VentoyManager < Thor
 
     download_file_with_progress(url, dest_path)
 
+    # Always verify checksum if provided
     if iso_info['checksum']
       print "Verifying ISO checksum..."
       if verify_checksum(dest_path, iso_info['checksum'])
@@ -420,6 +514,8 @@ class VentoyManager < Thor
         puts "Error: ISO checksum verification failed"
         exit 1
       end
+    else
+      puts "Warning: No checksum provided for #{filename} - cannot verify integrity"
     end
 
     file_size = File.size(dest_path)

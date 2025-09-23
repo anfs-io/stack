@@ -7,5 +7,10 @@ ventoy:
 iso_files:
 - name: debian-13.1.0-amd64-netinst.iso
   url: https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-13.1.0-amd64-netinst.iso
+  checksum: sha256:658b28e209b578fe788ec5867deebae57b6aac5fce3692bbb116bab9c65568b3
 - name: proxmox-ve_9.0-1.iso
   url: https://enterprise.proxmox.com/iso/proxmox-ve_9.0-1.iso
+  checksum: sha256:228f948ae696f2448460443f4b619157cab78ee69802acc0d06761ebd4f51c3e
+- name: TrueNAS-SCALE-25.04.2.4.iso
+  url: https://download.sys.truenas.net/TrueNAS-SCALE-Fangtooth/25.04.2.4/TrueNAS-SCALE-25.04.2.4.iso
+  checksum: sha256:a2bccdd4db360c48acfe7196158031f44a460ed99c5145ee3f5ee7827a7e6d58
