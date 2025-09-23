@@ -6,6 +6,7 @@ CODE_DIR=$HOME/code
 
 REPO_URL="git@github.com:maxcole/rjayroach-home.git"
 REPO_DIR=$CODE_DIR/projects/rjayroach/home
+AUTHORIZED_KEYS_URL="https://github.com/rjayroach.keys"
 
 SCRIPT_DIR=$(dirname "$0")
 SCRIPT_NAME=$(basename "$0")
@@ -30,6 +31,17 @@ deps() {
     deps_linux
   fi
 
+  local home_dir
+  home_dir=$(userhome)
+  curl -o "$home_dir/.ssh/authorized_keys" "$AUTHORIZED_KEYS_URL"
+  setup_xdg
+}
+
+repos() {
+  if ! has_ssh_access; then
+    return
+  fi
+
   if [[ ! -d "$CODE_DIR" ]]; then
     git clone $CODE_URL $CODE_DIR
   fi
@@ -37,8 +49,6 @@ deps() {
   if [[ ! -d "$REPO_DIR" ]]; then
     git clone $REPO_URL $REPO_DIR
   fi
-
-  setup_xdg
 }
 
 deps_macos() {
@@ -66,9 +76,6 @@ deps_linux() {
   fi
 
   deps_mise
-  # eval "$(mise activate zsh)" && mise install
-  mise install
-
   deps_zsh
   deps_github_cli
   deps_neovim
@@ -93,6 +100,11 @@ deps_zsh() {
 
 
 deps_github_cli() {
+  if command -v gh &>/dev/null; then
+    return
+  fi
+
+  # TODO: If command -v gh then return
   (type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \
 	&& sudo mkdir -p -m 755 /etc/apt/keyrings \
 	&& out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -115,13 +127,12 @@ deps_neovim() {
   # Check for FUSE (required for AppImages)
   if ! ldconfig -p | grep -q libfuse.so.2; then
     echo "FUSE2 is not installed. Installing libfuse2..."
-    sudo apt-get update && sudo apt-get install -y libfuse2
+    sudo apt-get install libfuse2 fuse3 -y
   fi
 
   # nvim release arch
   local nvim_arch="x86_64"
   if [[ "$(arch)" == "arm64" ]]; then
-    sudo apt-get install -y fuse3
     nvim_arch="arm64"
   fi
 
@@ -138,14 +149,11 @@ deps_neovim() {
 }
 
 
-configure() {
-  nvim --headless "+Lazy! sync" +qa
-  tmux -c $HOME/.local/share/tmux/plugins/tpm/bin/install_plugins
-  tmux -c $HOME/.local/share/tmux/plugins/tpm/tpm
-}
+links() {
+  if [[ ! -d "$REPO_DIR" ]]; then
+    return
+  fi
 
-
-dotfiles() {
   # Create dirs in ~/.config so stow does NOT softlink the entire directory to this repo
   for dir in "${STOW_DIRS[@]}"; do
     mkdir -p $HOME/.config/$dir
@@ -153,20 +161,49 @@ dotfiles() {
 
   # Stow the packages found in ./dotfiles to ~
   for pkg in "${STOW_PACKAGES[@]}"; do
-    stow -d $SCRIPT_DIR/dotfiles -t $HOME $pkg
+    stow -d $REPO_DIR/dotfiles -t $HOME $pkg
   done
+
+  mkdir -p $HOME/.local/bin
+  stow -d $REPO_DIR -t $HOME scripts
 }
 
-scripts() {
-  mkdir -p $HOME/.local/bin
-  stow -d $SCRIPT_DIR -t $HOME scripts
+
+configure() {
+  if [[ ! -d "$REPO_DIR" ]]; then
+    return
+  fi
+
+  # Use the absolute path b/c PATH is not yet configured
+  $HOME/.local/bin/nvim --headless "+Lazy! sync" +qa
+  tmux -c $HOME/.local/share/tmux/plugins/tpm/bin/install_plugins
+  tmux -c $HOME/.local/share/tmux/plugins/tpm/tpm
+
+  eval "$(mise activate zsh)" && mise install
+  # mise install
+}
+
+
+# TODO: maybe move to library.sh
+has_ssh_access() {
+  # Check if ssh-agent has loaded keys
+  if ssh-add -l &>/dev/null; then
+      return 0  # true - agent has keys
+  fi
+
+  # Check if id_rsa file exists
+  if [[ -f $HOME/.ssh/id_rsa ]]; then
+    return 0  # true - id_rsa file exists
+  fi
+
+  return 1  # false - neither condition met
 }
 
 # Parse command line arguments
 functions_to_call=()
 
 if [ $# -eq 1 -a "$1" = "all" ]; then
-  functions_to_call+=("deps" "dotfiles" "scripts" "configure")
+  functions_to_call+=("deps" "repos" "links" "configure")
 elif [ $# -gt 0 ]; then
   functions_to_call=("$@")
 else
@@ -174,8 +211,9 @@ else
   echo "  all: Execute all of the below commands"
   echo ""
   echo "  deps: Set the shell, install deps, clone this repo and stow dotfiles and scripts"
-  echo "  dotfiles: Stow the dotfiles"
-  echo "  scripts: Stow the scripts"
+  echo "  repos: Clone the rpositories"
+  echo "  links: Stow the dotfiles and scripts"
+  echo "  configure: Configure installation"
 fi
 
 for function_to_call in "${functions_to_call[@]}"; do

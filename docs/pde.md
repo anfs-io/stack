@@ -32,3 +32,5 @@ sudo priviledges
 ```bash
 wget -qO- https://raw.githubusercontent.com/maxcole/rjayroach-home/refs/heads/main/install.sh | bash -s -- all
 ```
+
+sudo echo "ansible ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ansible
