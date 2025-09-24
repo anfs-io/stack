@@ -1,69 +1,90 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CODE_URL="git@github.com:maxcole/claude.git"
-CODE_DIR=$HOME/code
+CONFIG_DIR=$HOME/.config
+BIN_DIR=$HOME/.local/bin
+PROJECTS_DIR=$HOME/code/projects
+LIB_FILE=$PROJECTS_DIR/pcs/bootstrap/library.sh
 
-REPO_URL="git@github.com:maxcole/rjayroach-home.git"
-REPO_DIR=$CODE_DIR/projects/rjayroach/home
+CODE_DIR=$PROJECTS_DIR/rjayroach
+CODE_REPO_PREFIX="git@github.com:maxcole/rjayroach"
+CODE_REPOS=("claude" "home")
+
 AUTHORIZED_KEYS_URL="https://github.com/rjayroach.keys"
+BASE_PACKAGES=("bash" "mise" "zsh")
 
-SCRIPT_DIR=$(dirname "$0")
-SCRIPT_NAME=$(basename "$0")
-
-STOW_DIRS=("git" "mise/conf.d" "nvim" "ruby" "tmux" "tmuxinator" "zsh")
-STOW_PACKAGES=("bash" "git" "mise" "nvim" "ruby" "tmux" "tmuxinator" "ventoy" "zsh")
-
-# Download and source the script
-if [ ! -f /tmp/pcs-library.sh ]; then
-  wget -O /tmp/pcs-library.sh https://raw.githubusercontent.com/maxcole/pcs-bootstrap/refs/heads/main/library.sh
+# Source a local copy of the library file or download from a URL
+if [ ! -f $LIB_FILE ]; then
+  LIB_FILE=/tmp/pcs-library.sh
+  if [ ! -f $LIB_FILE ]; then # Download and source the script
+    wget -O $LIB_FILE https://raw.githubusercontent.com/maxcole/pcs-bootstrap/refs/heads/main/library.sh
+  fi
 fi
-source /tmp/pcs-library.sh
+source $LIB_FILE
 
+# Two profiles
+# 1. remote - export shares, full env, ssh auth key(s); typically linux hosts
+# 2. local - mount shares, partial env, ssh private key(s); typically mac hosts
+#
+# Process for all profiles:
+# 1. Install deps (based on os + arch)
+# 2. Clone the repos
+# 3. Install packages (with functions appropriate on os + arch + profile)
+# 3a. zsh basics
+# 3b. ssh stuff
+
+# CODE_URL="git@github.com:maxcole/claude.git"
+# 
+# REPO_URL="git@github.com:maxcole/rjayroach-home.git"
+# REPO_DIR=$CODE_DIR/projects/rjayroach/home
+
+# SCRIPT_DIR=$(dirname "$0")
+# SCRIPT_NAME=$(basename "$0")
+
+# STOW_DIRS=("git" "mise/conf.d" "nvim" "ruby" "tmux" "tmuxinator" "zsh")
+# STOW_PACKAGES=("bash" "git" "mise" "nvim" "ruby" "tmux" "tmuxinator" "ventoy" "zsh")
 
 # Run Once to set the shell, install deps, clone the repo and run the functions
-deps() {
-  local user=$(whoami)
-
-  if [[ "$(os)" == "macos" ]]; then
+install_deps() {
+  # TODO: if has_sudo_all
+  if [[ "$(os)" == "linux" ]]; then
+    sudo apt install git stow -y
+  elif [[ "$(os)" == "macos" ]]; then
     deps_macos
-  elif [[ "$(os)" == "linux" ]]; then
-    deps_linux
-  fi
-
-  local home_dir
-  home_dir=$(userhome)
-  curl -o "$home_dir/.ssh/authorized_keys" "$AUTHORIZED_KEYS_URL"
-  setup_xdg
-}
-
-repos() {
-  if ! has_ssh_access; then
-    return
-  fi
-
-  if [[ ! -d "$CODE_DIR" ]]; then
-    git clone $CODE_URL $CODE_DIR
-  fi
-
-  if [[ ! -d "$REPO_DIR" ]]; then
-    git clone $REPO_URL $REPO_DIR
+    # brew install stow (git should already be available)
   fi
 }
 
-deps_macos() {
-  if ! command -v python3 >/dev/null 2>&1; then
-    debug "ERROR!!"
-    debug ""
-    debug "python interpreter not found. Run 'xcode-select --install' from a terminal then rerun this script"
-    exit 1
+clone_repos() {
+  if has_ssh_access; then
+    for repo in "${CODE_REPOS[@]}"; do
+      git clone "$CODE_REPO_PREFIX-$repo.git" $CODE_DIR/$repo
+    done
   fi
 }
 
-# Dependencies
-deps_linux() {
-  # general
-  sudo apt install bat git stow tree -y
+install_packages() {
+  # TODO: the mkdir is handled by the package installer
+  # mkdir -p $CONFIG_DIR/mise/conf.d $CONFIG_DIR/zsh
+  # TODO: source the install script from each package in $CODE_DIR/home/dotfiles / $BASE_PACKAGES (bash, mise, zsh)
+  source $CODE_DIR/home/packages/bash/install.sh #  / $BASE_PACKAGES (bash, mise, zsh)
+  # TODO: maybe the bash stuff should jsut be combined with zsh
+
+#   for pkg in "${STOW_PACKAGES[@]}"; do
+# STOW_PACKAGES=("bash" "git" "mise" "nvim" "ruby" "tmux" "tmuxinator" "ventoy" "zsh")
+#     stow -d $REPO_DIR/dotfiles -t $HOME $pkg
+}
+
+setup_xdg
+install_deps
+clone_repos
+install_packages
+
+
+
+# -----------
+deps_linux_other() {
+  sudo apt install bat tree -y
 
   # ruby
   sudo apt install build-essential zlib1g-dev libssl-dev libreadline-dev libyaml-dev \
@@ -184,19 +205,12 @@ configure() {
 }
 
 
-# TODO: maybe move to library.sh
-has_ssh_access() {
-  # Check if ssh-agent has loaded keys
-  if ssh-add -l &>/dev/null; then
-      return 0  # true - agent has keys
-  fi
-
-  # Check if id_rsa file exists
-  if [[ -f $HOME/.ssh/id_rsa ]]; then
-    return 0  # true - id_rsa file exists
-  fi
-
-  return 1  # false - neither condition met
+ssh_random() {
+  local user=$(whoami)
+  local home_dir
+  home_dir=$(userhome)
+  curl -o "$home_dir/.ssh/authorized_keys" "$AUTHORIZED_KEYS_URL"
+  setup_xdg
 }
 
 # Parse command line arguments
@@ -217,5 +231,5 @@ else
 fi
 
 for function_to_call in "${functions_to_call[@]}"; do
-  $function_to_call
+  # $function_to_call
 done
