@@ -1,27 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONFIG_DIR=$HOME/.config
-BIN_DIR=$HOME/.local/bin
-PROJECTS_DIR=$HOME/code/projects
-LIB_FILE=$PROJECTS_DIR/pcs/bootstrap/library.sh
-
-CODE_DIR=$PROJECTS_DIR/rjayroach
-CODE_REPO_PREFIX="git@github.com:maxcole/rjayroach"
-CODE_REPOS=("claude" "home")
-
-AUTHORIZED_KEYS_URL="https://github.com/rjayroach.keys"
-BASE_PACKAGES=("bash" "mise" "zsh")
-
-# Source a local copy of the library file or download from a URL
-if [ ! -f $LIB_FILE ]; then
-  LIB_FILE=/tmp/pcs-library.sh
-  if [ ! -f $LIB_FILE ]; then # Download and source the script
-    wget -O $LIB_FILE https://raw.githubusercontent.com/maxcole/pcs-bootstrap/refs/heads/main/library.sh
-  fi
-fi
-source $LIB_FILE
-
+#######
+# The 'coder' package manager, aka 'cpm'
+#
 # Two profiles
 # 1. remote - export shares, full env, ssh auth key(s); typically linux hosts
 # 2. local - mount shares, partial env, ssh private key(s); typically mac hosts
@@ -32,204 +14,123 @@ source $LIB_FILE
 # 3. Install packages (with functions appropriate on os + arch + profile)
 # 3a. zsh basics
 # 3b. ssh stuff
+#######
 
-# CODE_URL="git@github.com:maxcole/claude.git"
-# 
-# REPO_URL="git@github.com:maxcole/rjayroach-home.git"
-# REPO_DIR=$CODE_DIR/projects/rjayroach/home
+CONFIG_DIR=$HOME/.config
+BIN_DIR=$HOME/.local/bin
+PROJECTS_DIR=$HOME/code/projects
+LIB_FILE=$PROJECTS_DIR/pcs/bootstrap/library.sh
 
-# SCRIPT_DIR=$(dirname "$0")
-# SCRIPT_NAME=$(basename "$0")
+CODE_DIR=$PROJECTS_DIR/rjayroach
+CODE_REPO_PREFIX="git@github.com:maxcole/rjayroach"
+CODE_REPOS=("claude" "home")
 
-# STOW_DIRS=("git" "mise/conf.d" "nvim" "ruby" "tmux" "tmuxinator" "zsh")
-# STOW_PACKAGES=("bash" "git" "mise" "nvim" "ruby" "tmux" "tmuxinator" "ventoy" "zsh")
+CODER_PROFILES=("local" "remote")
+
+# Source a local copy of the library file or download from a URL
+if [ ! -f $LIB_FILE ]; then
+  lib_dir=$HOME/.cache/coder
+  mkdir -p $lib_dir
+  LIB_FILE=/$lib_dir/library.sh
+  if [ ! -f $LIB_FILE ]; then # Download and source the script
+    wget -O $LIB_FILE https://raw.githubusercontent.com/maxcole/pcs-bootstrap/refs/heads/main/library.sh
+  fi
+fi
+source $LIB_FILE
+
 
 # Run Once to set the shell, install deps, clone the repo and run the functions
 install_deps() {
-  # TODO: if has_sudo_all
-  if [[ "$(os)" == "linux" ]]; then
-    sudo apt install git stow -y
-  elif [[ "$(os)" == "macos" ]]; then
-    deps_macos
-    # brew install stow (git should already be available)
+  # TODO: if not has_sudo_all
+  local deps=("git" "stow")
+  local missing_deps=()
+
+  for dep in "${deps[@]}"; do
+    if ! command -v $dep &> /dev/null; then
+      missing_deps+=("$dep")
+    fi
+  done
+
+  if [ ${#missing_deps[@]} -ne 0 ]; then
+    if [[ "$(os)" == "linux" ]]; then
+      sudo apt install -y ${missing_deps[*]}
+    elif [[ "$(os)" == "macos" ]]; then
+      deps_macos
+      # brew install stow (git should already be available)
+      # brew install ${missing_deps[*]}
+    fi
   fi
 }
 
 clone_repos() {
   if has_ssh_access; then
     for repo in "${CODE_REPOS[@]}"; do
-      git clone "$CODE_REPO_PREFIX-$repo.git" $CODE_DIR/$repo
+      if [ ! -d $CODE_DIR/$repo ]; then
+        git clone "$CODE_REPO_PREFIX-$repo.git" $CODE_DIR/$repo
+      fi
     done
   fi
 }
 
-install_packages() {
-  # TODO: the mkdir is handled by the package installer
-  # mkdir -p $CONFIG_DIR/mise/conf.d $CONFIG_DIR/zsh
-  # TODO: source the install script from each package in $CODE_DIR/home/dotfiles / $BASE_PACKAGES (bash, mise, zsh)
-  source $CODE_DIR/home/packages/bash/install.sh #  / $BASE_PACKAGES (bash, mise, zsh)
-  # TODO: maybe the bash stuff should jsut be combined with zsh
-
-#   for pkg in "${STOW_PACKAGES[@]}"; do
-# STOW_PACKAGES=("bash" "git" "mise" "nvim" "ruby" "tmux" "tmuxinator" "ventoy" "zsh")
-#     stow -d $REPO_DIR/dotfiles -t $HOME $pkg
+prompt_profile() {
+  # echo $CODER_PROFILE
+  if [[ -z "${CODER_PROFILE:-}" ]]; then
+    while true; do
+      read -p "Coder profile [${CODER_PROFILES[*]}]: " CODER_PROFILE
+      if [[ " ${CODER_PROFILES[*]} " =~ " $CODER_PROFILE " ]]; then
+        break
+      fi
+    done
+    echo "CODER_PROFILE=$CODER_PROFILE" > $HOME/.config/zsh/coder_profile.zsh
+  fi
 }
 
+# this script takes parameters of packages to install
+# so ./install.sh ruby tmux zsh neovim
+# and if it is just ./install then it is the base package by default
+# Each package can call this function to install their deps
+install_packages() {
+  requested_packages=("$@")
+  for pkg in "${requested_packages[@]}"; do
+    pkg_dir=$CODE_DIR/home/packages/$pkg
+
+    if [[ ! -d $pkg_dir ]]; then
+      echo "Invalid package: $pkg"
+    fi
+
+    # for each package passed in check if there is a package install.sh and run it if it is there
+    if [[ -f $pkg_dir/install.sh ]]; then
+      source $pkg_dir/install.sh
+      if [[ "$(os)" == "linux" ]]; then
+        install_linux
+      elif [[ "$(os)" == "macos" ]]; then
+        echo "noop for macos"
+      fi
+    fi
+
+    if [[ -d $pkg_dir/home ]]; then
+      stow -d $pkg_dir -t $HOME home
+    fi
+  done
+}
+
+prompt_profile
+debug
 setup_xdg
 install_deps
 clone_repos
-install_packages
-
-
-
-# -----------
-deps_linux_other() {
-  sudo apt install bat tree -y
-
-  # ruby
-  sudo apt install build-essential zlib1g-dev libssl-dev libreadline-dev libyaml-dev \
-    libsqlite3-dev sqlite3 libxml2-dev libxslt1-dev libcurl4-openssl-dev libffi-dev git -y
-
-  # tmux
-  sudo apt install entr tmux -y
-  if [ ! -d $HOME/.local/share/tmux/plugins/tpm ]; then
-    git clone https://github.com/tmux-plugins/tpm $HOME/.local/share/tmux/plugins/tpm
-  fi
-
-  deps_mise
-  deps_zsh
-  deps_github_cli
-  deps_neovim
-}
-
-
-deps_zsh() {
-  sudo apt install fzf zsh -y
-  sudo usermod -s /bin/zsh $user
-
-  local omz_dir=$HOME/.local/share/omz
-  if [ ! -d "$omz_dir" ]; then
-    git clone https://github.com/ohmyzsh/ohmyzsh.git $omz_dir
-  fi
-  if [ ! -d $omz_dir/custom/plugins/zsh-history-substring-search ]; then
-    git clone https://github.com/zsh-users/zsh-history-substring-search.git $omz_dir/custom/plugins/zsh-history-substring-search
-  fi
-  if [ ! -d $omz_dir/custom/themes/powerlevel10k ]; then
-    git clone https://github.com/romkatv/powerlevel10k.git $omz_dir/custom/themes/powerlevel10k
-  fi
-}
-
-
-deps_github_cli() {
-  if command -v gh &>/dev/null; then
-    return
-  fi
-
-  # TODO: If command -v gh then return
-  (type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \
-	&& sudo mkdir -p -m 755 /etc/apt/keyrings \
-	&& out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-	&& cat $out | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
-	&& sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
-	&& sudo mkdir -p -m 755 /etc/apt/sources.list.d \
-	&& echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-	&& sudo apt update \
-	&& sudo apt install gh -y
-}
-
-
-deps_neovim() {
-  local install_path="${HOME}/.local/bin/nvim"
-
-  if [ -f $install_path ]; then
-    return
-  fi
-
-  # Check for FUSE (required for AppImages)
-  if ! ldconfig -p | grep -q libfuse.so.2; then
-    echo "FUSE2 is not installed. Installing libfuse2..."
-    sudo apt-get install libfuse2 fuse3 -y
-  fi
-
-  # nvim release arch
-  local nvim_arch="x86_64"
-  if [[ "$(arch)" == "arm64" ]]; then
-    nvim_arch="arm64"
-  fi
-
-  # Neovim version - using 'stable' to always get the latest stable release
-  local nvim_version="stable"
-  local download_url="https://github.com/neovim/neovim/releases/download/${nvim_version}/nvim-linux-${nvim_arch}.appimage"
-
-  # Create ~/.local/bin if it doesn't exist
-  mkdir -p $HOME/.local/bin
-  curl -L -o "$install_path" "$download_url"
-  chmod +x "$install_path" # Make it executable
-  echo "Neovim (${nvim_version}) installed successfully to ${install_path}"
-  "$install_path" --version | head -n 1 # Test the installation
-}
-
-
-links() {
-  if [[ ! -d "$REPO_DIR" ]]; then
-    return
-  fi
-
-  # Create dirs in ~/.config so stow does NOT softlink the entire directory to this repo
-  for dir in "${STOW_DIRS[@]}"; do
-    mkdir -p $HOME/.config/$dir
-  done
-
-  # Stow the packages found in ./dotfiles to ~
-  for pkg in "${STOW_PACKAGES[@]}"; do
-    stow -d $REPO_DIR/dotfiles -t $HOME $pkg
-  done
-
-  mkdir -p $HOME/.local/bin
-  stow -d $REPO_DIR -t $HOME scripts
-}
-
-
-configure() {
-  if [[ ! -d "$REPO_DIR" ]]; then
-    return
-  fi
-
-  # Use the absolute path b/c PATH is not yet configured
-  $HOME/.local/bin/nvim --headless "+Lazy! sync" +qa
-  tmux -c $HOME/.local/share/tmux/plugins/tpm/bin/install_plugins
-  tmux -c $HOME/.local/share/tmux/plugins/tpm/tpm
-
-  eval "$(mise activate zsh)" && mise install
-  # mise install
-}
-
-
-ssh_random() {
-  local user=$(whoami)
-  local home_dir
-  home_dir=$(userhome)
-  curl -o "$home_dir/.ssh/authorized_keys" "$AUTHORIZED_KEYS_URL"
-  setup_xdg
-}
-
-# Parse command line arguments
-functions_to_call=()
-
-if [ $# -eq 1 -a "$1" = "all" ]; then
-  functions_to_call+=("deps" "repos" "links" "configure")
-elif [ $# -gt 0 ]; then
-  functions_to_call=("$@")
+if [[ $# -gt 0 ]]; then
+  install_packages $@
 else
-  echo "Usage: $0 [params]"
-  echo "  all: Execute all of the below commands"
-  echo ""
-  echo "  deps: Set the shell, install deps, clone this repo and stow dotfiles and scripts"
-  echo "  repos: Clone the rpositories"
-  echo "  links: Stow the dotfiles and scripts"
-  echo "  configure: Configure installation"
+  install_packages bash zsh
 fi
 
-for function_to_call in "${functions_to_call[@]}"; do
-  # $function_to_call
-done
+
+# AUTHORIZED_KEYS_URL="https://github.com/rjayroach.keys"
+# ssh_random() {
+#   local user=$(whoami)
+#   local home_dir
+#   home_dir=$(userhome)
+#   curl -o "$home_dir/.ssh/authorized_keys" "$AUTHORIZED_KEYS_URL"
+#   setup_xdg
+# }

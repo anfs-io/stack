@@ -1,0 +1,1 @@
+-m $HOME/.config/rails/templates/new.rb --css=tailwind -T

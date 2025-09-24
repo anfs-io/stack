@@ -1,0 +1,6 @@
+---
+# coder mount-ls
+# coder mount <name>
+- name: lab1-ubuntu
+  host: 172.31.1.243
+  export: whatever

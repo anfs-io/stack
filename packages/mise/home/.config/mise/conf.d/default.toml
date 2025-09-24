@@ -1,0 +1,4 @@
+[tools]
+claude = "latest"
+localstack = "latest"
+node = "latest"
