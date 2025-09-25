@@ -11,7 +11,7 @@ co-export() {
     return
   fi
 
-  local line="$CODE_DIR 172.31.0.0/16(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000,crossmnt)"
+  local line="$PROJECTS_DIR 172.31.0.0/16(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=1000,crossmnt)"
   local filename="/etc/exports"
 
   if grep -Fxq "$line" "$filename"; then
