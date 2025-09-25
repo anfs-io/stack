@@ -2,7 +2,7 @@
 return {
   {
     'williamboman/mason.nvim',
-    version = "v1.10.0", -- Pin to v1.x for compatibility
+    version = "v2.0.1",
     config = function()
       require('mason').setup()
     end
@@ -10,12 +10,18 @@ return {
 -- mason-lspconfig
   {
     'williamboman/mason-lspconfig.nvim',
-    version = "v1.29.0", -- Pin to v1.x for compatibility
+    version = "v2.1.0",
     dependencies = { 'williamboman/mason.nvim' },
     config = function()
       require('mason-lspconfig').setup {
         -- https://github.com/williamboman/mason-lspconfig.nvim#available-lsp-servers
-        ensure_installed = { 'lua_ls', 'ruby_lsp', 'stimulus_ls', 'tailwindcss', 'ansiblels' },
+        ensure_installed = {
+          'lua_ls',
+          'ruby_lsp',
+          'stimulus_ls',
+          'tailwindcss',
+          'ansiblels'
+        },
         --[[
         'jinja_lsp'
         'angularls', 'bashls',
@@ -30,7 +36,11 @@ return {
 -- nvim-lspconfig
   {
     'neovim/nvim-lspconfig',
-    dependencies = {'hrsh7th/cmp-nvim-lsp', 'hrsh7th/nvim-cmp', 'williamboman/mason-lspconfig.nvim'},
+    dependencies = {
+      'hrsh7th/cmp-nvim-lsp',
+      'hrsh7th/nvim-cmp',
+      'williamboman/mason-lspconfig.nvim'
+    },
     lazy = false,
     config = function()
       local capabilities = require('cmp_nvim_lsp').default_capabilities()

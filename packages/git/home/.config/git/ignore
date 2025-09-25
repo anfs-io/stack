@@ -1,1 +1,11 @@
+# Ignore Environment-specific files (OS, editor, IDE files)
+
+.DS_Store
+._*
+.trash/
+
+# ruby gem lsp files
 .ruby-lsp
+
+# Claude
+.claude/settings.local.json
