@@ -19,13 +19,17 @@ set -euo pipefail
 CONFIG_DIR=$HOME/.config
 BIN_DIR=$HOME/.local/bin
 PROJECTS_DIR=$HOME/code/projects
+
 LIB_FILE=$PROJECTS_DIR/pcs/bootstrap/library.sh
+LIB_URL=https://raw.githubusercontent.com/maxcole/pcs-bootstrap/refs/heads/main/library.sh
 
 CODE_DIR=$PROJECTS_DIR/rjayroach
 CODE_REPO_PREFIX="git@github.com:maxcole/rjayroach"
 CODE_REPOS=("claude" "coder")
 
 CODER_PROFILES=("local" "remote")
+CODER_PROFILE_DIR=$CONFIG_DIR/zsh
+CODER_PROFILE_FILE=$CODER_PROFILE_DIR/coder_profile.zsh
 
 # Source a local copy of the library file or download from a URL
 if [ ! -f $LIB_FILE ]; then
@@ -33,15 +37,26 @@ if [ ! -f $LIB_FILE ]; then
   mkdir -p $lib_dir
   LIB_FILE=/$lib_dir/library.sh
   if [ ! -f $LIB_FILE ]; then # Download and source the script
-    wget -O $LIB_FILE https://raw.githubusercontent.com/maxcole/pcs-bootstrap/refs/heads/main/library.sh
+    if command -v wget &> /dev/null; then
+      wget -O $LIB_FILE $LIB_URL
+    elif command -v curl &> /dev/null; then
+      curl -o $LIB_FILE $LIB_URL
+    else
+      echo "install wget or curl to continue."
+      exit 1
+    fi
   fi
 fi
 source $LIB_FILE
 
 # Run Once to set the shell, install deps, clone the repo and run the functions
 install_deps() {
+  if [ ! check_sudo ]; then
+    echo "no sudo"
+    return
+  fi
   # TODO: if not has_sudo_all
-  local deps=("git" "stow")
+  local deps=("curl" "git" "stow" "wget")
   local missing_deps=()
 
   for dep in "${deps[@]}"; do
@@ -55,8 +70,7 @@ install_deps() {
       sudo apt install -y ${missing_deps[*]}
     elif [[ "$(os)" == "macos" ]]; then
       deps_macos
-      # brew install stow (git should already be available)
-      # brew install ${missing_deps[*]}
+      brew install ${missing_deps[*]}
     fi
   fi
 }
@@ -72,15 +86,19 @@ clone_repos() {
 }
 
 prompt_profile() {
-  # echo $CODER_PROFILE
   if [[ -z "${CODER_PROFILE:-}" ]]; then
-    while true; do
-      read -p "Coder profile [${CODER_PROFILES[*]}]: " CODER_PROFILE
-      if [[ " ${CODER_PROFILES[*]} " =~ " $CODER_PROFILE " ]]; then
-        break
-      fi
-    done
-    echo "CODER_PROFILE=$CODER_PROFILE" > $HOME/.config/zsh/coder_profile.zsh
+    if [ -f $CODER_PROFILE_FILE ]; then
+      source $CODER_PROFILE_FILE
+    else
+      while true; do
+        read -p "Coder profile [${CODER_PROFILES[*]}]: " CODER_PROFILE
+        if [[ " ${CODER_PROFILES[*]} " =~ " $CODER_PROFILE " ]]; then
+          break
+        fi
+      done
+      mkdir -p $CODER_PROFILE_DIR
+      echo "export CODER_PROFILE=$CODER_PROFILE" > $CODER_PROFILE_FILE
+    fi
   fi
 }
 
@@ -103,7 +121,7 @@ install_packages() {
       if [[ "$(os)" == "linux" ]]; then
         install_linux
       elif [[ "$(os)" == "macos" ]]; then
-        echo "noop for macos"
+        install_macos
       fi
     fi
 
@@ -118,10 +136,12 @@ debug
 setup_xdg
 install_deps
 clone_repos
+mkdir -p $CONFIG_DIR/zsh
 if [[ $# -gt 0 ]]; then
   install_packages $@
 else
-  all_packages=$(find packages -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%f\n')
+  # all_packages=$(find packages -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%f\n')
+  all_packages=("bash")
   install_packages $all_packages
 fi
 

@@ -17,3 +17,11 @@ install_linux() {
 	&& sudo apt update \
 	&& sudo apt install gh -y
 }
+
+install_macos() {
+  if command -v gh &>/dev/null; then
+    return
+  fi
+
+  brew install gh
+}

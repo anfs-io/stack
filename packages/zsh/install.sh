@@ -1,13 +1,19 @@
 # zsh
 
-mkdir -p $CONFIG_DIR/zsh
-
 install_linux() {
   sudo apt install fzf zsh bat tree -y
 
   local user=$(whoami)
   sudo usermod -s /bin/zsh $user
+  post_install
+}
 
+install_macos() {
+  brew install fzf bat tree
+  post_install
+}
+
+post_install() {
   local omz_dir=$HOME/.local/share/omz
   if [ ! -d "$omz_dir" ]; then
     git clone https://github.com/ohmyzsh/ohmyzsh.git $omz_dir

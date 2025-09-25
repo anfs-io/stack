@@ -1,7 +1,7 @@
 # custom aliases
 #
 # echo ${0:a:h} # The dir of this script
-export PATH=~/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# export PATH=~/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export EDITOR=nvim
 bindkey -v
 
@@ -24,21 +24,31 @@ rjayroach() { cd "$PROJECTS_DIR/rjayroach/$1" }
 roteoh() { cd "$PROJECTS_DIR/roteoh/$1" }
 rws() { cd "$PROJECTS_DIR/rws/$1" }
 
-# alias ip_addr="echo $(hostname -I | awk '{print $1}')"
-alias ip_addr="echo $(ip route get 8.8.8.8 | awk '{print $7}' | head -1)"
-
 ostype() {
   case "$(uname)" in
-    Darwin) echo "mac" ;;
+    Darwin) echo "macos" ;;
     Linux)  echo "linux" ;;
     *)      echo "unknown" ;;
   esac
 }
 
+if [ $(ostype) = "linux" ]; then
+  # alias ip_addr="echo $(hostname -I | awk '{print $1}')"
+  alias ip_addr="echo $(ip route get 8.8.8.8 | awk '{print $7}' | head -1)"
+elif [ $(ostype) = "macos" ]; then
+  alias ip_addr="echo $(route get 8.8.8.8 | grep interface | awk '{print $2}' | xargs ifconfig | grep 'inet ' | grep -v 127.0.0.1 | awk '{print $2}' | head -1)"
+fi
+
+if [ $(ostype) = "macos" ]; then
+  fpath=(/opt/homebrew/share/zsh/site-functions $fpath)
+fi
+
 # Clasp
 alias clp="clasp push"
 
-alias bat=batcat
+if [ $(ostype) = "linux" ]; then
+  alias bat=batcat
+fi
 
 # Docker
 alias dcd="docker compose down"

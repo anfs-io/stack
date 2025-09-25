@@ -1,11 +1,6 @@
 # nvim
 
-mkdir -p $CONFIG_DIR/mise/conf.d $CONFIG_DIR/zsh
-
-configure() {
-  # Use the absolute path b/c PATH is not yet configured
-  $HOME/.local/bin/nvim --headless "+Lazy! sync" +qa
-}
+mkdir -p $CONFIG_DIR/nvim
 
 install_linux() {
   local install_path="${HOME}/.local/bin/nvim"
@@ -39,4 +34,17 @@ install_linux() {
 
   # Now configure it
   configure
+  post_install
+}
+
+install_macos() {
+  if ! command -v nvim &> /dev/null; then
+    brew install neovim
+  fi
+  post_install
+}
+
+post_install() {
+  # Use the absolute path b/c PATH is not yet configured
+  $HOME/.local/bin/nvim --headless "+Lazy! sync" +qa
 }
