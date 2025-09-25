@@ -38,7 +38,6 @@ if [ ! -f $LIB_FILE ]; then
 fi
 source $LIB_FILE
 
-
 # Run Once to set the shell, install deps, clone the repo and run the functions
 install_deps() {
   # TODO: if not has_sudo_all
@@ -122,7 +121,8 @@ clone_repos
 if [[ $# -gt 0 ]]; then
   install_packages $@
 else
-  install_packages bash zsh
+  all_packages=$(find packages -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%f\n')
+  install_packages $all_packages
 fi
 
 
