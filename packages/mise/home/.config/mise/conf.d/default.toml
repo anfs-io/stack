@@ -1,4 +1,4 @@
 [tools]
-claude = "latest"
-localstack = "latest"
 node = "latest"
+claude = "latest"
+# localstack = "latest"

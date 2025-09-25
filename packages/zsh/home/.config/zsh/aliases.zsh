@@ -1,7 +1,10 @@
 # custom aliases
 #
 # echo ${0:a:h} # The dir of this script
+
 # export PATH=~/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Add ~/.local/bin to the search path
+[[ ":$PATH:" != *":$HOME/.local/bin:"* ]] && export PATH="$HOME/.local/bin:$PATH"
 export EDITOR=nvim
 bindkey -v
 

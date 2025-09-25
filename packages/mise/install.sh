@@ -1,11 +1,5 @@
 # mise
 
-mkdir -p $CONFIG_DIR/mise/conf.d
-
-# configure_mise() {
-#   eval "$(mise activate zsh)" && mise install
-# }
-
 install_linux() {
   if command -v mise &> /dev/null; then
     return
@@ -18,13 +12,20 @@ install_linux() {
   sudo apt update
 
   sudo apt install mise -y
-  mise install
-  # configure_mise
+  post_install
 }
 
 install_macos() {
   if command -v mise &> /dev/null; then
     return
   fi
-  brew install mise
+
+  brew install cosign gpg mise
+  post_install
+}
+
+post_install() {
+  mkdir -p $CONFIG_DIR/mise/conf.d
+
+  mise install node claude
 }

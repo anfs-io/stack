@@ -1,7 +1,8 @@
 # claude.yml
 <% 
   require "#{File.dirname(path)}/tmuxinator_project.rb"
-  project = TmuxinatorProject.new(path: path, root: ENV.fetch('CODE_DIR', Dir.home)).setup # path is a value from Tmuxinator
+  # project = TmuxinatorProject.new(path: path, root: ENV.fetch('CODE_DIR', Dir.home)).setup # path is a value from Tmuxinator
+  project = TmuxinatorProject.new(path: path).setup # path is a value from Tmuxinator
 %>
 
 name: <%= project.name %>
