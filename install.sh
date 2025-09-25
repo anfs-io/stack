@@ -23,7 +23,7 @@ LIB_FILE=$PROJECTS_DIR/pcs/bootstrap/library.sh
 
 CODE_DIR=$PROJECTS_DIR/rjayroach
 CODE_REPO_PREFIX="git@github.com:maxcole/rjayroach"
-CODE_REPOS=("claude" "home")
+CODE_REPOS=("claude" "coder")
 
 CODER_PROFILES=("local" "remote")
 
@@ -91,7 +91,7 @@ prompt_profile() {
 install_packages() {
   requested_packages=("$@")
   for pkg in "${requested_packages[@]}"; do
-    pkg_dir=$CODE_DIR/home/packages/$pkg
+    pkg_dir=$CODE_DIR/coder/packages/$pkg
 
     if [[ ! -d $pkg_dir ]]; then
       echo "Invalid package: $pkg"
