@@ -1,16 +1,17 @@
 # zsh
 
-install_linux() {
-  sudo apt install fzf zsh bat tree -y
+pre_install() {
+  mkdir -p $CONFIG_DIR/zsh
+}
 
+install_linux() {
+  install_dep "bat" "fzf" "tree" "zsh"
   local user=$(whoami)
   sudo usermod -s /bin/zsh $user
-  post_install
 }
 
 install_macos() {
-  brew install fzf bat tree
-  post_install
+  install_dep "bat" "fzf" "tree"
 }
 
 post_install() {

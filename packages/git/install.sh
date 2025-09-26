@@ -1,10 +1,10 @@
 # git
 
+pre_install() { return; }
+
 # installs the github command line client (gh)
 install_linux() {
-  if command -v gh &>/dev/null; then
-    return
-  fi
+  command -v gh &> /dev/null && return
 
   # TODO: If command -v gh then return
   (type -p wget >/dev/null || (sudo apt update && sudo apt install wget -y)) \
@@ -19,9 +19,9 @@ install_linux() {
 }
 
 install_macos() {
-  if command -v gh &>/dev/null; then
-    return
-  fi
+  command -v gh &> /dev/null && return
 
-  brew install gh
+  install_dep gh
 }
+
+post_install() { return; }

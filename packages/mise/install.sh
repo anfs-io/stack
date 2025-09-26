@@ -1,9 +1,11 @@
 # mise
 
+pre_install() {
+  mkdir -p $CONFIG_DIR/mise/conf.d
+}
+
 install_linux() {
-  if command -v mise &> /dev/null; then
-    return
-  fi
+  command -v mise &> /dev/null && return
 
   sudo apt install cosign curl gpg -y
   sudo install -dm 755 /etc/apt/keyrings
@@ -12,20 +14,14 @@ install_linux() {
   sudo apt update
 
   sudo apt install mise -y
-  post_install
 }
 
 install_macos() {
-  if command -v mise &> /dev/null; then
-    return
-  fi
-
-  brew install cosign gpg mise
-  post_install
+  command -v mise &> /dev/null && return
+  install_dep cosign gpg mise
 }
 
 post_install() {
-  mkdir -p $CONFIG_DIR/mise/conf.d
-
+  command -v claude &> /dev/null && return
   mise install node claude
 }

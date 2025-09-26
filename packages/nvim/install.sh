@@ -1,13 +1,13 @@
 # nvim
 
-mkdir -p $CONFIG_DIR/nvim
+pre_install() {
+  [[ ! -d $CONFIG_DIR/nvim ]] && mkdir -p $CONFIG_DIR/nvim
+}
 
 install_linux() {
-  local install_path="${HOME}/.local/bin/nvim"
+  command -v nvim &> /dev/null && return
 
-  if [ -f $install_path ]; then
-    return
-  fi
+  local install_path="${HOME}/.local/bin/nvim"
 
   # Check for FUSE (required for AppImages)
   if ! ldconfig -p | grep -q libfuse.so.2; then
@@ -25,26 +25,18 @@ install_linux() {
   local nvim_version="stable"
   local download_url="https://github.com/neovim/neovim/releases/download/${nvim_version}/nvim-linux-${nvim_arch}.appimage"
 
-  # Create ~/.local/bin if it doesn't exist
-  mkdir -p $HOME/.local/bin
   curl -L -o "$install_path" "$download_url"
   chmod +x "$install_path" # Make it executable
   echo "Neovim (${nvim_version}) installed successfully to ${install_path}"
   "$install_path" --version | head -n 1 # Test the installation
-
-  # Now configure it
-  configure
-  post_install
 }
 
 install_macos() {
-  if ! command -v nvim &> /dev/null; then
-    brew install neovim
-  fi
-  post_install
+  command -v nvim &> /dev/null && return
+  install_dep neovim
 }
 
 post_install() {
-  # Use the absolute path b/c PATH is not yet configured
-  $HOME/.local/bin/nvim --headless "+Lazy! sync" +qa
+  command -v nvim &> /dev/null && return
+  $BIN_DIR/nvim --headless "+Lazy! sync" +qa
 }

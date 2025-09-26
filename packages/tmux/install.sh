@@ -1,28 +1,24 @@
 # tmux
 
-install_linux() {
-  if command -v tmux &> /dev/null; then
-    return
-  fi
+pre_install() { return; }
 
-  sudo apt install entr tmux -y
-  post_install
+install_linux() {
+  command -v tmux &> /dev/null && return
+  install_dep entr tmux
 }
 
 install_macos() {
-  # if command -v tmux &> /dev/null; then
-  #   return
-  # fi
-
-  # brew install tmux
-  post_install
+  command -v tmux &> /dev/null && return
+  install_dep tmux
 }
 
 post_install() {
-  if [ ! -d $HOME/.local/share/tmux/plugins/tpm ]; then
-    git clone https://github.com/tmux-plugins/tpm $HOME/.local/share/tmux/plugins/tpm
+  tmux_plugins_dir=$HOME/.local/share/tmux/plugins
+  tpm_dir=tmux_plugins_dir/tpm
+  if [ ! -d $tpm_dir ]; then
+    git clone https://github.com/tmux-plugins/tpm $tpm_dir
   fi
 
-  tmux -c $HOME/.local/share/tmux/plugins/tpm/bin/install_plugins
-  tmux -c $HOME/.local/share/tmux/plugins/tpm/tpm
+  tmux -c $tpm_dir/bin/install_plugins
+  tmux -c $tpm_dir/tpm
 }

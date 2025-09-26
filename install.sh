@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+[[ $# -eq 0 ]] && exit 0
+
 #######
 # The 'coder' package manager, aka 'cpm'
 #
@@ -30,6 +32,7 @@ CODE_REPOS=("claude" "coder")
 CODER_PROFILES=("local" "remote")
 CODER_PROFILE_DIR=$CONFIG_DIR/zsh
 CODER_PROFILE_FILE=$CODER_PROFILE_DIR/coder_profile.zsh
+CODER_PACKAGES_DIR=$CODE_DIR/coder/packages
 
 # Source a local copy of the library file or download from a URL
 if [ ! -f $LIB_FILE ]; then
@@ -42,7 +45,7 @@ if [ ! -f $LIB_FILE ]; then
     elif command -v curl &> /dev/null; then
       curl -o $LIB_FILE $LIB_URL
     else
-      echo "install wget or curl to continue."
+      echo "Install wget or curl to continue."
       exit 1
     fi
   fi
@@ -51,28 +54,30 @@ source $LIB_FILE
 
 # Run Once to set the shell, install deps, clone the repo and run the functions
 install_deps() {
+  # TODO: if not has_sudo_all
   if [ ! check_sudo ]; then
     echo "no sudo"
     return
   fi
-  # TODO: if not has_sudo_all
-  local deps=("curl" "git" "stow" "wget")
-  local missing_deps=()
+  install_dep "curl" "git" "stow" "wget"
 
-  for dep in "${deps[@]}"; do
-    if ! command -v $dep &> /dev/null; then
-      missing_deps+=("$dep")
-    fi
-  done
+  # local deps=("curl" "git" "stow" "wget")
+  # local missing_deps=()
 
-  if [ ${#missing_deps[@]} -ne 0 ]; then
-    if [[ "$(os)" == "linux" ]]; then
-      sudo apt install -y ${missing_deps[*]}
-    elif [[ "$(os)" == "macos" ]]; then
-      deps_macos
-      brew install ${missing_deps[*]}
-    fi
-  fi
+  # for dep in "${deps[@]}"; do
+  #   if ! command -v $dep &> /dev/null; then
+  #     missing_deps+=("$dep")
+  #   fi
+  # done
+
+  # if [ ${#missing_deps[@]} -ne 0 ]; then
+  #   if [[ "$(os)" == "linux" ]]; then
+  #     sudo apt install -y ${missing_deps[*]}
+  #   elif [[ "$(os)" == "macos" ]]; then
+  #     deps_macos
+  #     brew install ${missing_deps[*]}
+  #   fi
+  # fi
 }
 
 clone_repos() {
@@ -109,48 +114,55 @@ prompt_profile() {
 install_packages() {
   requested_packages=("$@")
   for pkg in "${requested_packages[@]}"; do
-    pkg_dir=$CODE_DIR/coder/packages/$pkg
+    pkg_dir=$CODER_PACKAGES_DIR/$pkg
 
+    # If the package name is not found then skip to the next, otherwise source install.sh if the package has it
     if [[ ! -d $pkg_dir ]]; then
       echo "Invalid package: $pkg"
+      continue
     fi
 
-    # for each package passed in check if there is a package install.sh and run it if it is there
-    if [[ -f $pkg_dir/install.sh ]]; then
-      source $pkg_dir/install.sh
-      if [[ "$(os)" == "linux" ]]; then
-        install_linux
-      elif [[ "$(os)" == "macos" ]]; then
-        install_macos
-      fi
-    fi
+    # Check if the package has install.sh and source it
+    [[ -f "$pkg_dir/install.sh" ]] && has_installer=true || has_installer=false
+    $has_installer && source "$pkg_dir/install.sh"
 
-    if [[ -d $pkg_dir/home ]]; then
-      stow -d $pkg_dir -t $HOME home
+    $has_installer && pre_install
+
+    # Use stow to make softlinks into the user's home directory
+    [[ -d $pkg_dir/home ]] && stow -d $pkg_dir -t $HOME home
+
+    # invoke install_linux or install_macos
+    func_name="install_$(os)"
+    $has_installer && $func_name
+
+    $has_installer && post_install
+  done
+}
+
+# Used by package installers to install deps (apt or homebrew)
+install_dep() {
+  for dep in "$@"; do
+    command -v $dep &> /dev/null && continue
+
+    if [[ "$(os)" == "linux" ]]; then
+      sudo apt install $dep -y
+    elif [[ "$(os)" == "macos" ]]; then
+      brew install $dep
     fi
   done
 }
 
+pac_sel=$@
+if [[ "$1" == "all" ]]; then
+  pac_sel=$(find packages -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%f\n')
+fi
+
+[[ ! -d $CONFIG_DIR/zsh ]] && mkdir -p $CONFIG_DIR/zsh
+[[ ! -d $BIN_DIR ]] && mkdir -p $BIN_DIR
+
 prompt_profile
-debug
+# debug
 setup_xdg
 install_deps
 clone_repos
-mkdir -p $CONFIG_DIR/zsh
-if [[ $# -gt 0 ]]; then
-  install_packages $@
-else
-  # all_packages=$(find packages -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%f\n')
-  all_packages=("bash")
-  install_packages $all_packages
-fi
-
-
-# AUTHORIZED_KEYS_URL="https://github.com/rjayroach.keys"
-# ssh_random() {
-#   local user=$(whoami)
-#   local home_dir
-#   home_dir=$(userhome)
-#   curl -o "$home_dir/.ssh/authorized_keys" "$AUTHORIZED_KEYS_URL"
-#   setup_xdg
-# }
+install_packages $pac_sel
