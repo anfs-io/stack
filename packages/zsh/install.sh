@@ -25,4 +25,5 @@ post_install() {
   if [ ! -d $omz_dir/custom/themes/powerlevel10k ]; then
     git clone https://github.com/romkatv/powerlevel10k.git $omz_dir/custom/themes/powerlevel10k
   fi
+  mkdir -p $omz_dir/custom/functions
 }
