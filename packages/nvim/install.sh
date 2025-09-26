@@ -37,6 +37,10 @@ install_macos() {
 }
 
 post_install() {
-  command -v nvim &> /dev/null && return
-  $BIN_DIR/nvim --headless "+Lazy! sync" +qa
+  if [[ "$(os)" == "linux" ]]; then
+    # Use the absolute path b/c PATH is not yet configured
+    $BIN_DIR/nvim --headless "+Lazy! sync" +qa
+  elif [[ "$(os)" == "macos" ]]; then
+    /opt/homebrew/bin/nvim --headless "+Lazy! sync" +qa
+  fi
 }

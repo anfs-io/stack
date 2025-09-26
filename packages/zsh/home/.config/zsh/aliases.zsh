@@ -5,6 +5,7 @@
 # export PATH=~/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Add ~/.local/bin to the search path
 [[ ":$PATH:" != *":$HOME/.local/bin:"* ]] && export PATH="$HOME/.local/bin:$PATH"
+eval "$(/opt/homebrew/bin/brew shellenv)"
 export EDITOR=nvim
 bindkey -v
 
