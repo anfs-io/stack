@@ -1,6 +1,7 @@
 amazing_print
 bundler
 factory_bot_rails
+foreman
 git
 guard
 pg

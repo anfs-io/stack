@@ -13,9 +13,7 @@ return {
   --   "BufNewFile path/to/my-vault/*.md",
   -- },
   dependencies = {
-    -- Required.
-    "nvim-lua/plenary.nvim",
-
+    "nvim-lua/plenary.nvim", -- Required.
     -- see below for full list of optional dependencies 👇
   },
   opts = {
@@ -24,12 +22,30 @@ return {
         name = "code",
         path = "$CODE_DIR",
       },
-      -- {
-      --   name = "work",
-      --   path = "~/vaults/work",
-      -- },
     },
-
     -- see below for full list of options 👇
+  },
+  mappings = {
+    -- Overrides the 'gf' mapping to work on markdown/wiki links within your vault.
+    ["gf"] = {
+      action = function()
+        return require("obsidian").util.gf_passthrough()
+      end,
+      opts = { noremap = false, expr = true, buffer = true },
+    },
+    -- Go back in jump list - obsidian specific
+    ["gF"] = {
+      action = function()
+        vim.cmd("normal! \15") -- \15 is <C-o>
+      end,
+      opts = { buffer = true },
+    },
+    -- Toggle check-boxes.
+    ["<leader>ch"] = {
+      action = function()
+        return require("obsidian").util.toggle_checkbox()
+      end,
+      opts = { buffer = true },
+    },
   },
 }

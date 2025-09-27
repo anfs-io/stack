@@ -5,6 +5,10 @@ gem_group :development, :test do
   gem('rspec-rails')
 end
 
+gem_group :development do
+  gem('ruby-lsp-rspec', require: false)
+end
+
 gem('amazing_print')
 gem('pry-rails')
 

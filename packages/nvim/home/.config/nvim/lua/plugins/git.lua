@@ -9,7 +9,7 @@ return {
     vim.keymap.set("n", "<leader>glg", ":Git log --stat<CR>", {})
     vim.keymap.set("n", "<leader>ga", ":Git add .<CR>", {})
     vim.keymap.set("n", "<leader>gc", ":Git commit<CR>", {})
-    vim.keymap.set("n", "<leader>gd", ":Git diff<CR>", {})
+    vim.keymap.set("n", "<leader>gdf", ":Git diff<CR>", {})
     vim.keymap.set("n", "<leader>gp", ":Git push<CR>", {})
   end
 }

@@ -1,7 +1,7 @@
 # nvim
 
 pre_install() {
-  [[ ! -d $CONFIG_DIR/nvim ]] && mkdir -p $CONFIG_DIR/nvim
+  [ ! -d "$CONFIG_DIR/nvim" ] && mkdir -p $CONFIG_DIR/nvim || true
 }
 
 install_linux() {
@@ -33,7 +33,7 @@ install_linux() {
 
 install_macos() {
   command -v nvim &> /dev/null && return
-  install_dep neovim
+  install_dep neovim ripgrep
 }
 
 post_install() {

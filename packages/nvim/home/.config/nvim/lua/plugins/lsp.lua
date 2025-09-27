@@ -30,6 +30,7 @@ return {
         'rubocop'
        -- ]]
         automatic_installation = true, -- This works in v1.x
+        automatic_enable = false, -- Disable auto-enabling to avoid conflicts
       }
     end
   },
@@ -58,7 +59,8 @@ return {
 
       vim.lsp.config.ruby_lsp = {
         cmd = { 'ruby-lsp' },
-        capabilities = capabilities
+        capabilities = capabilities,
+        position_encoding = 'utf-8'
       }
 
       vim.lsp.enable({'lua_ls', 'ruby_lsp'})
