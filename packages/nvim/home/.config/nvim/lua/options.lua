@@ -27,16 +27,20 @@ vim.g.background = "light"
 
 vim.opt.swapfile = false
 
--- Navigate vim panes better
-vim.keymap.set('n', '<c-k>', ':wincmd k<CR>')
-vim.keymap.set('n', '<c-j>', ':wincmd j<CR>')
-vim.keymap.set('n', '<c-h>', ':wincmd h<CR>')
-vim.keymap.set('n', '<c-l>', ':wincmd l<CR>')
+-- Navigate vim panes better - REMOVED: handled by vim-tmux-navigator plugin
+-- vim.keymap.set('n', '<c-k>', ':wincmd k<CR>')
+-- vim.keymap.set('n', '<c-j>', ':wincmd j<CR>')
+-- vim.keymap.set('n', '<c-h>', ':wincmd h<CR>')
+-- vim.keymap.set('n', '<c-l>', ':wincmd l<CR>')
 vim.keymap.set('n', '<leader>w', '<Esc>:w<cr><Space>')
 vim.keymap.set('n', '<leader>wq', '<Esc>:wq<cr><Space>')
 vim.keymap.set('n', '<leader>wqa', '<Esc>:wqa<cr><Space>')
 vim.keymap.set('n', '<leader>qa', '<Esc>:q!<cr><Space>')
 
+-- Emulate gt and gT vim tab navigation but with documents
+-- Targeting markdown docs. The obsidian plugin is configured with gf to follow link
+vim.keymap.set('n', 'gF', ':bprevious<CR>')
+-- vim.keymap.set('n', 'gF', '<C-o>', { desc = 'Go back in jump list' })
 
 vim.wo.number = true
 vim.wo.relativenumber = true
@@ -51,3 +55,10 @@ end, { desc = 'Copy register to tmux' })
 
 -- t(tmux)p(aste) - Paste from tmux buffer
 vim.keymap.set('n', '<leader>tp', ':read !tmux show-buffer<CR>', { desc = 'Paste tmux buffer' })
+
+-- For obsidian bases uses .base file extension
+vim.filetype.add({
+  extension = {
+    base = 'yaml',
+  }
+})

@@ -23,6 +23,22 @@ return {
         path = "$CODE_DIR",
       },
     },
+    -- open internet URL
+    follow_url_func = function(url)
+    local cmd
+    if vim.fn.has("mac") == 1 then
+      cmd = {"open", url}
+    elseif vim.fn.has("unix") == 1 then
+      cmd = {"xdg-open", url}
+    elseif vim.fn.has("win32") == 1 then
+      cmd = {"cmd", "/c", "start", url}
+    else
+      vim.notify("Don't know how to open URL on this OS", vim.log.levels.ERROR)
+      return
+    end
+
+    vim.fn.jobstart(cmd, {detach = true})
+    end,
     -- see below for full list of options 👇
   },
   mappings = {
@@ -34,12 +50,12 @@ return {
       opts = { noremap = false, expr = true, buffer = true },
     },
     -- Go back in jump list - obsidian specific
-    ["gF"] = {
-      action = function()
-        vim.cmd("normal! \15") -- \15 is <C-o>
-      end,
-      opts = { buffer = true },
-    },
+    -- ["gF"] = {
+    --   action = function()
+    --     vim.cmd("normal! \15") -- \15 is <C-o>
+    --   end,
+    --   opts = { buffer = true },
+    -- },
     -- Toggle check-boxes.
     ["<leader>ch"] = {
       action = function()

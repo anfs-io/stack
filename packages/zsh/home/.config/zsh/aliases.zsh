@@ -25,11 +25,13 @@ export PROJECTS_GIT_REMOTE_PREFIX="git@github.com:$PROJECTS_GITHUB_ORG"
 export DOTFILES_PATH=rjayroach/coder
 export DOTFILES_HOME=$PROJECTS_DIR/$DOTFILES_PATH
 
+code() { cd "$CODE_DIR/$1" }
 config() { cd "$CONFIG_DIR/$1" }
 pcs() { cd "$PROJECTS_DIR/pcs/$1" }
 rjayroach() { cd "$PROJECTS_DIR/rjayroach/$1" }
 roteoh() { cd "$PROJECTS_DIR/roteoh/$1" }
 rws() { cd "$PROJECTS_DIR/rws/$1" }
+spike() { cd "$PROJECTS_DIR/spike/$1" }
 
 ostype() {
   case "$(uname)" in
