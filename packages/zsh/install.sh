@@ -1,7 +1,7 @@
 # zsh
 
 pre_install() {
-  mkdir -p $CONFIG_DIR/zsh
+  mkdir -p $XDG_CONFIG_DIR/zsh
 }
 
 install_linux() {
@@ -15,7 +15,7 @@ install_macos() {
 }
 
 post_install() {
-  local omz_dir=$HOME/.local/share/omz
+  local omz_dir=$XDG_LOCAL_SHARE_DIR/omz
   if [ ! -d "$omz_dir" ]; then
     git clone https://github.com/ohmyzsh/ohmyzsh.git $omz_dir
   fi
@@ -26,4 +26,16 @@ post_install() {
     git clone https://github.com/romkatv/powerlevel10k.git $omz_dir/custom/themes/powerlevel10k
   fi
   mkdir -p $omz_dir/custom/functions
+}
+
+remove() {
+  echo "remove"
+}
+
+remove_linux() {
+  echo "remove_linux"
+}
+
+remove_macos() {
+  echo "remove_macos"
 }

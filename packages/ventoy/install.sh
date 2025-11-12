@@ -3,7 +3,7 @@
 pre_install() { return; }
 
 install_linux() {
-  install_packages ruby
+  install ruby
 }
 
 install_macos() { return; }

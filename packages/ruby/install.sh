@@ -18,6 +18,6 @@ install_macos() {
 post_install() {
   command -v ruby &> /dev/null && return
 
-  install_packages mise
+  install mise
   mise install ruby
 }

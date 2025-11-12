@@ -7,7 +7,7 @@ install_linux() { return; }
 install_macos() {
   [[ "${CODER_PROFILE}" != "local" ]] && return
 
-  apps_string=$(cat $CONFIG_DIR/coder/brew.txt)
+  apps_string=$(cat $XDG_CONFIG_DIR/coder/brew.txt)
   IFS=$'\n' apps=($apps_string)
   # echo "apps: ${apps[@]}"
 

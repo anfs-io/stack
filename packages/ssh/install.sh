@@ -7,7 +7,7 @@ pre_install() {
 install_linux() { return; }
 
 install_macos() {
-  [[ ! coder_local ]] && return
+  # [[ ! coder_local ]] && return
 
   if ! command -v lazyssh &>/dev/null; then
     brew install lazyssh

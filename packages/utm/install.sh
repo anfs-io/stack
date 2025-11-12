@@ -5,8 +5,8 @@ install_linux() { return; }
 
 install_macos() {
   brew install utm
-  if [[ ! -f $HOME/.local/bin/utmctl ]]; then
-    ln -s /Applications/UTM.app/Contents/MacOS/utmctl $HOME/.local/bin
+  if [[ ! -f $XDG_BIN_DIR/utmctl ]]; then
+    ln -s /Applications/UTM.app/Contents/MacOS/utmctl $XDG_BIN_DIR
   fi
 }
 

@@ -1,7 +1,7 @@
 # mise
 
 pre_install() {
-  mkdir -p $CONFIG_DIR/mise/conf.d
+  mkdir -p $XDG_CONFIG_DIR/mise/conf.d
 }
 
 install_linux() {
