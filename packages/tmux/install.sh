@@ -14,7 +14,7 @@ install_macos() {
 
 post_install() {
   tmux_plugins_dir=$XDG_LOCAL_SHARE_DIR/tmux/plugins
-  tpm_dir=tmux_plugins_dir/tpm
+  tpm_dir=$tmux_plugins_dir/tpm
   if [ ! -d $tpm_dir ]; then
     git clone https://github.com/tmux-plugins/tpm $tpm_dir
   fi

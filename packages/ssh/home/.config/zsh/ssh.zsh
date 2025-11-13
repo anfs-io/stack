@@ -1,14 +1,12 @@
 # Connect to remote hosts
 
-if coder_local; then
-  ssh() {
-    if (( $# == 0 )); then
-      lazyssh
-    else
-      command ssh "$@"
-    fi
-  }
-fi
+ssh() {
+  if (( $# == 0 )) && command -v lazyssh &>/dev/null; then
+    lazyssh
+  else
+    command ssh "$@"
+  fi
+}
 
 con() {
   local site=$PCS_SITE

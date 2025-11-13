@@ -10,14 +10,10 @@ install_linux() {
 }
 
 install_macos() {
-  command -v ruby &> /dev/null && return
-
   install_dep libyaml openssl readline
 }
 
 post_install() {
-  command -v ruby &> /dev/null && return
-
   install mise
   mise install ruby
 }

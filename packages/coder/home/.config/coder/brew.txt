@@ -1,7 +1,0 @@
-1password-cli
-ghostty
-google-chrome
-obsidian
-raycast
-todoist
-whatsapp
