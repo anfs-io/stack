@@ -11,9 +11,19 @@
 - Enable passwordless sudo
 
 ```bash
+mkdir ~/.ssh
+wget -qO- https://github.com/rjayroach.keys > .ssh/authorized_keys
 su -
 apt install sudoers
 echo 'ansible ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ansible
+```
+
+```bash
+rm -rf $HOME/.cache/ppm $HOME/.local/bin/ppm
+git clone git@github.com:maxcole/ppm.git $HOME/.cache/ppm
+ln -s $HOME/.cache/ppm/ppm $HOME/.local/bin/ppm
+echo 'git@github.com:maxcole/rjayroach-coder.git' > $HOME/.config/ppm/sources.list
+ppm update
 ```
 
 # ROADMAP
