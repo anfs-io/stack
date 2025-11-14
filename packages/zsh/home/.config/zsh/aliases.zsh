@@ -8,7 +8,11 @@ coder_remote() { [[ "$CODER_PROFILE" == "remote" ]] }
 # export PATH=~/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Add ~/.local/bin to the search path
 [[ ":$PATH:" != *":$HOME/.local/bin:"* ]] && export PATH="$HOME/.local/bin:$PATH"
-eval "$(/opt/homebrew/bin/brew shellenv)"
+
+if [ -f /opt/homebrew/bin/brew ]; then
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+fi
+
 export EDITOR=nvim
 bindkey -v
 
