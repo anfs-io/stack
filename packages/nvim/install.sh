@@ -12,7 +12,11 @@ install_linux() {
   # Check for FUSE (required for AppImages)
   if ! ldconfig -p | grep -q libfuse.so.2; then
     echo "FUSE2 is not installed. Installing libfuse2..."
-    sudo apt-get install libfuse2 fuse3 -y
+    sudo apt install libfuse2 fuse3 -y
+  fi
+
+  if ! command -v gcc &> /dev/null
+    sudo apt install gcc -y
   fi
 
   # nvim release arch
@@ -22,12 +26,15 @@ install_linux() {
   fi
 
   # Neovim version - using 'stable' to always get the latest stable release
-  local nvim_version="stable"
+  # NOTE: The latest (0.11.5) nvim 64 bit appimage download is actually 32 bit so pin the version to 0.11.4 for now
+  # local nvim_version="stable"
+  local nvim_version="v0.11.4"
   local download_url="https://github.com/neovim/neovim/releases/download/${nvim_version}/nvim-linux-${nvim_arch}.appimage"
 
   curl -L -o "$install_path" "$download_url"
   chmod +x "$install_path" # Make it executable
-  echo "Neovim (${nvim_version}) installed successfully to ${install_path}"
+  echo "Neovim (${nvim_version}) arch (${nvim_arch}) installed successfully to ${install_path}"
+  echo "From ${download_url}"
   "$install_path" --version | head -n 1 # Test the installation
 }
 
