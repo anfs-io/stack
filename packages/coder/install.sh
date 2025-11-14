@@ -1,6 +1,8 @@
 # coder
 
-pre_install() { return; }
+pre_install() {
+  mkdir -p $XDG_CONFIG_DIR/coder
+}
 
 install_linux() { return; }
 

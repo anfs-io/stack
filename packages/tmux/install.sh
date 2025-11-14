@@ -20,5 +20,5 @@ post_install() {
   fi
 
   tmux -c $tpm_dir/bin/install_plugins
-  tmux -c $tpm_dir/tpm
+  echo "Did not run 'tmux -c $tpm_dir/tpm'"
 }
