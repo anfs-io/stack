@@ -2,7 +2,7 @@
 
 if command -v lazyssh &>/dev/null; then
   ssh() {
-    if (( $# == 0 ))
+    if (( $# == 0 )); then
       lazyssh
     else
       command ssh "$@"
