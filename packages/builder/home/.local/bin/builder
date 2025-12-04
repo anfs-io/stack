@@ -1,0 +1,56 @@
+#!/usr/bin/env ruby
+
+require 'thor'
+require 'webrick'
+require 'yaml'
+require 'erb'
+require 'socket'
+
+class Builder < Thor
+  def self.exit_on_failure? = true
+
+  desc "serve NAME", "Serve preseed.cfg for the given configuration name"
+  option :port, type: :numeric, default: 8080, aliases: '-p'
+  def serve(name)
+    config_dir = File.expand_path("~/.config/builder")
+    config_file = File.join(config_dir, "#{name}.yml")
+    template_file = File.join(config_dir, "preseed.cfg.erb")
+
+    unless File.exist?(config_file)
+      puts "Config not found: #{config_file}"
+      exit 1
+    end
+
+    config = YAML.load_file(config_file, symbolize_names: true)
+    template = ERB.new(File.read(template_file))
+    preseed_content = template.result_with_hash(config)
+
+    ip = local_ip
+    port = options[:port]
+    preseed_path = "/preseed-#{name}.cfg"
+
+    puts "Serving preseed at: http://#{ip}:#{port}#{preseed_path}"
+    puts "Boot param: auto=true priority=critical preseed/url=http://#{ip}:#{port}#{preseed_path}"
+    puts "\nPress Ctrl+C to stop\n\n"
+
+    server = WEBrick::HTTPServer.new(Port: port, Logger: WEBrick::Log.new($stdout, WEBrick::Log::INFO))
+
+    server.mount_proc(preseed_path) do |req, res|
+      res['Content-Type'] = 'text/plain'
+      res.body = preseed_content
+    end
+
+    trap('INT') { server.shutdown }
+    server.start
+  end
+
+  private
+
+  def local_ip
+    Socket.ip_address_list
+          .detect { |addr| addr.ipv4? && !addr.ipv4_loopback? }
+          &.ip_address || '127.0.0.1'
+  end
+end
+
+Builder.start(ARGV)
