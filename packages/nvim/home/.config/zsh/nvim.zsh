@@ -1,5 +1,7 @@
 # Neovim
 
+export EDITOR=nvim
+
 nconf() {
   local config_dir=$HOME/.config/nvim
   local plugins_dir=$config_dir/lua/plugins

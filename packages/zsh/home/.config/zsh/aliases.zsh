@@ -2,18 +2,15 @@
 #
 # echo ${0:a:h} # The dir of this script
 
-coder_local() { [[ "$CODER_PROFILE" == "local" ]] }
-coder_remote() { [[ "$CODER_PROFILE" == "remote" ]] }
-
 # export PATH=~/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Add ~/.local/bin to the search path
 [[ ":$PATH:" != *":$HOME/.local/bin:"* ]] && export PATH="$HOME/.local/bin:$PATH"
 
+# Load homebrew zsh functions
 if [ -f /opt/homebrew/bin/brew ]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 
-export EDITOR=nvim
 bindkey -v
 
 if command -v fzf >/dev/null 2>&1; then
@@ -63,13 +60,8 @@ if [ $(ostype) = "linux" ]; then
   alias bat=batcat
 fi
 
-# Docker
-alias dcd="docker compose down"
-alias dvls="docker volume ls"
-
 # -a shows hidden files; -l follow symlinks; -I ignore
-alias tsa="tree -a -l -I tmp -I .git -I .terraform -I .DS_Store -I \"._*\" -I .obsidian -I apps"
-
+alias tsa="tree -a -l -I tmp -I .git -I .terraform -I .obsidian -I .ruby-lsp -I .DS_Store -I \"._*\""
 
 # General Aliases and helpers
 alias cls="clear"
@@ -79,7 +71,7 @@ zconf() {
   # local dir=$(dirname $(readlink -f "${(%):-%x}") )
   local dir="$CONFIG_DIR/zsh"
   if [[ $1 == "ls" ]]; then
-    ls $dir
+    ls $2 $dir
   elif [[ $1 == "pwd" ]]; then
     echo $dir
   else
