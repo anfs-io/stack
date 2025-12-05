@@ -1,7 +1,8 @@
 # coder
 
 pre_install() {
-  mkdir -p $XDG_CONFIG_DIR/coder $XDG_CONFIG_DIR/tmuxinator
+  mkdir -p $XDG_CONFIG_DIR/coder/repos.d
+  mkdir -p $XDG_CONFIG_DIR/tmuxinator
 }
 
 install_linux() { return; }

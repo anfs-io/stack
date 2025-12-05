@@ -1,38 +1,65 @@
 
-# rjayroach-coder
+# Personal Package Manager Core Packages
 
-### macOS Host
-- map Caps lock key to Control key
-- enable remote access on Mac
-- scp my credentials to the new Mac for GH repo access, etc
+## Installation script
 
-# Testing
-
-- Enable passwordless sudo
+- Installs the ppm script to $HOME/.local/bin/ppm
+- Installs the ppm library script to $HOME/.cache/ppm/library.sh
+- Verifies and installs dependencies for MacOS (xcode, homebrew) and Debian Linux (sudo)
 
 ```bash
-mkdir ~/.ssh
-wget -qO- https://github.com/rjayroach.keys > .ssh/authorized_keys
-su -
-apt install sudoers
-echo 'ansible ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ansible
+wget -qO- https://raw.githubusercontent.com/maxcole/ppm/refs/heads/main/install.sh | bash
 ```
 
+OR install manually
+
+```bash
+curl -O https://raw.githubusercontent.com/maxcole/ppm/refs/heads/main/install.sh
+chmod +x ./install.sh
+./install.sh
+```
+
+- TODO: update README with code to use wget to just download the install script
+
+
+## Usage
+
+- add sources (git repos with a packages subdir) to $HOME/.config/ppm/sources.list
+
+```bash
+mkdir $HOME/.config/ppm
+echo 'https://github.com/maxcole/rjayroach-coder.git' >> $HOME/.config/ppm/sources.list
+$HOME/.local/bin/ppm update
+```
+
+### Install
+
+- The ppm script iterates over items in sources.list looking for the requested packages to install
+
+```bash
+$HOME/.local/bin/ppm install zsh git nvim tmux
+$HOME/.local/bin/ppm install mise ruby coder builder
+```
+
+
+### List available packages
+
+```bash
+ppm list
+```
+
+
+# Developing
 ```bash
 rm -rf $HOME/.cache/ppm $HOME/.local/bin/ppm
+mkdir -p $HOME/.config/ppm $HOME/.local/bin
 git clone git@github.com:maxcole/ppm.git $HOME/.cache/ppm
 ln -s $HOME/.cache/ppm/ppm $HOME/.local/bin/ppm
-echo 'git@github.com:maxcole/rjayroach-coder.git' > $HOME/.config/ppm/sources.list
-ppm update
+echo 'git@github.com:maxcole/ppm-core.git' > $HOME/.config/ppm/sources.list
+$HOME/.local/bin/ppm update
 ```
 
-# ROADMAP
 
-The goal is to be able to walk rainbow falls, listen to a podcast that claude put on my list, make a dictation or make a note in Obsidian in a specific file and back at the ranch claude code has already implmeented the change I called out in teh Obsidian doc
+# Manual Dependencies
 
-
-## nfs mount from MBP
-- [ ]  use the network and nfs functions to create a ~/.config/coder/mounts
-- [ ] use the nfs function to write the mount to MBP's /etc/fstab
-- [ ] see that I can mount the remote host's projects path from the MBP
-
+- sudo priviledges

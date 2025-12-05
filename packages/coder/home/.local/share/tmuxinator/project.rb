@@ -1,17 +1,23 @@
 # tmuxinator_project.rb
 
+require 'pry'
 require 'ostruct'
 require 'pathname'
 require 'open3'
 
-# Usage: TmuxinatorProject.new(path: "/home/user/.config/tmuxinator/rws-controller.yml").setup
+# Usage: TmuxinatorProject.new(path: "/home/user/.config/tmuxinator/ppm-core.yml").setup
+# override the default repo to lookup by passing a value for name that matches a repo
 class TmuxinatorProject < OpenStruct
   attr_reader :file, :name, :root, :stdout, :status
 
-  def initialize(path:)
-    @file = Pathname.new(path) # The absolute path to the tmuxinator file
-    @name = file.basename('.yml').to_s # The name minus path and extenstion, e.g. rws-controller
-    @stdout, @status = Open3.capture2("repo", "info", name, "--path")
+  def initialize(path:, name: nil)
+    # The absolute path to the tmuxinator file
+    @file = Pathname.new(path)
+
+    # The name minus path and extenstion, e.g. ppm-core
+    @name = name || path.to_s.split('tmuxinator/').last.sub('.yml', '')
+
+    @stdout, @status = Open3.capture2("repo", "info", @name, "--path")
 
     @root = Pathname.new(stdout.strip) if status.success?
     super
@@ -23,6 +29,7 @@ class TmuxinatorProject < OpenStruct
       Kernel.exit 1
     end
 
+    binding.pry
     system("repo clone #{name}") unless root.exist?
     self
   end

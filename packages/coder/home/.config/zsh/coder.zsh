@@ -49,21 +49,3 @@ co-mount-orig() {
 }
 
 co-projects() { tree -d -L 2 $PROJECTS_DIR/$1 }
-
-co-repos() {
-  local search_dir="${1:-$PROJECTS_DIR}"
-  local current_dir=$PWD
-
-  find "$search_dir" -maxdepth 5 -name ".git" -type d | while read gitdir; do
-    local repo_path=$(dirname "$gitdir")
-    local xstatus=""
-
-    cd "$repo_path"
-    if ! git diff-index --quiet HEAD 2>/dev/null || [[ -n $(git ls-files --others --exclude-standard) ]]; then
-      xstatus=" - has-modifications"
-    fi
-
-    echo "$repo_path$xstatus"
-  done
-  cd $current_dir
-}
