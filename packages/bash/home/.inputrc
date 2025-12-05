@@ -4,15 +4,15 @@ set show-mode-in-prompt on
 
 # Vi insert mode settings
 set keymap vi-insert
-"\C-l": clear-screen
-"\C-p": previous-history
-"\C-n": next-history
-"\C-r": reverse-search-history
-
-# Vi command mode settings
-set keymap vi-command
-"k": previous-history
-"j": next-history
-"?": reverse-search-history
-"/": forward-search-history
+# "\C-l": clear-screen
+# "\C-p": previous-history
+# "\C-n": next-history
+# "\C-r": reverse-search-history
+# 
+# # Vi command mode settings
+# set keymap vi-command
+# "k": previous-history
+# "j": next-history
+# "?": reverse-search-history
+# "/": forward-search-history
 # END VI MODE CONFIGURATION

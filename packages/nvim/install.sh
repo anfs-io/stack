@@ -15,7 +15,7 @@ install_linux() {
     sudo apt install libfuse2 fuse3 -y
   fi
 
-  if ! command -v gcc &> /dev/null
+  if ! command -v gcc &> /dev/null; then
     sudo apt install gcc -y
   fi
 

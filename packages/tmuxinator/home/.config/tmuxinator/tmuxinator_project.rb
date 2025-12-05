@@ -2,62 +2,29 @@
 
 require 'ostruct'
 require 'pathname'
+require 'open3'
 
+# Usage: TmuxinatorProject.new(path: "/home/user/.config/tmuxinator/rws-controller.yml").setup
 class TmuxinatorProject < OpenStruct
-  attr_accessor :path, :file, :name, :root, :repo, :remote_prefix
+  attr_reader :file, :name, :root, :stdout, :status
 
-  def initialize(path:, name: nil, root: nil, repo: nil, remote_prefix: nil, **options)
-    @path = path
-    @file = Pathname.new(@path) # The absolute path to the tmuxinator file, e.g. /home/user/.config/tmuxinator/rws-controller.yml
-    @name = name || @file.basename('.yml').to_s # The name minux path and extenstion, e.g. rws-controller
-    root ||= "#{projects_dir}/#{@name.gsub('-', '/')}" # /home/user/code/projects/rws/controller
-    @root = Pathname.new(root)
-    @remote_prefix = remote_prefix || ENV.fetch('PROJECTS_GIT_REMOTE_PREFIX')
-    repo ||= @name
-    @repo = "#{@remote_prefix}/#{repo}.git"
-    super(options)
+  def initialize(path:)
+    @file = Pathname.new(path) # The absolute path to the tmuxinator file
+    @name = file.basename('.yml').to_s # The name minus path and extenstion, e.g. rws-controller
+    @stdout, @status = Open3.capture2("repo", "info", name, "--path")
+
+    @root = Pathname.new(stdout.strip) if status.success?
+    super
   end
-
-  def projects_dir() = @projects_dir ||= Pathname.new(ENV.fetch('PROJECTS_DIR', Dir.home))
 
   def setup
-    return self if root.exist?
-
-    puts "Project not found. Cloning from #{repo} to #{root}"
-    require 'git'
-    Git.clone(repo, root)
-    self
-  end
-
-  def parent_setup?
-    return true unless has_parent_project
-
-    parent = root.parent
-    unless parent.join('.git').exist?
-      puts "Run parent tmuxinator project first or directly clone the parent repo to #{parent}"
-      Kernel.exit
+    unless status.success?
+      puts "#{stdout}Run `repo ls` to list available repositories"
+      Kernel.exit 1
     end
-    true
-  end
 
-  def has_parent_project() = @name.split('-').size > 2
-
-  def symlink(from:, to:)
-    return if from.symlink?
-
-    rename_to_orig(from) if from.exist? # it is not a symlink so move it
-
-    from.make_symlink(to)
-    puts "symlinked #{from} to #{to}"
-    puts "\nrestart"
-    Kernel.exit
-  end
-
-  def rename_to_orig(from)
-    to_string = "#{from.split.last}.orig"
-    to = from.parent.join(to_string)
-    from.rename(to_dir)
-    puts "renamed #{from} to #{to}"
+    system("repo clone #{name}") unless root.exist?
+    self
   end
 
   def subdir(*paths) = root.join(*paths)

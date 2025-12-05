@@ -1,9 +1,7 @@
 # pcs-infra.yml
 <% 
   require "#{File.dirname(path)}/tmuxinator_project.rb"
-  project = TmuxinatorProject.new(path: path, repo: 'pcs.infra').setup # path is a value from Tmuxinator
-  collections_dir = Pathname.new(Dir.home).join('.ansible/collections/ansible_collections/pcs/infra')
-  project.symlink(from: collections_dir, to: project.root) if collections_dir.parent.exist?
+  project = TmuxinatorProject.new(path: path).setup
 %>
 
 name: <%= project.name %>
