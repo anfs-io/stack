@@ -14,16 +14,6 @@ alias mtd="mise trust ."
 alias mui="mise upgrade --interactive"
 
 mconf() {
-  local config_dir=$CONFIG_DIR/mise/conf.d
-  local file="dev.toml"
-
-  if [[ $1 == "ls" ]]; then
-    ls $config_dir
-    return
-  fi
-
-  if (( $# == 1 )); then
-    file="${1}.toml"
-  fi
-  (cd $config_dir; nvim ${file})
+  local dir=$CONFIG_DIR/mise/conf.d file="." ext="toml"
+  load_conf $1 $2
 }

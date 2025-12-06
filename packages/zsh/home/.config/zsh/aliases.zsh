@@ -49,6 +49,7 @@ elif [ $(ostype) = "macos" ]; then
   alias ip_addr="echo $(route get 8.8.8.8 | grep interface | awk '{print $2}' | xargs ifconfig | grep 'inet ' | grep -v 127.0.0.1 | awk '{print $2}' | head -1)"
 fi
 
+# Is this redundant to loading homebrew zsh functions at top of file?
 if [ $(ostype) = "macos" ]; then
   fpath=(/opt/homebrew/share/zsh/site-functions $fpath)
 fi
@@ -67,34 +68,38 @@ alias tsa="tree -a -l -I tmp -I .git -I .terraform -I .obsidian -I .ruby-lsp -I 
 alias cls="clear"
 alias lsar="lsa -R"
 
-zconf() {
-  # local dir=$(dirname $(readlink -f "${(%):-%x}") )
-  local dir="$CONFIG_DIR/zsh"
+load_conf() {
   if [[ $1 == "ls" ]]; then
     ls $2 $dir
   elif [[ $1 == "pwd" ]]; then
     echo $dir
   else
-    file="aliases.zsh"
-    if (( $# == 1 )); then
-      file="${1}.zsh"
-      # if [ ! -f "$dir/$file" ]; then
-      #   dir="$CONFIG_DIR/zsh"
-      # fi
+    if [[ $# -eq 1 ]]; then
+      if [[ -d "$dir/$1" ]]; then
+        file="${1}"
+      else
+        file="${1}.${ext}"
+      fi
     fi
-    (cd $dir; nvim ${file})
+    # echo $file
+    (cd $dir; $EDITOR ${file})
   fi
 }
 
-zlinks() {
-  local cmd="find \$HOME -type l -exec ls -la {} \\; 2>/dev/null | grep '$DOTFILES_PATH' | awk '{print \$9}'"
-
-  if [[ "$1" == "--delete" ]]; then
-    cmd="$cmd | xargs rm"
-  fi
-
-  eval $cmd
+zconf() {
+  local dir=$CONFIG_DIR/zsh file="aliases.zsh" ext="zsh"
+  load_conf $1 $2
 }
+
+# zlinks() {
+#   local cmd="find \$HOME -type l -exec ls -la {} \\; 2>/dev/null | grep '$DOTFILES_PATH' | awk '{print \$9}'"
+# 
+#   if [[ "$1" == "--delete" ]]; then
+#     cmd="$cmd | xargs rm"
+#   fi
+# 
+#   eval $cmd
+# }
 
 zsrc() {
   # No need to check if files exist since nullglob only returns existing files
@@ -111,15 +116,15 @@ zsrc() {
   fi
 }
 
-zupdate() {
-  pushd $DOTFILES_HOME &> /dev/null
-  if [[ $# -eq 1 && "$1" == "pull" ]]; then
-    git pull
-  fi
-  ./install.sh dotfiles scripts
-  zsrc
-  popd &> /dev/null
-}
+# zupdate() {
+#   pushd $DOTFILES_HOME &> /dev/null
+#   if [[ $# -eq 1 && "$1" == "pull" ]]; then
+#     git pull
+#   fi
+#   ./install.sh dotfiles scripts
+#   zsrc
+#   popd &> /dev/null
+# }
 
 
 # case-insensitive list of defined aliases
