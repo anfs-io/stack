@@ -1,4 +1,5 @@
 # ruby
+# dependencies: mise
 
 pre_install() { return; }
 
@@ -14,6 +15,6 @@ install_macos() {
 }
 
 post_install() {
-  install mise
+  # install mise
   mise install ruby
 }
