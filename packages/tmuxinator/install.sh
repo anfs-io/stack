@@ -1,15 +1,12 @@
-# coder
+# tmuxinator
 
 pre_install() {
-  mkdir -p $XDG_CONFIG_DIR/coder/repos.d
   mkdir -p $XDG_CONFIG_DIR/tmuxinator
 }
 
 install_linux() { return; }
 
-install_macos() {
-  brew bundle --file=$XDG_CONFIG_DIR/coder/Brewfile
-}
+install_macos() { return; }
 
 post_install() {
   if command -v gem &> /dev/null; then

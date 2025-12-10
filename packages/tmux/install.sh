@@ -7,10 +7,7 @@ install_linux() {
   install_dep entr tmux
 }
 
-install_macos() {
-  command -v tmux &> /dev/null && return
-  install_dep tmux
-}
+install_macos() { install_dep tmux; }
 
 post_install() {
   tmux_plugins_dir=$XDG_LOCAL_SHARE_DIR/tmux/plugins
@@ -20,5 +17,5 @@ post_install() {
   fi
 
   tmux -c $tpm_dir/bin/install_plugins
-  echo "Did not run 'tmux -c $tpm_dir/tpm'"
+  # echo "Did not run 'tmux -c $tpm_dir/tpm'"
 }

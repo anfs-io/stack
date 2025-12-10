@@ -1,0 +1,61 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "thor"
+require "yaml"
+require "pathname"
+
+class BaseStore
+  CONFIG_DIR = Pathname.new(Dir.home).join(".config/chorus")
+
+  def all
+    bases = {}
+    bases.merge!(load_yaml(CONFIG_DIR.join("bases.yml")))
+    CONFIG_DIR.join("bases.d").glob("*.yml").each do |path|
+      bases.merge!(load_yaml(path))
+    end
+    bases
+  end
+
+  def resolve_path(name)
+    base = all[name]
+    return unless base
+
+    vault_path(base["vault"])
+  end
+
+  private
+
+  def load_yaml(path)
+    return {} unless path.exist?
+
+    YAML.load_file(path) || {}
+  end
+
+  def vault_path(vault_ref)
+    return unless vault_ref
+
+    location, name = vault_ref.split("/", 2)
+    vaults = load_yaml(CONFIG_DIR.join("vaults.yml"))
+    location_path = Pathname.new(vaults[location])
+    location_path.join(name)
+  end
+end
+
+class BaseCLI < Thor
+  def self.exit_on_failure? = true
+
+  desc "list", "List all configured bases"
+  def list
+    store.all.each do |name, _base|
+      path = store.resolve_path(name)
+      puts "#{name}: #{path}"
+    end
+  end
+
+  private
+
+  def store = @store ||= BaseStore.new
+end
+
+BaseCLI.start(ARGV)

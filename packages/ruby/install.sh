@@ -1,5 +1,8 @@
 # ruby
-# dependencies: mise
+
+dependencies() {
+  echo "mise"
+}
 
 pre_install() { return; }
 
@@ -11,10 +14,10 @@ install_linux() {
 }
 
 install_macos() {
-  install_dep libyaml openssl readline
+  install_dep libyaml openssl readline git
 }
 
 post_install() {
-  # install mise
+  eval "$(mise activate zsh)"
   mise install ruby
 }

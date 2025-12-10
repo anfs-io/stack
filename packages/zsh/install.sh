@@ -1,5 +1,7 @@
 # zsh
 
+dependencies() { echo ""; }
+
 pre_install() {
   mkdir -p $XDG_CONFIG_DIR/zsh
 }

@@ -1,5 +1,9 @@
 # mise
 
+dependencies() {
+  echo "zsh"
+}
+
 pre_install() {
   mkdir -p $XDG_CONFIG_DIR/mise/conf.d
 }
@@ -20,7 +24,7 @@ install_linux() {
 }
 
 install_macos() {
-  command -v mise &> /dev/null && return
+  # command -v mise &> /dev/null && return
   install_dep cosign gpg mise
 }
 

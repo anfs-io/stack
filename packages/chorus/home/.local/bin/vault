@@ -1,0 +1,91 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "thor"
+require "yaml"
+require "pathname"
+
+class VaultStore
+  CONFIG_DIR = Pathname.new(Dir.home).join(".config/chorus")
+
+  def all
+    config || {}
+  end
+
+  def create(name)
+    vault_path = Pathname.pwd.join(name)
+    vault_path.mkpath
+
+    data = config
+    data[name] = vault_path.to_s
+    save(data)
+
+    vault_path
+  end
+
+  def remove(name, force:)
+    vault_path = Pathname.new(all[name])
+
+    if vault_path.exist?
+      if !force && vault_path.children.any?
+        return :not_empty
+      end
+      vault_path.rmtree
+    end
+
+    data = config
+    data.delete(name)
+    save(data)
+
+    :ok
+  end
+
+  private
+
+  def config
+    path = CONFIG_DIR.join("vaults.yml")
+    return {} unless path.exist?
+
+    YAML.load_file(path) || {}
+  end
+
+  def save(data)
+    CONFIG_DIR.mkpath
+    CONFIG_DIR.join("vaults.yml").write(data.to_yaml)
+  end
+end
+
+class VaultCLI < Thor
+  def self.exit_on_failure? = true
+
+  desc "list", "List all configured vault locations"
+  map ls: :list
+  def list
+    store.all.each do |name, path|
+      puts "#{name}: #{path}"
+    end
+  end
+
+  desc "new NAME", "Create a new vault in the current directory"
+  def new(name)
+    path = store.create(name)
+    puts "Created vault '#{name}' at #{path}"
+  end
+
+  desc "rm NAME", "Remove a vault and its configuration"
+  option :force, type: :boolean, default: false, aliases: "-f"
+  def rm(name)
+    result = store.remove(name, force: options[:force])
+    if result == :not_empty
+      puts "Vault '#{name}' is not empty. Use --force to delete."
+    else
+      puts "Removed vault '#{name}'"
+    end
+  end
+
+  private
+
+  def store = @store ||= VaultStore.new
+end
+
+VaultCLI.start(ARGV)
