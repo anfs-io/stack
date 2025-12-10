@@ -13,9 +13,6 @@ install_linux() { return; }
 install_macos() { return; }
 
 post_install() {
-  if command -v gem &> /dev/null; then
-    if ! command -v tmuxinator &> /dev/null; then
-      gem install tmuxinator
-    fi
-  fi
+  source <(mise activate zsh)
+  gem install tmuxinator
 }
