@@ -1,7 +1,8 @@
 # claude
 
-# dependencies
-# mise
+dependencies() {
+  echo "mise"
+}
 
 pre_install() {
   mkdir -p $HOME/.claude/commands
