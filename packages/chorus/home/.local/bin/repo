@@ -9,8 +9,8 @@ require 'fileutils'
 class Repo < Thor
   def self.exit_on_failure? = true
 
-  CONFIG_FILE = File.expand_path('~/.config/coder/repos.yml')
-  CONFIG_DIR = File.expand_path('~/.config/coder/repos.d')
+  CONFIG_FILE = File.expand_path('~/.config/chorus/repos.yml')
+  CONFIG_DIR = File.expand_path('~/.config/chorus/repos.d')
 
   desc 'list', 'List all configured repositories'
   map 'ls' => :list
