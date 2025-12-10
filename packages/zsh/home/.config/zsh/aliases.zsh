@@ -81,8 +81,7 @@ load_conf() {
         file="${1}.${ext}"
       fi
     fi
-    # echo $file
-    (cd $dir; $EDITOR ${file})
+    (cd $dir; ${EDITOR:-vi} ${file})
   fi
 }
 
