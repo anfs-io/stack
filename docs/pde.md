@@ -1,44 +1,43 @@
 
-# Personal Package Manager Core Packages
+# PDOS - Personal Development Operating System
+
+Packages
 
 ## Usage
 
-- add sources (git repos with a packages subdir) to $HOME/.config/ppm/sources.list
+Use ppm to add this package repository, clone the repo and install packages
 
 ```bash
 ppm add https://github.com/maxcole/pdos-core.git'
-echo 'https://github.com/maxcole/rjayroach-coder.git' >> $HOME/.config/ppm/sources.list
-$HOME/.local/bin/ppm update
-```
-
-### Install
-
-- The ppm script iterates over items in sources.list looking for the requested packages to install
-
-```bash
-$HOME/.local/bin/ppm install zsh git nvim tmux
-$HOME/.local/bin/ppm install mise ruby coder builder
-```
-
-
-### List available packages
-
-```bash
+ppm update
 ppm list
+ppm install [PACKAGE]
 ```
 
+## Common Packages
 
-# Developing
 ```bash
-rm -rf $HOME/.cache/ppm $HOME/.local/bin/ppm
-mkdir -p $HOME/.config/ppm $HOME/.local/bin
-git clone git@github.com:maxcole/ppm.git $HOME/.cache/ppm
-ln -s $HOME/.cache/ppm/ppm $HOME/.local/bin/ppm
-echo 'git@github.com:maxcole/ppm-core.git' > $HOME/.config/ppm/sources.list
-$HOME/.local/bin/ppm update
+ppm install zsh git nvim tmux
+ppm install builder
 ```
 
 
-# Manual Dependencies
+### Zsh
 
-- sudo priviledges
+Installs oh-my-zsh and powerlevel10k on top of the basic z shell. Also installs several zsh scripts to add cli shortcuts for common actions
+
+### Nvim
+
+Installs the latest neovim and adds many common plugins along with a sensible configuration
+
+### Tmux
+
+Terminal Multiplexer and the ruby gem tmuxinator to set common window configurations for projects
+
+### Mise
+
+Mise is a package manager for most langauges and many common develper applications. ppm relies on mise to install these common tools
+
+### builder
+
+Depends: utm, podman, ruby

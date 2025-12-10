@@ -1,5 +1,4 @@
 # tmuxinator_project.rb
-
 require 'pry'
 require 'ostruct'
 require 'pathname'
@@ -29,7 +28,6 @@ class TmuxinatorProject < OpenStruct
       Kernel.exit 1
     end
 
-    binding.pry
     system("repo clone #{name}") unless root.exist?
     self
   end
