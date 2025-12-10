@@ -17,3 +17,4 @@ ruby-lsp-rspec
 tailwindcss-rails
 thor
 tmuxinator
+webrick

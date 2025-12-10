@@ -1,5 +1,9 @@
 # tmuxinator
 
+dependencies() {
+  echo "ruby tmux"
+}
+
 pre_install() {
   mkdir -p $XDG_CONFIG_DIR/tmuxinator
 }

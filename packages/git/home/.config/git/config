@@ -1,7 +1,0 @@
-[user]
-	name = Robert Roach
-	email = rjayroach@gmail.com
-[init]
-	defaultBranch = main
-[alias]
-  # repos = '!find -maxdepth 4 -type d -execdir test -d {}/.git \; -print -prune'

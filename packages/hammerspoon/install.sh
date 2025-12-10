@@ -1,11 +1,15 @@
 # hammerspoon
 # https://www.hammerspoon.org/go/#helloworld
 
+dependencies() { echo ""; }
+
 pre_install() { return; }
+
 install_linux() { return; }
 
 install_macos() {
-  # brew install hammerspoon
+  install_dep hammerspoon
+
   spoons=("AClock" "BingDaily")
   spoon_dir=$HOME/.hammerspoon/Spoons
   mkdir -p $spoon_dir

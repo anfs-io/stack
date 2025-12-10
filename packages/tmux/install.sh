@@ -1,11 +1,10 @@
 # tmux
 
+dependencies() { echo ""; }
+
 pre_install() { return; }
 
-install_linux() {
-  command -v tmux &> /dev/null && return
-  install_dep entr tmux
-}
+install_linux() { install_dep entr tmux; }
 
 install_macos() { install_dep tmux; }
 

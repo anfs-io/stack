@@ -1,5 +1,7 @@
 # nvim
 
+dependencies() { echo ""; }
+
 pre_install() {
   [ ! -d "$XDG_CONFIG_DIR/nvim" ] && mkdir -p $XDG_CONFIG_DIR/nvim || true
 }
@@ -12,11 +14,11 @@ install_linux() {
   # Check for FUSE (required for AppImages)
   if ! ldconfig -p | grep -q libfuse.so.2; then
     echo "FUSE2 is not installed. Installing libfuse2..."
-    sudo apt install libfuse2 fuse3 -y
+    install_dep libfuse2 fuse3
   fi
 
   if ! command -v gcc &> /dev/null; then
-    sudo apt install gcc -y
+    install_dep gcc
   fi
 
   # nvim release arch
@@ -39,7 +41,6 @@ install_linux() {
 }
 
 install_macos() {
-  command -v nvim &> /dev/null && return
   install_dep neovim ripgrep
 }
 
