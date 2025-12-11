@@ -29,6 +29,5 @@ post_install() {
 }
 
 post_remove() {
-  local omz_dir=$XDG_LOCAL_SHARE_DIR/omz
-  rm -rf $omz_dir
+  rm -rf $XDG_LOCAL_SHARE_DIR/omz $XDG_CACHE_DIR/p10k-* $XDG_CONFIG_DIR/zsh
 }
