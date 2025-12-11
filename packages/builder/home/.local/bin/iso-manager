@@ -56,7 +56,7 @@ class IsoManagerCLI < Thor
 end
 
 class IsoManager
-  CONFIG_PATH = Pathname.new(Dir.home) / '.config' / 'coder' / 'iso.yml'
+  CONFIG_PATH = Pathname.new(Dir.home).join('.config/builder/iso.yml')
 
   def initialize
     ensure_config_exists
