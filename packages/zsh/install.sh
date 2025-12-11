@@ -1,7 +1,5 @@
 # zsh
 
-dependencies() { echo ""; }
-
 pre_install() {
   mkdir -p $XDG_CONFIG_DIR/zsh
 }
@@ -30,14 +28,7 @@ post_install() {
   mkdir -p $omz_dir/custom/functions
 }
 
-remove() {
-  echo "remove"
-}
-
-remove_linux() {
-  echo "remove_linux"
-}
-
-remove_macos() {
-  echo "remove_macos"
+post_remove() {
+  local omz_dir=$XDG_LOCAL_SHARE_DIR/omz
+  rm -rf $omz_dir
 }
