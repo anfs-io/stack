@@ -1,14 +1,12 @@
 # git
 
-dependencies() { echo ""; }
-
-pre_install() { return; }
+paths() {
+  echo "$XDG_CONFIG_DIR/git"
+}
 
 # installs the github command line client (gh)
 install_linux() {
   if ! command -v gh &> /dev/null; then
-    install_dep wget
-
     sudo mkdir -p -m 755 /etc/apt/keyrings \
     && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && cat $out | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
@@ -23,5 +21,3 @@ install_linux() {
 install_macos() {
   install_dep gh
 }
-
-post_install() { return; }

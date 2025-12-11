@@ -4,7 +4,14 @@ dependencies() {
   echo "mise"
 }
 
-pre_install() { return; }
+paths() {
+  echo "
+    $XDG_CONFIG_DIR/pry
+    $XDG_CONFIG_DIR/rails/templates
+    $XDG_CONFIG_DIR/rubocop
+    $XDG_CONFIG_DIR/ruby
+  "
+}
 
 install_linux() {
   command -v ruby &> /dev/null && return

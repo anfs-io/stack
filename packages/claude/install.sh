@@ -4,18 +4,11 @@ dependencies() {
   echo "mise"
 }
 
-pre_install() {
-  mkdir -p $HOME/.claude/commands
+paths() {
+  echo "$HOME/.claude/commands"
 }
-
-install_linux() { return; }
-
-install_macos() { return; }
 
 post_install() {
+  source <(mise activate zsh)
   mise install node claude
 }
-
-remove_linux() { return; }
-
-remove_macos() { return; }

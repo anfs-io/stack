@@ -1,9 +1,5 @@
 # podman
 
-dependencies() { echo ""; }
-
-pre_install() { return; }
-
 install_linux() {
   install_dep podman podman-compose
 }
@@ -19,5 +15,3 @@ install_macos() {
     podman machine start
   fi
 }
-
-post_install() { return; }

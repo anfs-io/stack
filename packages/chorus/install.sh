@@ -4,14 +4,11 @@ dependencies() {
   echo "ruby"
 }
 
-pre_install() {
-  mkdir -p $XDG_CONFIG_DIR/chorus/bases.d
-  mkdir -p $XDG_CONFIG_DIR/chorus/repos.d
-  mkdir -p $XDG_CONFIG_DIR/chorus/spaces.d
+paths() {
+  echo "
+    $XDG_CONFIG_DIR/chorus/bases.d
+    $XDG_CONFIG_DIR/chorus/repos.d
+    $XDG_CONFIG_DIR/chorus/spaces.d
+    $XDG_HOME/.claude/commands/chorus
+  "
 }
-
-install_linux() { return; }
-
-install_macos() { return; }
-
-post_install() { return; }

@@ -4,8 +4,8 @@ dependencies() {
   echo "ruby podman utm"
 }
 
-pre_install() {
-  mkdir -p $XDG_CONFIG_DIR/builder
+paths() {
+  echo "$XDG_CONFIG_DIR/builder"
 }
 
 post_install() {

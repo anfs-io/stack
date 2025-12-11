@@ -1,18 +1,17 @@
 # hammerspoon
 # https://www.hammerspoon.org/go/#helloworld
 
-dependencies() { echo ""; }
-
-pre_install() { return; }
-
-install_linux() { return; }
+paths() {
+  echo "$HOME/.hammerspoon"
+}
 
 install_macos() {
   install_dep hammerspoon
 
-  spoons=("AClock" "BingDaily")
   spoon_dir=$HOME/.hammerspoon/Spoons
   mkdir -p $spoon_dir
+
+  spoons=("AClock" "BingDaily")
   for spoon in "${spoons[@]}"; do
     if [[ ! -d "$spoon_dir/$spoon.spoon" ]]; then
       echo "Installing spoon: $spoon"
@@ -24,5 +23,3 @@ install_macos() {
     fi
   done
 }
-
-post_install() { return; }

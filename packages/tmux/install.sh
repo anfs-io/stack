@@ -1,8 +1,9 @@
 # tmux
 
-dependencies() { echo ""; }
-
-pre_install() { return; }
+paths() {
+  echo "$XDG_LOCAL_SHARE_DIR/tmux"
+  echo "$XDG_CONFIG_DIR/tmux"
+}
 
 install_linux() { install_dep entr tmux; }
 

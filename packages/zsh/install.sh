@@ -1,7 +1,7 @@
 # zsh
 
-pre_install() {
-  mkdir -p $XDG_CONFIG_DIR/zsh
+paths() {
+  echo "$XDG_CONFIG_DIR/zsh"
 }
 
 install_linux() {
@@ -29,5 +29,5 @@ post_install() {
 }
 
 post_remove() {
-  rm -rf $XDG_LOCAL_SHARE_DIR/omz $XDG_CACHE_DIR/p10k-* $XDG_CONFIG_DIR/zsh
+  rm -rf $XDG_LOCAL_SHARE_DIR/omz $XDG_CACHE_DIR/p10k-*
 }

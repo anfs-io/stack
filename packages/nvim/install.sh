@@ -1,9 +1,8 @@
 # nvim
 
-dependencies() { echo ""; }
 
-pre_install() {
-  [ ! -d "$XDG_CONFIG_DIR/nvim" ] && mkdir -p $XDG_CONFIG_DIR/nvim || true
+paths() {
+  echo "$XDG_CONFIG_DIR/nvim/lua/plugins"
 }
 
 install_linux() {
