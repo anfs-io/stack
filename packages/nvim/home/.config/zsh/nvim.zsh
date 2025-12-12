@@ -1,26 +1,13 @@
-# Neovim
+# neovim
 
 export EDITOR=nvim
 
 nconf() {
-  local config_dir=$HOME/.config/nvim
-  local plugins_dir=$config_dir/lua/plugins
-  local file="init.lua"
-
-  if [[ $1 == "ls" ]]; then
-    ls $plugins_dir
-    return
+  local dir=$CONFIG_DIR/nvim/lua/plugins file="../../init.lua" ext="lua"
+  if [[ $# == 1 && "$1" == "options" ]]; then
+    dir=$dir/..
   fi
-
-  if (( $# == 1 )); then
-    if [[ "$1" == "options" ]]; then
-      config_dir=$config_dir/lua
-    else
-      config_dir=$plugins_dir
-    fi
-    file="${1}.lua"
-  fi
-  (cd $config_dir; nvim "${file}")
+  load_conf $1 $2
 }
 
 alias vi=nvim

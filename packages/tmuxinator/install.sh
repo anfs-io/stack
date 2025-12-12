@@ -1,7 +1,7 @@
 # tmuxinator
 
 dependencies() {
-  echo "ruby tmux"
+  echo "tmux chorus"
 }
 
 paths() {

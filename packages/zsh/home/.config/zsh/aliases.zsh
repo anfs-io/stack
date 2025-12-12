@@ -17,22 +17,7 @@ if command -v fzf >/dev/null 2>&1; then
   source <(fzf --zsh)
 fi
 
-# Project directories and aliases
 export CONFIG_DIR=$HOME/.config
-export CODE_DIR=$HOME/code
-export PROJECTS_DIR=$CODE_DIR/projects
-export PROJECTS_GITHUB_ORG="maxcole"
-export PROJECTS_GIT_REMOTE_PREFIX="git@github.com:$PROJECTS_GITHUB_ORG"
-export DOTFILES_PATH=rjayroach/coder
-export DOTFILES_HOME=$PROJECTS_DIR/$DOTFILES_PATH
-
-code() { cd "$CODE_DIR/$1" }
-config() { cd "$CONFIG_DIR/$1" }
-pcs() { cd "$PROJECTS_DIR/pcs/$1" }
-rjayroach() { cd "$PROJECTS_DIR/rjayroach/$1" }
-roteoh() { cd "$PROJECTS_DIR/roteoh/$1" }
-rws() { cd "$PROJECTS_DIR/rws/$1" }
-spike() { cd "$PROJECTS_DIR/spike/$1" }
 
 ostype() {
   case "$(uname)" in
@@ -90,16 +75,6 @@ zconf() {
   load_conf $1 $2
 }
 
-# zlinks() {
-#   local cmd="find \$HOME -type l -exec ls -la {} \\; 2>/dev/null | grep '$DOTFILES_PATH' | awk '{print \$9}'"
-# 
-#   if [[ "$1" == "--delete" ]]; then
-#     cmd="$cmd | xargs rm"
-#   fi
-# 
-#   eval $cmd
-# }
-
 zsrc() {
   # No need to check if files exist since nullglob only returns existing files
   setopt local_options nullglob
@@ -114,17 +89,6 @@ zsrc() {
     done
   fi
 }
-
-# zupdate() {
-#   pushd $DOTFILES_HOME &> /dev/null
-#   if [[ $# -eq 1 && "$1" == "pull" ]]; then
-#     git pull
-#   fi
-#   ./install.sh dotfiles scripts
-#   zsrc
-#   popd &> /dev/null
-# }
-
 
 # case-insensitive list of defined aliases
 ag() {

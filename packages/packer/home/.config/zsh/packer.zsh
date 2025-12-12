@@ -2,6 +2,8 @@
 
 # packer_dir() { ~/dev/ops/packer/.builds/base/proxmox-iso }
 # packer_dir() { ~/dev/ops/packer/.builds/base/debian-bookworm }
+
+# PROJECTS_DIR is deprecated
 export PACKER_DIR="$PROJECTS_DIR/pcs/packer"
 
 # export PACKER_CONFIG_DIR="$HOME/.local/share/packer"

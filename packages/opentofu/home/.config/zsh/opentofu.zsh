@@ -1,4 +1,4 @@
-# Tofu functions
+# opentofu
 
 tf() {
   # Check if TF_BIN is already set
