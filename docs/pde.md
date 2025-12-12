@@ -8,7 +8,7 @@ Packages
 Use ppm to add this package repository, clone the repo and install packages
 
 ```bash
-ppm add https://github.com/maxcole/pdos-core.git'
+ppm add https://github.com/maxcole/pdos-core
 ppm update
 ppm list
 ppm install [PACKAGE]
