@@ -5,93 +5,23 @@ require 'thor'
 require 'yaml'
 require 'git'
 require 'fileutils'
+require 'pathname'
+load File.expand_path('hub', __dir__)
 
-class Repo < Thor
-  def self.exit_on_failure? = true
+class RepoStore
+  CONFIG_FILE = Pathname.new(Dir.home).join('.config/chorus/repos.yml')
+  CONFIG_DIR = Pathname.new(Dir.home).join('.config/chorus/repos.d')
 
-  CONFIG_FILE = File.expand_path('~/.config/chorus/repos.yml')
-  CONFIG_DIR = File.expand_path('~/.config/chorus/repos.d')
-
-  desc 'list', 'List all configured repositories'
-  map 'ls' => :list
-  method_option :verbose, type: :boolean, aliases: '-v', desc: 'Include git status for each repository'
-  def list
-    repos = load_config
-    if repos.empty?
-      puts 'No repositories configured.'
-      return
-    end
-
-    repos.each do |name, config|
-      puts "#{name}:"
-      puts "  URL:  #{config['url']}"
-      puts "  Path: #{config['path']}"
-      if config['links']&.any?
-        puts '  Links:'
-        config['links'].each { |link| puts "    - #{link}" }
-      end
-      show_status(name, config) if options[:verbose]
-      puts
-    end
-  end
-
-  desc 'info NAME', 'Show details for a repository'
-  method_option :url, type: :boolean, desc: 'Return only the URL'
-  method_option :path, type: :boolean, desc: 'Return only the path'
-  def info(name)
-    repos = load_config
-
-    unless repos.key?(name)
-      puts "Repository '#{name}' not found in configuration."
-      exit 1
-    end
-
-    config = repos[name]
-    path = File.expand_path(config['path'])
-
-    if options[:url]
-      puts config['url']
-    elsif options[:path]
-      puts path
-    else
-      puts "#{name}:"
-      puts "  URL:  #{config['url']}"
-      puts "  Path: #{path}"
-    end
-  end
-
-  desc 'clone NAME', 'Clone a repository to its configured path'
-  method_option :all, type: :boolean, aliases: '-a', desc: 'Clone all repositories'
-  method_option :force, type: :boolean, aliases: '-f', desc: 'Force clone even if parent repos are missing'
-  def clone(name = nil)
-    repos = load_config
-
-    if options[:all]
-      repos.each { |repo_name, config| clone_repo(repo_name, config, repos) }
-    elsif name
-      unless repos.key?(name)
-        puts "Repository '#{name}' not found in configuration."
-        exit 1
-      end
-      clone_repo(name, repos[name], repos)
-    else
-      puts 'Error: Please provide a repository name or use --all flag.'
-      exit 1
-    end
-  end
-
-  private
-
-  def load_config
+  def all
     repos = {}
 
-    if File.exist?(CONFIG_FILE)
+    if CONFIG_FILE.exist?
       content = YAML.load_file(CONFIG_FILE) || {}
       repos.merge!(content)
     end
 
-    if Dir.exist?(CONFIG_DIR)
-      Dir.glob(File.join(CONFIG_DIR, '*.yml')).each do |file|
+    if CONFIG_DIR.exist?
+      CONFIG_DIR.glob('*.yml').each do |file|
         content = YAML.load_file(file) || {}
         repos.merge!(content)
       end
@@ -100,73 +30,39 @@ class Repo < Thor
     repos
   end
 
-  def show_status(_name, config)
-    path = File.expand_path(config['path'])
-
-    unless Dir.exist?(path)
-      puts '  Status: NOT CLONED'
-      show_link_status(config['links']) if config['links']&.any?
-      return
-    end
-
-    begin
-      git = Git.open(path)
-      status = git.status
-
-      uncommitted = status.changed.any? || status.added.any? || status.deleted.any?
-      untracked = status.untracked.any?
-
-      if uncommitted || untracked
-        puts '  Status: DIRTY'
-        puts "    Changed:   #{status.changed.count}" if status.changed.any?
-        puts "    Added:     #{status.added.count}" if status.added.any?
-        puts "    Deleted:   #{status.deleted.count}" if status.deleted.any?
-        puts "    Untracked: #{status.untracked.count}" if status.untracked.any?
-      else
-        puts '  Status: CLEAN'
-      end
-
-      show_link_status(config['links']) if config['links']&.any?
-    rescue Git::GitExecuteError => e
-      puts "  Status: ERROR - #{e.message}"
-    end
+  def find(name)
+    all[name]
   end
 
-  def show_link_status(links)
-    puts '    Links:'
-    links.each do |link|
-      link_path = File.expand_path(link)
-      status = File.symlink?(link_path) ? 'OK' : 'MISSING'
-      puts "      #{link}: #{status}"
-    end
+  def resolve_path(path)
+    hub_store.resolve(path)
   end
 
-  def clone_repo(name, config, all_repos)
-    path = File.expand_path(config['path'])
+  def clone_repo(name, config, force: false)
+    path = File.expand_path(resolve_path(config['path']))
     url = config['url']
 
     if Dir.exist?(path)
       puts "#{name}: Already exists at #{path}"
-      create_links(name, path, config['links'])
       return
     end
 
     parent_dir = File.dirname(path)
 
     unless Dir.exist?(parent_dir)
-      missing_parents = find_missing_parent_repos(parent_dir, all_repos)
+      missing_parents = find_missing_parent_repos(parent_dir)
 
-      if missing_parents.any? && !options[:force]
+      if missing_parents.any? && !force
         puts 'Warning: The following parent repositories should be cloned first:'
         missing_parents.each { |repo| puts "  - #{repo}" }
         puts 'Use --force to clone anyway, or clone parent repositories first.'
         return
       end
 
-      if missing_parents.any? && options[:force]
+      if missing_parents.any? && force
         puts 'Force mode: Cloning parent repositories first...'
         missing_parents.each do |parent_name|
-          clone_repo(parent_name, all_repos[parent_name], all_repos)
+          clone_repo(parent_name, all[parent_name], force: force)
         end
       end
 
@@ -177,41 +73,52 @@ class Repo < Thor
     begin
       Git.clone(url, path)
       puts "#{name}: Cloned successfully"
-      create_links(name, path, config['links'])
     rescue Git::GitExecuteError => e
       puts "#{name}: Clone failed - #{e.message}"
     end
   end
 
-  def create_links(name, target_path, links)
-    return unless links&.any?
+  def status(config)
+    path = File.expand_path(resolve_path(config['path']))
 
-    links.each do |link|
-      link_path = File.expand_path(link)
+    unless Dir.exist?(path)
+      return { state: :not_cloned }
+    end
 
-      if File.symlink?(link_path)
-        puts "#{name}: Link already exists at #{link_path}"
-        next
+    begin
+      git = Git.open(path)
+      status = git.status
+
+      uncommitted = status.changed.any? || status.added.any? || status.deleted.any?
+      untracked = status.untracked.any?
+
+      if uncommitted || untracked
+        {
+          state: :dirty,
+          changed: status.changed.count,
+          added: status.added.count,
+          deleted: status.deleted.count,
+          untracked: status.untracked.count
+        }
+      else
+        { state: :clean }
       end
-
-      if File.exist?(link_path)
-        puts "#{name}: Cannot create link, file exists at #{link_path}"
-        next
-      end
-
-      link_parent = File.dirname(link_path)
-      FileUtils.mkdir_p(link_parent)
-
-      File.symlink(target_path, link_path)
-      puts "#{name}: Created link #{link_path} -> #{target_path}"
+    rescue Git::GitExecuteError => e
+      { state: :error, message: e.message }
     end
   end
 
-  def find_missing_parent_repos(target_dir, all_repos)
+  private
+
+  def hub_store
+    @hub_store ||= HubStore.new
+  end
+
+  def find_missing_parent_repos(target_dir)
     missing = []
 
-    all_repos.each do |repo_name, config|
-      repo_path = File.expand_path(config['path'])
+    all.each do |repo_name, config|
+      repo_path = File.expand_path(resolve_path(config['path']))
 
       next unless target_dir.start_with?("#{repo_path}/")
 
@@ -222,4 +129,87 @@ class Repo < Thor
   end
 end
 
-Repo.start(ARGV)
+class RepoCLI < Thor
+  def self.exit_on_failure? = true
+
+  desc 'list [PATTERN]', 'List all configured repositories'
+  map 'ls' => :list
+  method_option :l, type: :boolean, desc: 'Long format: show path, URL, and status'
+  method_option :status, type: :string, aliases: '-s', desc: 'Filter by status (CLEAN, DIRTY, NOT_CLONED, ERROR)'
+  method_option :url, type: :boolean, desc: 'Return URL(s)'
+  method_option :path, type: :boolean, desc: 'Return path(s)'
+  def list(pattern = nil)
+    repos = store.all
+    if repos.empty?
+      puts 'No repositories configured.'
+      return
+    end
+
+    if pattern
+      regex = Regexp.new(pattern)
+      repos = repos.select { |name, _| name.match?(regex) }
+    end
+
+    if options[:status]
+      filter_status = options[:status].upcase
+      repos = repos.select { |_, config| status_label(config) == filter_status }
+    end
+
+    if options[:url]
+      if repos.size == 1
+        puts repos.values.first['url']
+      else
+        repos.each { |name, config| puts "#{name}\t#{config['url']}" }
+      end
+    elsif options[:path]
+      if repos.size == 1
+        puts store.resolve_path(repos.values.first['path'])
+      else
+        repos.each { |name, config| puts "#{name}\t#{store.resolve_path(config['path'])}" }
+      end
+    elsif options[:l]
+      repos.each do |name, config|
+        status = status_label(config)
+        puts "#{name}\t#{store.resolve_path(config['path'])}\t#{config['url']}\t#{status}"
+      end
+    else
+      repos.each_key { |name| puts name }
+    end
+  end
+
+  desc 'clone NAME', 'Clone a repository to its configured path'
+  method_option :all, type: :boolean, aliases: '-a', desc: 'Clone all repositories'
+  method_option :force, type: :boolean, aliases: '-f', desc: 'Force clone even if parent repos are missing'
+  def clone(name = nil)
+    if options[:all]
+      store.all.each { |repo_name, config| store.clone_repo(repo_name, config, force: options[:force]) }
+    elsif name
+      config = store.find(name)
+      unless config
+        puts "Repository '#{name}' not found in configuration."
+        exit 1
+      end
+      store.clone_repo(name, config, force: options[:force])
+    else
+      puts 'Error: Please provide a repository name or use --all flag.'
+      exit 1
+    end
+  end
+
+  private
+
+  def store = @store ||= RepoStore.new
+
+  def status_label(config)
+    status = store.status(config)
+
+    case status[:state]
+    when :not_cloned then 'NOT_CLONED'
+    when :dirty then 'DIRTY'
+    when :clean then 'CLEAN'
+    when :error then 'ERROR'
+    end
+  end
+end
+
+RepoCLI.start(ARGV)

@@ -7,6 +7,7 @@ require "pathname"
 
 class BaseStore
   CONFIG_DIR = Pathname.new(Dir.home).join(".config/chorus")
+  SHARE_DIR = Pathname.new(Dir.home).join(".local/share/chorus")
 
   def all
     bases = {}
@@ -22,6 +23,48 @@ class BaseStore
     return unless base
 
     vault_path(base["vault"])
+  end
+
+  def create(name, vault_name: nil, templates: {})
+    vault_name ||= default_vault
+    raise "No vaults configured" unless vault_name
+
+    vault_location = vaults[vault_name]
+    raise "Vault '#{vault_name}' not found" unless vault_location
+
+    base_path = Pathname.new(vault_location).join(name)
+    base_path.mkpath
+
+    copy_obsidian_template(base_path)
+    templates.each do |template_name, dest_path|
+      copy_template(template_name.to_s, base_path.join(dest_path))
+    end
+    write_config(name, vault_name)
+
+    base_path
+  end
+
+  def remove(name, force: false)
+    base_path = resolve_path(name)
+    raise "Base '#{name}' not found" unless base_path
+
+    if base_path.exist?
+      if !force && base_path.children.any? { |c| c.basename.to_s != ".obsidian" }
+        return :not_empty
+      end
+      base_path.rmtree
+    end
+
+    delete_config(name)
+    :ok
+  end
+
+  def vaults
+    load_yaml(CONFIG_DIR.join("vaults.yml"))
+  end
+
+  def default_vault
+    vaults.keys.first
   end
 
   private
@@ -40,17 +83,84 @@ class BaseStore
     location_path = Pathname.new(vaults[location])
     location_path.join(name)
   end
+
+  def copy_obsidian_template(base_path)
+    copy_template(".obsidian", base_path.join(".obsidian"))
+  end
+
+  def copy_template(template_name, dest)
+    source = SHARE_DIR.join("base", template_name)
+    return unless source.exist?
+
+    dest.mkpath
+
+    source.glob("**/*").each do |src_file|
+      next if src_file.directory?
+
+      relative = src_file.relative_path_from(source)
+      dest_file = dest.join(relative)
+      dest_file.dirname.mkpath
+      dest_file.write(src_file.read)
+    end
+  end
+
+  def write_config(name, vault_name)
+    bases_d = CONFIG_DIR.join("bases.d")
+    bases_d.mkpath
+
+    config = { name => { "vault" => "#{vault_name}/#{name}" } }
+    bases_d.join("#{name}.yml").write(config.to_yaml)
+  end
+
+  def delete_config(name)
+    config_file = CONFIG_DIR.join("bases.d", "#{name}.yml")
+    config_file.delete if config_file.exist?
+  end
 end
 
 class BaseCLI < Thor
   def self.exit_on_failure? = true
 
   desc "list", "List all configured bases"
+  map ls: :list
   def list
     store.all.each do |name, _base|
       path = store.resolve_path(name)
       puts "#{name}: #{path}"
     end
+  end
+
+  desc "new NAME", "Create a new base in a vault"
+  option :vault, aliases: "-v", desc: "Target vault (defaults to first vault)"
+  option :gtd, aliases: "-g", type: :string, lazy_default: "gtd", desc: "Include GTD template (optional path)"
+  option :zettel, aliases: "-z", type: :string, lazy_default: "zettel", desc: "Include Zettelkasten template (optional path)"
+  option :para, aliases: "-p", type: :string, lazy_default: "para", desc: "Include PARA template (optional path)"
+  def new(name)
+    templates = {
+      gtd: options[:gtd],
+      zettel: options[:zettel],
+      para: options[:para]
+    }.compact
+    path = store.create(name, vault_name: options[:vault], templates: templates)
+    puts "Created base '#{name}' at #{path}"
+  rescue StandardError => e
+    puts "Error: #{e.message}"
+    exit 1
+  end
+
+  desc "remove NAME", "Remove a base and its configuration"
+  map rm: :remove
+  option :force, type: :boolean, default: false, aliases: "-f"
+  def remove(name)
+    result = store.remove(name, force: options[:force])
+    if result == :not_empty
+      puts "Base '#{name}' has content besides .obsidian. Use --force to delete."
+    else
+      puts "Removed base '#{name}'"
+    end
+  rescue StandardError => e
+    puts "Error: #{e.message}"
+    exit 1
   end
 
   private

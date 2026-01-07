@@ -1,37 +1,32 @@
 # chorus
 
-bconf() {
-  local dir=$CONFIG_DIR/chorus/bases.d file="." ext="yml"
+_chorus_cd() {
+   local cmd=$1 name=$2
+   local target
+   target=$($cmd ls --path "$name" 2>/dev/null)
+   if [[ -n "$target" ]]; then
+     cd "$target"
+   else
+     echo "'$name' not found in $cmd" >&2
+     return 1
+   fi
+}
+
+hcd() { _chorus_cd hub "$1" }
+
+hconf() {
+  local dir=$CONFIG_DIR/chorus file="hubs" ext="yml"
   load_conf $1 $2
 }
+
+rcd() { _chorus_cd repo "$1" }
 
 rconf() {
   local dir=$CONFIG_DIR/chorus/repos.d file="." ext="yml"
   load_conf $1 $2
 }
 
-sconf() {
-  local dir=$CONFIG_DIR/chorus/spaces.d file="." ext="yml"
-  load_conf $1 $2
-}
-
-vault_path() {
-  local vault="$1"
-  vault ls | grep "^$vault:" | awk -F': ' '{print $2}'
-}
-
-vcd() {
-  local vault="$1"
-  local path=$(vault_path "$vault")
-  
-  if [[ -z "$path" ]]; then
-    echo "Vault '$vault' not found"
-    return 1
-  fi
-  
-  cd "$path"
-}
-
-alias bls="base list"
-alias rls="repo list $1"
-alias vls="vault list"
+alias hls="hub list"
+alias mx="tmuxinator"
+alias rcl="repo clone"
+alias rls="repo list"

@@ -5,7 +5,7 @@
 .trash/
 
 # ruby gem lsp files
-.ruby-lsp
+**/.ruby-lsp
 
 # Claude
-.claude/settings.local.json
+**/.claude/settings.local.json
