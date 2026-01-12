@@ -21,7 +21,7 @@ class RepoStore
     end
 
     if CONFIG_DIR.exist?
-      CONFIG_DIR.glob('*.yml').each do |file|
+      CONFIG_DIR.glob('**/*.yml').each do |file|
         content = YAML.load_file(file) || {}
         repos.merge!(content)
       end
@@ -35,7 +35,7 @@ class RepoStore
   end
 
   def resolve_path(path)
-    hub_store.resolve(path)
+    hub_store.resolve(path).gsub('$HOME', Dir.home).gsub(/^~/, Dir.home)
   end
 
   def clone_repo(name, config, force: false)
@@ -155,22 +155,31 @@ class RepoCLI < Thor
       repos = repos.select { |_, config| status_label(config) == filter_status }
     end
 
+    repos = repos.sort.to_h
+
     if options[:url]
       if repos.size == 1
         puts repos.values.first['url']
       else
-        repos.each { |name, config| puts "#{name}\t#{config['url']}" }
+        max_name = repos.keys.map(&:length).max || 0
+        repos.each { |name, config| puts "#{name.ljust(max_name)}  #{config['url']}" }
       end
     elsif options[:path]
       if repos.size == 1
         puts store.resolve_path(repos.values.first['path'])
       else
-        repos.each { |name, config| puts "#{name}\t#{store.resolve_path(config['path'])}" }
+        max_name = repos.keys.map(&:length).max || 0
+        repos.each { |name, config| puts "#{name.ljust(max_name)}  #{store.resolve_path(config['path'])}" }
       end
     elsif options[:l]
-      repos.each do |name, config|
-        status = status_label(config)
-        puts "#{name}\t#{store.resolve_path(config['path'])}\t#{config['url']}\t#{status}"
+      rows = repos.map do |name, config|
+        [name, store.resolve_path(config['path']), config['url'], status_label(config)]
+      end
+      max_name = rows.map { |r| r[0].length }.max || 0
+      max_path = rows.map { |r| r[1].length }.max || 0
+      max_url = rows.map { |r| r[2].length }.max || 0
+      rows.each do |name, path, url, status|
+        puts "#{name.ljust(max_name)}  #{path.ljust(max_path)}  #{url.ljust(max_url)}  #{status}"
       end
     else
       repos.each_key { |name| puts name }

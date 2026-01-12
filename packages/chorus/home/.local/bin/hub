@@ -4,27 +4,14 @@
 require "thor"
 require "yaml"
 require "pathname"
+require "set"
 
 class HubStore
   CONFIG_FILE = Pathname.new(Dir.home).join(".config/chorus/hubs.yml")
   CONFIG_DIR = Pathname.new(Dir.home).join(".config/chorus/hubs.d")
 
   def all
-    hubs = {}
-
-    if CONFIG_FILE.exist?
-      content = YAML.load_file(CONFIG_FILE) || {}
-      hubs.merge!(content)
-    end
-
-    if CONFIG_DIR.exist?
-      CONFIG_DIR.glob("**/*.yml").each do |file|
-        content = YAML.load_file(file) || {}
-        hubs.merge!(content)
-      end
-    end
-
-    hubs
+    @all ||= raw_hubs.transform_values { |path| resolve_path(path, raw_hubs) }
   end
 
   def resolve(path)
@@ -34,9 +21,53 @@ class HubStore
     hub_path = all[label]
     return path unless hub_path
 
-    hub_path.gsub!('$HOME', Dir.home)
-    hub_path.gsub!('^~', Dir.home)
+    hub_path = expand_home(hub_path)
     subpath.to_s.empty? ? hub_path : File.join(hub_path, subpath)
+  end
+
+  private
+
+  def raw_hubs
+    @raw_hubs ||= begin
+      hubs = {}
+
+      load_config_file(CONFIG_FILE, hubs) if CONFIG_FILE.exist?
+
+      if CONFIG_DIR.exist?
+        CONFIG_DIR.glob("**/*.yml").each do |file|
+          load_config_file(file, hubs)
+        end
+      end
+
+      hubs
+    end
+  end
+
+  def load_config_file(file, hubs)
+    if file.symlink? && !file.exist?
+      warn "Warning: Broken symlink ignored: #{file}"
+      return
+    end
+
+    content = YAML.load_file(file) || {}
+    hubs.merge!(content)
+  rescue Errno::ENOENT => e
+    warn "Warning: Could not read config file: #{file} (#{e.message})"
+  end
+
+  def resolve_path(path, hubs, seen = Set.new)
+    return expand_home(path) unless path.include?(':')
+
+    label, subpath = path.split(':', 2)
+    return expand_home(path) unless hubs.key?(label)
+    return path if seen.include?(label) # prevent circular references
+
+    resolved = resolve_path(hubs[label], hubs, seen + [label])
+    subpath.to_s.empty? ? resolved : File.join(resolved, subpath)
+  end
+
+  def expand_home(path)
+    path.gsub('$HOME', Dir.home).gsub(/^~/, Dir.home)
   end
 
   def add(label, path)
@@ -72,8 +103,6 @@ class HubStore
 
     :ok
   end
-
-  private
 
   def config
     return {} unless CONFIG_FILE.exist?
