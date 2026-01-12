@@ -12,5 +12,5 @@ alias cc-rw='claude --allowedTools "Read" "Edit" "Grep"'
 
 cconf() {
   local dir=$HOME/.claude/commands file="." ext="md"
-  load_conf $1 $2
+  load_conf "$@"
 }

@@ -39,9 +39,30 @@ alias lsar="lsa -R"
 
 load_conf() {
   if [[ $1 == "ls" ]]; then
-    ls $2 $dir
+    shift
+    local flags=() target_dir="$dir"
+    while [[ $# -gt 0 ]]; do
+      if [[ $1 == -* ]]; then
+        flags+=("$1")
+      elif [[ -d "$target_dir/$1" ]]; then
+        target_dir="$target_dir/$1"
+        shift
+        # Remaining args are treated as flags
+        flags+=("$@")
+        break
+      fi
+      shift
+    done
+    ls "${flags[@]}" "$target_dir"
   elif [[ $1 == "pwd" ]]; then
     echo $dir
+  elif [[ $1 == "rm" ]]; then
+    file="$dir/$2.${ext}"
+    if [[ $# -eq 2 && -f $file ]]; then
+      rm $file
+    else
+      echo "Invalid file $file"
+    fi
   else
     if [[ $# -eq 1 ]]; then
       if [[ -d "$dir/$1" || -z ${ext} ]]; then
@@ -59,7 +80,7 @@ zconf() {
   if [[ $# == 1 && "$1" == ".zshrc" ]]; then
     ext=""
   fi
-  load_conf $1 $2
+  load_conf "$@"
 }
 
 zsrc() {

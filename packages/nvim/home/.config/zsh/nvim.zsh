@@ -7,7 +7,7 @@ nconf() {
   if [[ $# == 1 && "$1" == "options" ]]; then
     dir=$dir/..
   fi
-  load_conf $1 $2
+  load_conf "$@"
 }
 
 alias vi=nvim

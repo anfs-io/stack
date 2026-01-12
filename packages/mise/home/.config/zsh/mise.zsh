@@ -15,5 +15,5 @@ alias mui="mise upgrade --interactive"
 
 mconf() {
   local dir=$CONFIG_DIR/mise/conf.d file="." ext="toml"
-  load_conf $1 $2
+  load_conf "$@"
 }

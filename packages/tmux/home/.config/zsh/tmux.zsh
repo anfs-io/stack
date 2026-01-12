@@ -10,7 +10,7 @@ ta() {
 
 tconf() {
   local dir=$CONFIG_DIR/tmux file="tmux.conf" ext="conf"
-  load_conf $1 $2
+  load_conf "$@"
 }
 
 tsw() {

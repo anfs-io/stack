@@ -6,10 +6,25 @@ require "yaml"
 require "pathname"
 
 class HubStore
-  CONFIG_DIR = Pathname.new(Dir.home).join(".config/chorus")
+  CONFIG_FILE = Pathname.new(Dir.home).join(".config/chorus/hubs.yml")
+  CONFIG_DIR = Pathname.new(Dir.home).join(".config/chorus/hubs.d")
 
   def all
-    config || {}
+    hubs = {}
+
+    if CONFIG_FILE.exist?
+      content = YAML.load_file(CONFIG_FILE) || {}
+      hubs.merge!(content)
+    end
+
+    if CONFIG_DIR.exist?
+      CONFIG_DIR.glob("**/*.yml").each do |file|
+        content = YAML.load_file(file) || {}
+        hubs.merge!(content)
+      end
+    end
+
+    hubs
   end
 
   def resolve(path)
@@ -19,6 +34,8 @@ class HubStore
     hub_path = all[label]
     return path unless hub_path
 
+    hub_path.gsub!('$HOME', Dir.home)
+    hub_path.gsub!('^~', Dir.home)
     subpath.to_s.empty? ? hub_path : File.join(hub_path, subpath)
   end
 
@@ -59,15 +76,14 @@ class HubStore
   private
 
   def config
-    path = CONFIG_DIR.join("hubs.yml")
-    return {} unless path.exist?
+    return {} unless CONFIG_FILE.exist?
 
-    YAML.load_file(path) || {}
+    YAML.load_file(CONFIG_FILE) || {}
   end
 
   def save(data)
-    CONFIG_DIR.mkpath
-    CONFIG_DIR.join("hubs.yml").write(data.to_yaml)
+    CONFIG_FILE.dirname.mkpath
+    CONFIG_FILE.write(data.to_yaml)
   end
 end
 
@@ -105,6 +121,8 @@ class HubCLI < Thor
           warn "Unknown hub: #{hub_label}"
           exit 1
         end
+     hub_path.gsub!('$HOME', Dir.home)
+     hub_path.gsub!(/^~/, Dir.home)
         target_path = subdir ? File.join(hub_path, subdir) : hub_path
         puts target_path
       else
@@ -118,9 +136,11 @@ class HubCLI < Thor
       end
     elsif label.nil?
       if options[:l]
-        store.all.each { |name, path| puts "#{name}\t#{path}" }
+        hubs = store.all.sort
+        max_width = hubs.map { |name, _| name.length }.max || 0
+        hubs.each { |name, path| puts "#{name.ljust(max_width)}  #{path.gsub('$HOME', Dir.home).gsub(/^~/, Dir.home)}" }
       else
-        store.all.each_key { |name| puts name }
+        store.all.keys.sort.each { |name| puts name }
       end
     else
       # Parse label:subdir format
@@ -131,6 +151,8 @@ class HubCLI < Thor
         warn "Unknown hub: #{hub_label}"
         exit 1
       end
+     hub_path.gsub!('$HOME', Dir.home)
+     hub_path.gsub!(/^~/, Dir.home)
 
       target_path = Pathname.new(hub_path)
       target_path = target_path.join(subdir) if subdir
