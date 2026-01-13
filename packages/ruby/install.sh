@@ -21,7 +21,7 @@ install_linux() {
 }
 
 install_macos() {
-  install_dep libyaml openssl readline
+  install_dep libyaml openssl readline pkgconf
 }
 
 post_install() {
