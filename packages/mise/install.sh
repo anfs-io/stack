@@ -4,10 +4,6 @@ dependencies() {
   echo "zsh"
 }
 
-paths() {
-  echo "$XDG_CONFIG_DIR/mise/conf.d"
-}
-
 install_linux() {
   install_dep cosign curl gpg
 
