@@ -27,15 +27,33 @@ ostype() {
   esac
 }
 
-# Clasp
-alias clp="clasp push"
-
-# -a shows hidden files; -l follow symlinks; -I ignore
-alias tsa="tree -a -l -I tmp -I .git -I .terraform -I .obsidian -I .ruby-lsp -I .DS_Store -I \"._*\""
-
 # General Aliases and helpers
 alias cls="clear"
 alias lsar="lsa -R"
+
+
+tsa() {
+  # -a shows hidden files; -l follow symlinks; -I ignore
+  tree -a -l -I tmp -I .git -I .terraform -I .obsidian -I .ruby-lsp -I .DS_Store -I "._*" "$@"
+}
+
+# Helper: tsa with base dir, optional subdir (first non-flag param), and flags
+_tsa_base() {
+  local target_dir="$1"
+  shift
+
+  # First param: if not a flag, treat as subdir
+  if [[ $# -gt 0 && $1 != -* ]]; then
+    target_dir="$target_dir/$1"
+    shift
+  fi
+
+  tsa "$target_dir" "$@"
+}
+
+tsac() { _tsa_base "$CONFIG_DIR" "$@"; }
+tsap() { _tsa_base "$HOME/.local/share/ppm" "$@"; }
+
 
 load_conf() {
   if [[ $1 == "ls" ]]; then
@@ -84,8 +102,8 @@ zconf() {
 }
 
 zsrc() {
-  setopt local_options nullglob
-  for file in $CONFIG_DIR/zsh/*; do
+  setopt local_options nullglob extended_glob
+  for file in $ZSH_CONFIG/**/*.zsh(N); do
     source "$file" # No need to check if files exist since nullglob only returns existing files
   done
 }
