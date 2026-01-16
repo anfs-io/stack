@@ -5,7 +5,7 @@ dependencies() {
 }
 
 paths() {
-  echo "$XDG_CONFIG_DIR/builder"
+  echo "$XDG_CONFIG_HOME/builder"
 }
 
 post_install() {
