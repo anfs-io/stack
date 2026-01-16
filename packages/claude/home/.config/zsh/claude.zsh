@@ -8,7 +8,7 @@ alias cc-resume="clear; claude --resume"
 alias cc-version="claude --version"
 
 # Start claude with specific permissions
-alias cc-rw='clear; claude --allowedTools "Read" "Edit" "Grep"'
+alias cc-rw='clear; claude --allowedTools "Read" "Edit" "Grep" "Find" "ListDir" "WebSearch" "Bash"'
 
 cconf() {
   local dir=$HOME/.claude/commands file="." ext="md"

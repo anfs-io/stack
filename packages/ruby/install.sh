@@ -6,10 +6,10 @@ dependencies() {
 
 paths() {
   echo "
-    $XDG_CONFIG_DIR/pry
-    $XDG_CONFIG_DIR/rails/templates
-    $XDG_CONFIG_DIR/rubocop
-    $XDG_CONFIG_DIR/ruby
+    $XDG_CONFIG_HOME/pry
+    $XDG_CONFIG_HOME/rails/templates
+    $XDG_CONFIG_HOME/rubocop
+    $XDG_CONFIG_HOME/ruby
   "
 }
 

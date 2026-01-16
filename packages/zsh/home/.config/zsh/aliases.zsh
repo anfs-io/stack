@@ -11,13 +11,21 @@ if [ -f /opt/homebrew/bin/brew ]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
 fi
 
+[ -x "$(command -v bat 2>/dev/null)" ] && export PAGER=bat
+
 bindkey -v
 
 if command -v fzf >/dev/null 2>&1; then
   source <(fzf --zsh)
 fi
 
-export CONFIG_DIR=$HOME/.config
+export BIN_DIR=$HOME/.local/bin
+
+# XDG directories
+export XDG_CACHE_HOME=$HOME/.cache
+export XDG_CONFIG_HOME=$HOME/.config
+export XDG_DATA_HOME=$HOME/.local/share
+export XDG_STATE_HOME=~/.local/state
 
 ostype() {
   case "$(uname)" in
@@ -51,7 +59,7 @@ _tsa_base() {
   tsa "$target_dir" "$@"
 }
 
-tsac() { _tsa_base "$CONFIG_DIR" "$@"; }
+tsac() { _tsa_base "$XDG_CONFIG_HOME" "$@"; }
 tsap() { _tsa_base "$HOME/.local/share/ppm" "$@"; }
 
 
@@ -94,7 +102,7 @@ load_conf() {
 }
 
 zconf() {
-  local dir=$CONFIG_DIR/zsh file="aliases.zsh" ext="zsh"
+  local dir=$XDG_CONFIG_HOME/zsh file="aliases.zsh" ext="zsh"
   if [[ $# == 1 && "$1" == ".zshrc" ]]; then
     ext=""
   fi

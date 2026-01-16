@@ -6,13 +6,13 @@ require "yaml"
 require "pathname"
 
 class BaseStore
-  CONFIG_DIR = Pathname.new(Dir.home).join(".config/chorus")
+  XDG_CONFIG_HOME = Pathname.new(ENV.fetch('XDG_CONFIG_HOME', File.join(Dir.home, '.config')))
   SHARE_DIR = Pathname.new(Dir.home).join(".local/share/chorus")
 
   def all
     bases = {}
-    bases.merge!(load_yaml(CONFIG_DIR.join("bases.yml")))
-    CONFIG_DIR.join("bases.d").glob("*.yml").each do |path|
+    bases.merge!(load_yaml(XDG_CONFIG_HOME.join("chorus/bases.yml")))
+    XDG_CONFIG_HOME.join("chorus/bases.d").glob("*.yml").each do |path|
       bases.merge!(load_yaml(path))
     end
     bases
@@ -60,7 +60,7 @@ class BaseStore
   end
 
   def vaults
-    load_yaml(CONFIG_DIR.join("vaults.yml"))
+    load_yaml(XDG_CONFIG_HOME.join("chorus/vaults.yml"))
   end
 
   def default_vault
@@ -79,7 +79,7 @@ class BaseStore
     return unless vault_ref
 
     location, name = vault_ref.split("/", 2)
-    vaults = load_yaml(CONFIG_DIR.join("vaults.yml"))
+    vaults = load_yaml(XDG_CONFIG_HOME.join("chorus/vaults.yml"))
     location_path = Pathname.new(vaults[location])
     location_path.join(name)
   end
@@ -105,7 +105,7 @@ class BaseStore
   end
 
   def write_config(name, vault_name)
-    bases_d = CONFIG_DIR.join("bases.d")
+    bases_d = XDG_CONFIG_HOME.join("chorus/bases.d")
     bases_d.mkpath
 
     config = { name => { "vault" => "#{vault_name}/#{name}" } }
@@ -113,7 +113,7 @@ class BaseStore
   end
 
   def delete_config(name)
-    config_file = CONFIG_DIR.join("bases.d", "#{name}.yml")
+    config_file = XDG_CONFIG_HOME.join("chorus/bases.d", "#{name}.yml")
     config_file.delete if config_file.exist?
   end
 end

@@ -5,7 +5,7 @@ dependencies() {
 }
 
 paths() {
-  echo "$XDG_CONFIG_DIR/op"
+  echo "$XDG_CONFIG_HOME/op"
 }
 
 post_install() {

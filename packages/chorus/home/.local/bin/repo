@@ -9,8 +9,9 @@ require 'pathname'
 load File.expand_path('hub', __dir__)
 
 class RepoStore
-  CONFIG_FILE = Pathname.new(Dir.home).join('.config/chorus/repos.yml')
-  CONFIG_DIR = Pathname.new(Dir.home).join('.config/chorus/repos.d')
+  XDG_CONFIG_HOME = Pathname.new(ENV.fetch('XDG_CONFIG_HOME', File.join(Dir.home, '.config')))
+  CONFIG_FILE = XDG_CONFIG_HOME.join('chorus/repos.yml')
+  XDG_CONFIG_HOME_DIR = XDG_CONFIG_HOME.join('chorus/repos.d')
 
   def all
     repos = {}
@@ -20,8 +21,8 @@ class RepoStore
       repos.merge!(content)
     end
 
-    if CONFIG_DIR.exist?
-      CONFIG_DIR.glob('**/*.yml').each do |file|
+    if XDG_CONFIG_HOME_DIR.exist?
+      XDG_CONFIG_HOME_DIR.glob('**/*.yml').each do |file|
         content = YAML.load_file(file) || {}
         repos.merge!(content)
       end

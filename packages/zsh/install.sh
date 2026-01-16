@@ -1,7 +1,7 @@
 # zsh
 
 paths() {
-  echo "$XDG_CONFIG_DIR/zsh"
+  echo "$XDG_CONFIG_HOME/zsh"
 }
 
 install_linux() {
@@ -15,7 +15,7 @@ install_macos() {
 }
 
 post_install() {
-  local omz_dir=$XDG_LOCAL_SHARE_DIR/omz
+  local omz_dir=$XDG_DATA_HOME/omz
   if [ ! -d "$omz_dir" ]; then
     git clone https://github.com/ohmyzsh/ohmyzsh.git $omz_dir
   fi
@@ -29,5 +29,5 @@ post_install() {
 }
 
 post_remove() {
-  rm -rf $XDG_LOCAL_SHARE_DIR/omz $XDG_CACHE_DIR/p10k-*
+  rm -rf $XDG_DATA_HOME/omz $XDG_CACHE_HOME/p10k-*
 }

@@ -9,7 +9,7 @@ ta() {
 }
 
 tconf() {
-  local dir=$CONFIG_DIR/tmux file="tmux.conf" ext="conf"
+  local dir=$XDG_CONFIG_HOME/tmux file="tmux.conf" ext="conf"
   load_conf "$@"
 }
 
@@ -18,7 +18,12 @@ tsw() {
   tmux select-window -t $1
 }
 
+# Manage sessions, windows and panes
+alias tbp="tmux break-pane"
 alias tls="tmux list-sessions"
+alias trc="tmux source-file $XDG_CONFIG_HOME/tmux/tmux.conf"
 alias trs="tmux rename-session $1"
 alias trw="tmux rename-window $1"
-alias tssh='eval $(tmux showenv -s SSH_AUTH_SOCK)'  # Restore connection to the ssh agent socket inside Tmux
+
+# Restore connection to the ssh agent socket inside Tmux
+alias tssh='eval $(tmux showenv -s SSH_AUTH_SOCK)'

@@ -14,6 +14,6 @@ alias mtd="mise trust ."
 alias mui="mise upgrade --interactive"
 
 mconf() {
-  local dir=$CONFIG_DIR/mise/conf.d file="." ext="toml"
+  local dir=$XDG_CONFIG_HOME/mise/conf.d file="." ext="toml"
   load_conf "$@"
 }

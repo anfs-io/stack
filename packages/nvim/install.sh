@@ -1,14 +1,9 @@
 # nvim
 
-
-paths() {
-  echo "$XDG_CONFIG_DIR/nvim/lua/plugins"
-}
-
 install_linux() {
   command -v nvim &> /dev/null && return
 
-  local install_path="${XDG_BIN_DIR}/nvim"
+  local install_path="${BIN_DIR}/nvim"
 
   # Check for FUSE (required for AppImages)
   if ! ldconfig -p | grep -q libfuse.so.2; then
@@ -46,7 +41,7 @@ install_macos() {
 post_install() {
   if [[ "$(os)" == "linux" ]]; then
     # Use the absolute path b/c PATH is not yet configured
-    $XDG_BIN_DIR/nvim --headless "+Lazy! sync" +qa
+    $BIN_DIR/nvim --headless "+Lazy! sync" +qa
   elif [[ "$(os)" == "macos" ]]; then
     /opt/homebrew/bin/nvim --headless "+Lazy! sync" +qa
   fi

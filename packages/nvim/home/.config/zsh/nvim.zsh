@@ -3,7 +3,7 @@
 export EDITOR=nvim
 
 nconf() {
-  local dir=$CONFIG_DIR/nvim/lua/plugins file="../../init.lua" ext="lua"
+  local dir=$XDG_CONFIG_HOME/nvim/lua/plugins file="../../init.lua" ext="lua"
   if [[ $# == 1 && "$1" == "options" ]]; then
     dir=$dir/..
   fi

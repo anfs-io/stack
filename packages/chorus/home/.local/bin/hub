@@ -7,8 +7,9 @@ require "pathname"
 require "set"
 
 class HubStore
-  CONFIG_FILE = Pathname.new(Dir.home).join(".config/chorus/hubs.yml")
-  CONFIG_DIR = Pathname.new(Dir.home).join(".config/chorus/hubs.d")
+  XDG_CONFIG_HOME = Pathname.new(ENV.fetch('XDG_CONFIG_HOME', File.join(Dir.home, '.config')))
+  HUB_CONFIG_FILE = XDG_CONFIG_HOME.join("chorus/hubs.yml")
+  HUB_CONFIG_DIR = XDG_CONFIG_HOME.join("chorus/hubs.d")
 
   def all
     @all ||= raw_hubs.transform_values { |path| resolve_path(path, raw_hubs) }
@@ -31,10 +32,10 @@ class HubStore
     @raw_hubs ||= begin
       hubs = {}
 
-      load_config_file(CONFIG_FILE, hubs) if CONFIG_FILE.exist?
+      load_config_file(HUB_CONFIG_FILE, hubs) if HUB_CONFIG_FILE.exist?
 
-      if CONFIG_DIR.exist?
-        CONFIG_DIR.glob("**/*.yml").each do |file|
+      if HUB_CONFIG_DIR.exist?
+        HUB_CONFIG_DIR.glob("**/*.yml").each do |file|
           load_config_file(file, hubs)
         end
       end
@@ -105,14 +106,14 @@ class HubStore
   end
 
   def config
-    return {} unless CONFIG_FILE.exist?
+    return {} unless HUB_CONFIG_FILE.exist?
 
-    YAML.load_file(CONFIG_FILE) || {}
+    YAML.load_file(HUB_CONFIG_FILE) || {}
   end
 
   def save(data)
-    CONFIG_FILE.dirname.mkpath
-    CONFIG_FILE.write(data.to_yaml)
+    HUB_CONFIG_FILE.dirname.mkpath
+    HUB_CONFIG_FILE.write(data.to_yaml)
   end
 end
 

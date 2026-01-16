@@ -1,7 +1,7 @@
 # git
 
 paths() {
-  echo "$XDG_CONFIG_DIR/git"
+  echo "$XDG_CONFIG_HOME/git"
 }
 
 # installs the github command line client (gh)

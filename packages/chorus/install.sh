@@ -6,9 +6,9 @@ dependencies() {
 
 # paths() {
 #   echo "
-#     $XDG_CONFIG_DIR/chorus/bases.d
-#     $XDG_CONFIG_DIR/chorus/repos.d
-#     $XDG_CONFIG_DIR/chorus/spaces.d
+#     $XDG_CONFIG_HOME/chorus/bases.d
+#     $XDG_CONFIG_HOME/chorus/repos.d
+#     $XDG_CONFIG_HOME/chorus/spaces.d
 #     $HOME/.claude/commands/chorus
 #   "
 # }

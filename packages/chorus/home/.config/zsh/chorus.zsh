@@ -15,7 +15,7 @@ _chorus_cd() {
 hcd() { _chorus_cd hub "$1" }
 
 hconf() {
-  local dir=$CONFIG_DIR/chorus/hubs.d file="../hubs.yml" ext="yml"
+  local dir=$XDG_CONFIG_HOME/chorus/hubs.d file="../hubs.yml" ext="yml"
   mkdir -p $dir
   load_conf "$@"
 }
@@ -23,7 +23,7 @@ hconf() {
 rcd() { _chorus_cd repo "$1" }
 
 rconf() {
-  local dir=$CONFIG_DIR/chorus/repos.d file="../repos.yml" ext="yml"
+  local dir=$XDG_CONFIG_HOME/chorus/repos.d file="../repos.yml" ext="yml"
   mkdir -p $dir
   load_conf "$@"
 }
