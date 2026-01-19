@@ -174,13 +174,13 @@ class RepoCLI < Thor
       end
     elsif options[:l]
       rows = repos.map do |name, config|
-        [name, store.resolve_path(config['path']), config['url'], status_label(config)]
+        [name, store.resolve_path(config['path']), config['url'], colored_status_label(config)]
       end
       max_name = rows.map { |r| r[0].length }.max || 0
       max_path = rows.map { |r| r[1].length }.max || 0
       max_url = rows.map { |r| r[2].length }.max || 0
-      rows.each do |name, path, url, status|
-        puts "#{name.ljust(max_name)}  #{path.ljust(max_path)}  #{url.ljust(max_url)}  #{status}"
+      rows.each do |name, path, url, colored_status|
+        puts "#{name.ljust(max_name)}  #{path.ljust(max_path)}  #{url.ljust(max_url)}  #{colored_status}"
       end
     else
       repos.each_key { |name| puts name }
@@ -219,6 +219,22 @@ class RepoCLI < Thor
     when :clean then 'CLEAN'
     when :error then 'ERROR'
     end
+  end
+
+  def colored_status_label(config)
+    green = "\e[32m"
+    yellow = "\e[33m"
+    red = "\e[31m"
+    reset = "\e[0m"
+
+    label = status_label(config)
+    color = case label
+            when 'CLEAN' then green
+            when 'DIRTY' then red
+            when 'NOT_CLONED', 'ERROR' then yellow
+            end
+
+    color ? "#{color}#{label}#{reset}" : label
   end
 end
 
