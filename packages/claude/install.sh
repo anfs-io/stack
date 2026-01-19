@@ -1,8 +1,8 @@
 # claude
 
-dependencies() {
-  echo "node"
-}
+# dependencies() {
+#   echo "node"
+# }
 
 post_install() {
   source <(mise activate zsh)

@@ -17,6 +17,7 @@ bindkey -v
 
 if command -v fzf >/dev/null 2>&1; then
   source <(fzf --zsh)
+  alias ff="fzf --filter"
 fi
 
 export BIN_DIR=$HOME/.local/bin
@@ -60,7 +61,7 @@ _tsa_base() {
 }
 
 tsac() { _tsa_base "$XDG_CONFIG_HOME" "$@"; }
-tsap() { _tsa_base "$HOME/.local/share/ppm" "$@"; }
+tsap() { _tsa_base "$XDG_DATA_HOME/ppm" "$@"; }
 
 
 load_conf() {
