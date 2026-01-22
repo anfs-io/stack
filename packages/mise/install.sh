@@ -1,8 +1,8 @@
 # mise
 
-dependencies() {
-  echo "zsh"
-}
+# dependencies() {
+#   echo "zsh"
+# }
 
 install_linux() {
   install_dep cosign curl gpg

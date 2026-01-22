@@ -21,6 +21,7 @@ if command -v fzf >/dev/null 2>&1; then
 fi
 
 export BIN_DIR=$HOME/.local/bin
+export LIB_DIR=$HOME/.local/lib
 
 # XDG directories
 export XDG_CACHE_HOME=$HOME/.cache
