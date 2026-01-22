@@ -25,5 +25,8 @@ alias trc="tmux source-file $XDG_CONFIG_HOME/tmux/tmux.conf"
 alias trs="tmux rename-session $1"
 alias trw="tmux rename-window $1"
 
+alias tsv='tmux split-window -h -c "$(pwd)"'
+alias tsh='tmux split-window -v -c "$(pwd)"'
+
 # Restore connection to the ssh agent socket inside Tmux
 alias tssh='eval $(tmux showenv -s SSH_AUTH_SOCK)'
