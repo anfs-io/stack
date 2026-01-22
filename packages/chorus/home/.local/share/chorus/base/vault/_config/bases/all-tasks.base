@@ -1,0 +1,45 @@
+properties:
+  - id: note.name
+    name: Task
+  - id: story
+    name: Story
+  - id: status
+    name: Status
+  - id: created
+    name: Created
+
+views:
+  - id: board
+    name: Board
+    type: table
+    orderBy:
+      - property: status
+        order: asc
+      - property: created
+        order: desc
+    columns:
+      - note.name
+      - story
+      - status
+      - created
+
+  - id: by-story
+    name: By Story
+    type: table
+    groupBy: story
+    orderBy:
+      - property: status
+        order: asc
+    columns:
+      - note.name
+      - status
+
+  - id: by-status
+    name: By Status
+    type: table
+    groupBy: status
+    columns:
+      - note.name
+      - story
+
+source: tasks

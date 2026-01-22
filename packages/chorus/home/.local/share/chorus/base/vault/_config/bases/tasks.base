@@ -1,0 +1,30 @@
+source: tasks
+filters:
+  and:
+    - story.contains(link(this.file.name))
+properties:
+  "0":
+    id: note.name
+    name: Task
+  "1":
+    id: status
+    name: Status
+  "2":
+    id: priority
+    name: Priority
+  "3":
+    id: created
+    name: Created
+views:
+  - type: table
+    name: Tasks
+    id: list
+    orderBy:
+      - property: status
+        order: asc
+      - property: priority
+        order: asc
+    columns:
+      - note.name
+      - status
+      - priority

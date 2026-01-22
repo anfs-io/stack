@@ -1,0 +1,53 @@
+properties:
+  - id: note.name
+    name: Story
+  - id: feature
+    name: Feature
+  - id: status
+    name: Status
+  - id: priority
+    name: Priority
+  - id: created
+    name: Created
+
+views:
+  - id: board
+    name: Board
+    type: table
+    orderBy:
+      - property: priority
+        order: asc
+      - property: status
+        order: asc
+    columns:
+      - note.name
+      - feature
+      - status
+      - priority
+      - created
+
+  - id: by-feature
+    name: By Feature
+    type: table
+    groupBy: feature
+    orderBy:
+      - property: priority
+        order: asc
+    columns:
+      - note.name
+      - status
+      - priority
+
+  - id: by-status
+    name: By Status
+    type: table
+    groupBy: status
+    orderBy:
+      - property: priority
+        order: asc
+    columns:
+      - note.name
+      - feature
+      - priority
+
+source: stories

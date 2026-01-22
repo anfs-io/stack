@@ -1,0 +1,5 @@
+/* Hide only the "New" button in Bases toolbar */
+/* Users should use our custom Buttons instead for creating new items */
+.bases-toolbar-new-item-menu {
+  display: none !important;
+}
