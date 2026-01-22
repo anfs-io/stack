@@ -1,0 +1,356 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'thor'
+require 'yaml'
+require 'erb'
+require 'webrick'
+require 'socket'
+require 'pathname'
+require 'fileutils'
+
+# Load pim-iso for integration
+load File.expand_path('pim-iso', __dir__)
+
+module Pim
+  # Deep merge utility for configuration hashes
+  module DeepMerge
+    def self.merge(base, overlay)
+      return overlay.dup if base.nil?
+      return base.dup if overlay.nil?
+
+      base.merge(overlay) do |_key, old_val, new_val|
+        if old_val.is_a?(Hash) && new_val.is_a?(Hash)
+          merge(old_val, new_val)
+        else
+          new_val
+        end
+      end
+    end
+  end
+
+  # Configuration loader for pim
+  class Config
+    XDG_DATA_HOME = ENV.fetch('XDG_DATA_HOME', File.expand_path('~/.local/share'))
+    XDG_CONFIG_HOME = ENV.fetch('XDG_CONFIG_HOME', File.expand_path('~/.config'))
+    GLOBAL_DATA_DIR = File.join(XDG_DATA_HOME, 'pim')
+
+    attr_reader :profiles_config, :runtime_config
+
+    def initialize(project_dir: Dir.pwd)
+      @project_dir = project_dir
+      @profiles_config = load_profiles_config
+      @runtime_config = load_runtime_config
+    end
+
+    def profile(name)
+      name = name.to_s
+      default_profile = @profiles_config['default'] || {}
+      named_profiles = @profiles_config['profiles'] || {}
+
+      if name == 'default' || name.empty?
+        default_profile
+      else
+        DeepMerge.merge(default_profile, named_profiles[name] || {})
+      end
+    end
+
+    def profile_names
+      names = ['default']
+      (@profiles_config['profiles'] || {}).keys.each do |name|
+        names << name unless names.include?(name)
+      end
+      names
+    end
+
+    def serve_defaults
+      @runtime_config['serve'] || {}
+    end
+
+    def iso_config
+      @iso_config ||= PimIso::Config.new(project_dir: @project_dir)
+    end
+
+    private
+
+    def load_profiles_config
+      config = { 'default' => {}, 'profiles' => {} }
+
+      # 1. Global profiles.yml
+      global_file = File.join(GLOBAL_DATA_DIR, 'profiles.yml')
+      config = DeepMerge.merge(config, load_yaml(global_file))
+
+      # 2. Global profiles.d/*.yml
+      load_config_d(File.join(GLOBAL_DATA_DIR, 'profiles.d')).each do |fragment|
+        config = DeepMerge.merge(config, fragment)
+      end
+
+      # 3. Project profiles.yml
+      project_file = File.join(@project_dir, 'profiles.yml')
+      config = DeepMerge.merge(config, load_yaml(project_file))
+
+      config
+    end
+
+    def load_runtime_config
+      config = {}
+
+      # Global runtime config
+      global_file = File.join(XDG_CONFIG_HOME, 'pim.yml')
+      config = DeepMerge.merge(config, load_yaml(global_file))
+
+      # Project runtime config
+      project_file = File.join(@project_dir, 'pim.yml')
+      config = DeepMerge.merge(config, load_yaml(project_file))
+
+      config
+    end
+
+    def load_yaml(path)
+      return {} unless File.exist?(path)
+      YAML.load_file(path) || {}
+    rescue Psych::SyntaxError => e
+      warn "Warning: Failed to parse #{path}: #{e.message}"
+      {}
+    end
+
+    def load_config_d(dir)
+      return [] unless Dir.exist?(dir)
+
+      Dir.glob(File.join(dir, '*.yml')).sort.map do |file|
+        load_yaml(file)
+      end
+    end
+  end
+
+  # Profile model with template content resolution
+  class Profile
+    XDG_DATA_HOME = ENV.fetch('XDG_DATA_HOME', File.expand_path('~/.local/share'))
+    BUNDLED_TEMPLATES = File.expand_path('../share/pim/templates', __dir__)
+
+    attr_reader :name, :data
+
+    def initialize(name, data, project_dir: Dir.pwd)
+      @name = name
+      @data = data
+      @project_dir = project_dir
+    end
+
+    def to_h
+      @data
+    end
+
+    def [](key)
+      @data[key.to_s]
+    end
+
+    def preseed_template
+      find_template('preseeds', 'preseed.cfg.erb') ||
+        find_template('preseeds', "#{@name}.preseed.cfg.erb") ||
+        (bundled_template('preseed.cfg.erb') if @name == 'default' || !named_template_exists?)
+    end
+
+    def post_install_template
+      find_template('post_installs', 'post_install.sh.erb') ||
+        find_template('post_installs', "#{@name}.post_install.sh.erb") ||
+        (bundled_template('post_install.sh.erb') if @name == 'default' || !named_template_exists?)
+    end
+
+    private
+
+    def find_template(subdir, filename)
+      # 1. Project directory
+      project_path = File.join(@project_dir, subdir, filename)
+      return project_path if File.exist?(project_path)
+
+      # 2. Global data directory
+      global_path = File.join(XDG_DATA_HOME, 'pim', subdir, filename)
+      return global_path if File.exist?(global_path)
+
+      nil
+    end
+
+    def bundled_template(filename)
+      path = File.join(BUNDLED_TEMPLATES, filename)
+      File.exist?(path) ? path : nil
+    end
+
+    def named_template_exists?
+      find_template('preseeds', "#{@name}.preseed.cfg.erb") ||
+        find_template('post_installs', "#{@name}.post_install.sh.erb")
+    end
+  end
+
+  # WEBrick server for serving preseed and post-install scripts
+  class Server
+    def initialize(profile:, port: 8080, verbose: false)
+      @profile = profile
+      @port = port
+      @verbose = verbose
+      @ip = local_ip
+    end
+
+    def start
+      preseed_path = "/preseed-#{@profile.name}.cfg"
+      post_install_path = "/post-install-#{@profile.name}.sh"
+
+      preseed_content = render_template(@profile.preseed_template)
+      post_install_content = render_template(@profile.post_install_template)
+
+      puts "Serving preseed configuration for profile: #{@profile.name}"
+      puts
+      puts "Preseed URL:      http://#{@ip}:#{@port}#{preseed_path}"
+      puts "Post-install URL: http://#{@ip}:#{@port}#{post_install_path}" if post_install_content
+      puts
+      puts "Boot parameters:"
+      puts "  auto=true priority=critical preseed/url=http://#{@ip}:#{@port}#{preseed_path}"
+      puts
+      puts "Press Ctrl+C to stop"
+      puts
+
+      log_level = @verbose ? WEBrick::Log::DEBUG : WEBrick::Log::WARN
+      server = WEBrick::HTTPServer.new(
+        Port: @port,
+        Logger: WEBrick::Log.new($stdout, log_level),
+        AccessLog: @verbose ? [[File.open('/dev/stdout', 'w'), WEBrick::AccessLog::COMMON_LOG_FORMAT]] : []
+      )
+
+      server.mount_proc(preseed_path) do |_req, res|
+        res['Content-Type'] = 'text/plain'
+        res.body = preseed_content
+      end
+
+      if post_install_content
+        server.mount_proc(post_install_path) do |_req, res|
+          res['Content-Type'] = 'text/plain'
+          res.body = post_install_content
+        end
+      end
+
+      trap('INT') { server.shutdown }
+      trap('TERM') { server.shutdown }
+
+      server.start
+    end
+
+    private
+
+    def render_template(template_path)
+      return nil unless template_path && File.exist?(template_path)
+
+      template = ERB.new(File.read(template_path))
+      template.result_with_hash(@profile.to_h.transform_keys(&:to_sym))
+    end
+
+    def local_ip
+      Socket.ip_address_list
+            .detect { |addr| addr.ipv4? && !addr.ipv4_loopback? }
+            &.ip_address || '127.0.0.1'
+    end
+  end
+
+  # Main CLI interface
+  class CLI < Thor
+    def self.exit_on_failure? = true
+    remove_command :tree
+
+    desc 'serve [PROFILE]', 'Start preseed server for the given profile'
+    option :port, type: :numeric, default: 8080, aliases: '-p', desc: 'Port to serve on'
+    option :verbose, type: :boolean, default: false, aliases: '-v', desc: 'Verbose output'
+    def serve(profile_name = nil)
+      config = Config.new
+
+      # Use runtime defaults if not specified
+      profile_name ||= config.serve_defaults['profile'] || 'default'
+
+      profile_data = config.profile(profile_name)
+
+      if profile_data.empty? && profile_name != 'default'
+        puts "Error: Profile '#{profile_name}' not found"
+        puts "Available profiles: #{config.profile_names.join(', ')}"
+        exit 1
+      end
+
+      profile = Profile.new(profile_name, profile_data)
+
+      unless profile.preseed_template
+        puts "Error: No preseed template found for profile '#{profile_name}'"
+        puts "Expected locations:"
+        puts "  - ./preseeds/preseed.cfg.erb"
+        puts "  - ./preseeds/#{profile_name}.preseed.cfg.erb"
+        puts "  - $XDG_DATA_HOME/pim/preseeds/preseed.cfg.erb"
+        exit 1
+      end
+
+      server = Server.new(
+        profile: profile,
+        port: options[:port],
+        verbose: options[:verbose]
+      )
+
+      server.start
+    end
+
+    desc 'list [TYPE]', 'List profiles or isos'
+    def list(type = 'profiles')
+      case type.downcase
+      when 'profiles', 'profile', 'p'
+        list_profiles
+      when 'isos', 'iso', 'i'
+        iso_manager.list
+      else
+        puts "Unknown type: #{type}"
+        puts "Valid types: profiles, isos"
+        exit 1
+      end
+    end
+
+    desc 'iso SUBCOMMAND', 'ISO management commands'
+    subcommand 'iso', PimIso::CLI
+
+    desc 'show PROFILE', 'Show details of a profile'
+    def show(profile_name)
+      config = Config.new
+      profile_data = config.profile(profile_name)
+
+      if profile_data.empty? && profile_name != 'default'
+        puts "Error: Profile '#{profile_name}' not found"
+        exit 1
+      end
+
+      profile = Profile.new(profile_name, profile_data)
+
+      puts "Profile: #{profile_name}"
+      puts
+      puts "Configuration:"
+      profile_data.each do |key, value|
+        puts "  #{key}: #{value}"
+      end
+      puts
+      puts "Templates:"
+      puts "  Preseed:      #{profile.preseed_template || '(not found)'}"
+      puts "  Post-install: #{profile.post_install_template || '(not found)'}"
+    end
+
+    private
+
+    def list_profiles
+      config = Config.new
+
+      puts "Available Profiles"
+      puts
+
+      config.profile_names.each do |name|
+        profile_data = config.profile(name)
+        hostname = profile_data['hostname'] || '(default hostname)'
+        puts "  #{name.ljust(20)} #{hostname}"
+      end
+    end
+
+    def iso_manager
+      @iso_manager ||= PimIso::Manager.new
+    end
+  end
+end
+
+Pim::CLI.start(ARGV)

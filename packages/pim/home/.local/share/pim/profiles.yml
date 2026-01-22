@@ -1,0 +1,20 @@
+# PIM Profiles Configuration
+# Global defaults and named profiles for preseed generation
+#
+# Profiles are deep-merged: named profiles inherit from 'default'
+# Additional profiles can be added in profiles.d/*.yml
+
+default:
+  username: ansible
+  password: changeme
+  timezone: UTC
+  domain: local
+  locale: en_US.UTF-8
+  keyboard: us
+  packages: openssh-server curl sudo
+
+profiles:
+  # Example profile - uncomment and customize
+  # homelab:
+  #   hostname: homelab-vm
+  #   authorized_keys_url: https://github.com/username.keys

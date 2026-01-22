@@ -1,0 +1,11 @@
+# PIM Runtime Configuration
+# Default settings for pim commands
+#
+# Project-level pim.yml in $PWD will be merged with this file
+
+serve:
+  # Default profile for 'pim serve' when no profile is specified
+  # profile: default
+
+  # Default port for the preseed server
+  # port: 8080
