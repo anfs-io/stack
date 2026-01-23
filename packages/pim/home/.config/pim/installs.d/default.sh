@@ -1,21 +1,23 @@
 #!/bin/bash
-exec > /root/postinstall.log 2>&1
-set -x
+exec > /root/install.log 2>&1
+set -ex
+
 # Post-installation script for default profile
 # This script runs after the base system is installed via preseed late_command
-set -e
-
-export DEBIAN_FRONTEND=noninteractive
-apt-get install -y zsh
-
-# export PPM_INSTALL_REPO=git@github.com:maxcole/rjayroach
-# export PPM_INSTALL_PACKAGES="zsh nvim tmux"
-# curl -fsSL https://raw.githubusercontent.com/maxcole/ppm/refs/heads/main/install.sh | bash
-
-
 echo "=== Post-installation script starting ==="
 # Add custom post-installation commands here
+
+# export DEBIAN_FRONTEND=noninteractive
+# apt-get update || true
+# apt-get install -y zsh htop
+
+cat > /home/ansible/ppm.sh << 'EOF'
+export PPM_INSTALL_REPO=git@github.com:maxcole/rjayroach-ppm
+export PPM_INSTALL_PACKAGES="chorus claude git nvim ssh tmux zsh"
+curl -fsSL https://raw.githubusercontent.com/maxcole/ppm/refs/heads/main/install.sh | bash
+EOF
+
+chown ansible:ansible /home/ansible/ppm.sh
+chmod +x /home/ansible/ppm.sh
+
 echo "=== Post-installation complete ==="
-touch ~/test.txt
-touch /home/ansible/test2.txt
-touch /root/test3.txt

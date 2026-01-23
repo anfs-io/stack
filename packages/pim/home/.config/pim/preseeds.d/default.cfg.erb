@@ -52,8 +52,8 @@ d-i finish-install/reboot_in_progress note
 d-i preseed/late_command string \
     in-target sh -c 'echo "<%= username %> ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/<%= username %>'; \
     in-target chmod 440 /etc/sudoers.d/<%= username %><% if install_url %>; \
-    in-target curl -fsSL "<%= install_url %>" -o /target/tmp/install.sh; \
-    in-target chmod +x /target/tmp/install.sh; \
+    in-target curl -fsSL "<%= install_url %>" -o /tmp/install.sh; \
+    in-target chmod +x /tmp/install.sh; \
     in-target /bin/bash /tmp/install.sh<% end %><% if authorized_keys_url %>; \
     in-target mkdir -p /home/<%= username %>/.ssh; \
     in-target curl -fsSL "<%= authorized_keys_url %>" -o /home/<%= username %>/.ssh/authorized_keys; \
