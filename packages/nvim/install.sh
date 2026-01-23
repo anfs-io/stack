@@ -11,9 +11,10 @@ install_linux() {
     install_dep libfuse2 fuse3
   fi
 
-  if ! command -v gcc &> /dev/null; then
-    install_dep gcc
-  fi
+  install_dep build-essential ripgrep
+  # if ! command -v gcc &> /dev/null; then
+  #   install_dep gcc
+  # fi
 
   # nvim release arch
   local nvim_arch="x86_64"
