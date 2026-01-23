@@ -4,11 +4,7 @@ dependencies() {
   echo "mise"
 }
 
-paths() {
-  echo "$XDG_CONFIG_HOME/op"
-}
-
 post_install() {
-  source <(mise activate zsh)
+  source <(mise activate bash)
   mise install op
 }
