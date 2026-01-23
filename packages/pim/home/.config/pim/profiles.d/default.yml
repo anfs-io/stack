@@ -1,0 +1,37 @@
+# PIM Default Profile
+# Global defaults applied to all profiles via deep merge
+#
+# Named profiles in separate files (e.g., homelab.yml) inherit from default
+
+default:
+  # User account
+  username: ansible
+  password: changeme
+  fullname: Ansible User
+
+  # Locale and keyboard
+  locale: en_US.UTF-8
+  keyboard: us
+
+  # Network
+  hostname: debian
+  domain: local
+
+  # Mirror
+  mirror_host: deb.debian.org
+  mirror_path: /debian
+  http_proxy: ""
+
+  # Clock
+  timezone: UTC
+
+  # Partitioning
+  partitioning_method: regular
+  partitioning_recipe: atomic
+
+  # Packages
+  tasksel: "standard, ssh-server"
+  packages: openssh-server curl sudo
+
+  # Grub
+  grub_device: default

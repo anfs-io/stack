@@ -9,3 +9,7 @@ serve:
 
   # Default port for the preseed server
   # port: 8080
+
+iso:
+  # Directory where ISOs are downloaded/cached
+  iso_dir: $XDG_CACHE_HOME/pim/isos

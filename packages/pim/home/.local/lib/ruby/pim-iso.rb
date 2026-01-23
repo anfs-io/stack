@@ -1,13 +1,13 @@
-#!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require 'thor'
 require 'yaml'
 require 'pathname'
 require 'digest'
 require 'net/http'
 require 'uri'
 require 'openssl'
+require 'fileutils'
+require 'thor'
 
 module PimIso
   # Deep merge utility for configuration hashes
@@ -17,7 +17,9 @@ module PimIso
       return base.dup if overlay.nil?
 
       base.merge(overlay) do |_key, old_val, new_val|
-        if old_val.is_a?(Hash) && new_val.is_a?(Hash)
+        if new_val.nil?
+          old_val
+        elsif old_val.is_a?(Hash) && new_val.is_a?(Hash)
           merge(old_val, new_val)
         else
           new_val
@@ -28,54 +30,64 @@ module PimIso
 
   # Configuration loader for pim-iso
   class Config
-    XDG_DATA_HOME = ENV.fetch('XDG_DATA_HOME', File.expand_path('~/.local/share'))
-    GLOBAL_CONFIG_DIR = File.join(XDG_DATA_HOME, 'pim')
-    GLOBAL_CONFIG_FILE = File.join(GLOBAL_CONFIG_DIR, 'isos.yml')
+    XDG_CONFIG_HOME = ENV.fetch('XDG_CONFIG_HOME', File.expand_path('~/.config'))
+    XDG_CACHE_HOME = ENV.fetch('XDG_CACHE_HOME', File.expand_path('~/.cache'))
+    GLOBAL_CONFIG_DIR = File.join(XDG_CONFIG_HOME, 'pim')
     GLOBAL_CONFIG_D = File.join(GLOBAL_CONFIG_DIR, 'isos.d')
-
-    attr_reader :config
 
     def initialize(project_dir: Dir.pwd)
       @project_dir = project_dir
-      @config = load_merged_config
+      @runtime_config = load_runtime_config
+      @isos = load_isos
     end
 
     def isos
-      @config['isos'] || {}
+      @isos
     end
 
     def iso_dir
-      dir_path = @config['iso_dir']
+      dir_path = @runtime_config.dig('iso', 'iso_dir')
       return default_iso_dir unless dir_path
 
       expanded = dir_path.gsub('$HOME', Dir.home)
-                         .gsub('$XDG_DATA_HOME', XDG_DATA_HOME)
+                         .gsub('$XDG_CACHE_HOME', XDG_CACHE_HOME)
       Pathname.new(File.expand_path(expanded))
     end
 
-    def save_global(new_config)
-      FileUtils.mkdir_p(GLOBAL_CONFIG_DIR)
-      File.write(GLOBAL_CONFIG_FILE, YAML.dump(new_config))
+    def save_iso(key, iso_data)
+      FileUtils.mkdir_p(GLOBAL_CONFIG_D)
+      File.write(File.join(GLOBAL_CONFIG_D, "#{key}.yml"), YAML.dump({ key => iso_data }))
     end
 
     private
 
-    def load_merged_config
-      config = { 'isos' => {} }
+    def load_runtime_config
+      config = {}
 
-      # 1. Load global config
-      config = DeepMerge.merge(config, load_yaml(GLOBAL_CONFIG_FILE))
+      # Global pim.yml
+      global_file = File.join(GLOBAL_CONFIG_DIR, 'pim.yml')
+      config = DeepMerge.merge(config, load_yaml(global_file))
 
-      # 2. Load global config.d files
-      load_config_d(GLOBAL_CONFIG_D).each do |fragment|
-        config = DeepMerge.merge(config, fragment)
-      end
-
-      # 3. Load project-level config
-      project_config = File.join(@project_dir, 'isos.yml')
-      config = DeepMerge.merge(config, load_yaml(project_config))
+      # Project pim.yml
+      project_file = File.join(@project_dir, 'pim.yml')
+      config = DeepMerge.merge(config, load_yaml(project_file))
 
       config
+    end
+
+    def load_isos
+      isos = {}
+
+      # Load from isos.d/*.yml (each file contains ISO entries directly)
+      load_isos_d(GLOBAL_CONFIG_D).each do |fragment|
+        isos = DeepMerge.merge(isos, fragment)
+      end
+
+      # Load from project isos.yml (entries directly, no wrapper)
+      project_file = File.join(@project_dir, 'isos.yml')
+      isos = DeepMerge.merge(isos, load_yaml(project_file))
+
+      isos
     end
 
     def load_yaml(path)
@@ -86,7 +98,7 @@ module PimIso
       {}
     end
 
-    def load_config_d(dir)
+    def load_isos_d(dir)
       return [] unless Dir.exist?(dir)
 
       Dir.glob(File.join(dir, '*.yml')).sort.map do |file|
@@ -95,7 +107,7 @@ module PimIso
     end
 
     def default_iso_dir
-      Pathname.new(File.join(XDG_DATA_HOME, 'pim', 'isos'))
+      Pathname.new(File.join(XDG_CACHE_HOME, 'pim', 'isos'))
     end
   end
 
@@ -106,10 +118,6 @@ module PimIso
       ensure_iso_dir_exists
     end
 
-    def config
-      @config_obj.config
-    end
-
     def isos
       @config_obj.isos
     end
@@ -118,33 +126,21 @@ module PimIso
       @config_obj.iso_dir
     end
 
-    def list
+    def list(long: false)
       if isos.empty?
-        puts "ISO Catalog"
-        puts
         puts 'No ISOs in catalog. Use "pim-iso add" to add some.'
         return
       end
 
-      puts "ISO Catalog"
-      puts
-
-      downloaded_count = 0
-      missing_count = 0
-
-      isos.keys.sort.each do |key|
-        iso = isos[key]
-        filename = iso['filename'] || "#{key}.iso"
-        status = file_exists?(filename) ? '[Downloaded]' : '[Missing]'
-        downloaded_count += 1 if status == '[Downloaded]'
-        missing_count += 1 if status == '[Missing]'
-
-        name = iso['name'] || key
-        puts "#{key.ljust(30)} #{status.ljust(13)} #{name}"
+      if long
+        list_long
+      else
+        isos.keys.sort.each { |key| puts key }
       end
+    end
 
-      puts
-      puts "Total: #{isos.size} ISOs (#{downloaded_count} downloaded, #{missing_count} missing)"
+    def config
+      puts "iso_dir: #{iso_dir}"
     end
 
     def download(key, force: false)
@@ -292,9 +288,7 @@ module PimIso
       puts "filename: #{attributes[:filename]}"
       puts "architecture: #{attributes[:architecture]}"
 
-      new_config = @config_obj.config.dup
-      new_config['isos'] ||= {}
-      new_config['isos'][key] = {
+      iso_data = {
         'name' => attributes[:name],
         'url' => attributes[:url],
         'checksum' => attributes[:checksum],
@@ -303,44 +297,56 @@ module PimIso
         'architecture' => attributes[:architecture]
       }.compact
 
-      @config_obj.save_global(new_config)
+      @config_obj.save_iso(key, iso_data)
 
       puts "\nOK Added to catalog"
       true
     end
 
-    def status
-      puts "ISO Manager Status\n\n"
-      puts "ISO Directory: #{iso_dir}\n\n"
+    private
 
-      downloaded = isos.select do |key, iso|
+    def list_long
+      total_bytes = 0
+      max_name_len = isos.keys.map(&:length).max
+
+      isos.keys.sort.each do |key|
+        iso = isos[key]
         filename = iso['filename'] || "#{key}.iso"
-        file_exists?(filename)
-      end
-      missing = isos.size - downloaded.size
+        filepath = iso_dir / filename
 
-      puts "Catalog Summary:"
-      puts "  Total ISOs: #{isos.size}"
-      puts "  Downloaded: #{downloaded.size}"
-      puts "  Missing: #{missing}\n\n"
-
-      if downloaded.any?
-        puts "Disk Usage:"
-        total_bytes = 0
-
-        downloaded.each do |key, iso|
-          filename = iso['filename'] || "#{key}.iso"
-          filepath = iso_dir / filename
+        if filepath.exist?
           size = filepath.size
           total_bytes += size
-          puts "  #{filename.ljust(35)} #{format_bytes(size)}"
+          size_str = format_bytes(size).rjust(10)
+          status = iso_verified?(key) ? colorize('verified', :green) : colorize('downloaded', :yellow)
+        else
+          size_str = '-'.rjust(10)
+          status = colorize('missing', :red)
         end
 
-        puts "  #{'Total:'.ljust(35)} #{format_bytes(total_bytes)}"
+        puts "#{key.ljust(max_name_len)}  #{size_str}  #{status}"
       end
+
+      puts
+      puts "Total: #{format_bytes(total_bytes)}"
     end
 
-    private
+    def iso_verified?(key)
+      iso = isos[key]
+      filename = iso['filename'] || "#{key}.iso"
+      filepath = iso_dir / filename
+
+      return false unless filepath.exist?
+
+      actual_checksum = calculate_checksum(filepath)
+      expected_checksum = iso['checksum'].to_s.sub(/^sha\d+:/, '')
+      actual_checksum == expected_checksum
+    end
+
+    def colorize(text, color)
+      colors = { red: 31, yellow: 33, green: 32 }
+      "\e[#{colors[color]}m#{text}\e[0m"
+    end
 
     def ensure_iso_dir_exists
       iso_dir.mkpath unless iso_dir.exist?
@@ -505,13 +511,15 @@ module PimIso
     def self.exit_on_failure? = true
     remove_command :tree
 
-    desc 'list', 'Display all ISOs in catalog with their status'
+    desc 'list', 'List ISOs in catalog'
+    option :long, type: :boolean, aliases: '-l', desc: 'Long format with size and status'
+    map 'ls' => :list
     def list
-      manager.list
+      manager.list(long: options[:long])
     end
 
     desc 'download ISO_KEY', 'Download a specific ISO from catalog'
-    option :all, type: :boolean, desc: 'Download all missing ISOs'
+    option :all, type: :boolean, aliases: '-a', desc: 'Download all missing ISOs'
     def download(iso_key = nil)
       if options[:all]
         manager.download_all
@@ -524,7 +532,7 @@ module PimIso
     end
 
     desc 'verify ISO_KEY', 'Verify checksum of a downloaded ISO'
-    option :all, type: :boolean, desc: 'Verify all downloaded ISOs'
+    option :all, type: :boolean, aliases: '-a', desc: 'Verify all downloaded ISOs'
     def verify(iso_key = nil)
       if options[:all]
         manager.verify_all
@@ -541,9 +549,9 @@ module PimIso
       manager.add
     end
 
-    desc 'status', 'Show overview of catalog and current directory'
-    def status
-      manager.status
+    desc 'config', 'Show ISO configuration'
+    def config
+      manager.config
     end
 
     private
@@ -553,6 +561,3 @@ module PimIso
     end
   end
 end
-
-# Run CLI if executed directly
-PimIso::CLI.start(ARGV) if $PROGRAM_NAME == __FILE__
