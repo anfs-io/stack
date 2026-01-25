@@ -11,4 +11,7 @@ nconf() {
 }
 
 alias vi=nvim
-alias vif='nvim $(fzf -m --preview="batcat --color=always {}")'
+
+vid() { vi -p "${1:-.}"/*; }
+
+alias vif='nvim $(fzf -m --preview="bat --color=always {}")'
