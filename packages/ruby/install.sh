@@ -4,15 +4,6 @@ dependencies() {
   echo "mise"
 }
 
-paths() {
-  echo "
-    $XDG_CONFIG_HOME/pry
-    $XDG_CONFIG_HOME/rails/templates
-    $XDG_CONFIG_HOME/rubocop
-    $XDG_CONFIG_HOME/ruby
-  "
-}
-
 install_linux() {
   command -v ruby &> /dev/null && return
 
