@@ -6,7 +6,6 @@ dependencies() {
 
 post_install() {
   source <(mise activate bash)
-  # mise use -g uv@latest
   mise install pipx:ansible
   mise_fix_ansible
 }

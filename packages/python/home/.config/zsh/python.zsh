@@ -1,23 +1,19 @@
 # python.zsh
 
-alias pyenv='echo $VIRTUAL_ENV'
-
-pydir() { $HOME/.local/share/python }
-
-pymkenv() {
-  (pydir; python3 -m venv $1)
+# TODO: requires a refactor of load_conf to not assume the '.' before an extension
+#       due to ext="-requirements.txt"
+pconf() {
+  local dir=$XDG_DATA_HOME/python file="" ext="-requirements.txt"
+  load_conf "$@"
 }
 
-# pyrmenv() {
-#   (deactivate; pydir; rm -rf $1)
-# }
+pstack() {
+  local pydir="$XDG_DATA_HOME/python" stack="$1"
 
-# TODO: concatenate pydir and source on one line
-pyactivate() {
-  # pydir
-  # source $1/bin/activate
+  uv venv .venv
+  source .venv/bin/activate
+  uv pip install -r "$pydir/${stack}-requirements.txt"
+
+  echo '[env]\n_.python.venv = ".venv"' > .mise.toml
+  mise trust
 }
-
-# pyactivate lstack
-# TODO: move this to mise
-# source $HOME/.local/share/python/lstack/bin/activate
