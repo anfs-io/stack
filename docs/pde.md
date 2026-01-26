@@ -53,6 +53,19 @@ Installs the latest neovim and adds many common plugins along with a sensible co
 
 Installs the 1password CLI tool for integration with ssh keeping private keys off the system
 
+### SSH
+
+- Installs sshfs on linux and macfuse+sshfs-mac on mac to enable mounting directories on remote hosts via ssh
+-  to pull a keys file to `$HOME/.ssh/authorizied_keys`:
+```bash
+PPM_SSH_AUTHORIZED_KEYS_URL=https://github.com/[USERNAME].keys ppm install ssh
+```
+- mount/unmount remote host directories at `$HOME/mnt/host`
+```bash
+ssh_mount host path
+ssh_umount host
+```
+
 ### Tmux
 
 Terminal Multiplexer and the ruby gem tmuxinator to set common window configurations for projects
