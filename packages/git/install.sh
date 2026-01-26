@@ -1,9 +1,5 @@
 # git
 
-paths() {
-  echo "$XDG_CONFIG_HOME/git"
-}
-
 # installs the github command line client (gh)
 install_linux() {
   if ! command -v gh &> /dev/null; then
@@ -15,9 +11,8 @@ install_linux() {
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
     && sudo apt update
   fi
-	install_dep gh
 }
 
-install_macos() {
+post_install() {
   install_dep gh
 }

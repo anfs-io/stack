@@ -17,5 +17,6 @@ install_macos() {
 
 post_install() {
   source <(mise activate bash)
+  add_to_file "$MISE_RUBY_DEFAULT_PACKAGES_FILE" bundler rbs ruby-lsp
   mise install ruby
 }
