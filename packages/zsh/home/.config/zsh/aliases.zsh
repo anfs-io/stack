@@ -1,27 +1,5 @@
-# custom aliases
-#
+# aliases.zsh
 # echo ${0:a:h} # The dir of this script
-
-# export PATH=~/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-# Add ~/.local/bin to the search path
-[[ ":$PATH:" != *":$HOME/.local/bin:"* ]] && export PATH="$HOME/.local/bin:$PATH"
-
-# Load homebrew zsh functions
-if [ -f /opt/homebrew/bin/brew ]; then
-  eval "$(/opt/homebrew/bin/brew shellenv)"
-fi
-
-[ -x "$(command -v bat 2>/dev/null)" ] && export PAGER=bat
-
-bindkey -v
-
-if command -v fzf >/dev/null 2>&1; then
-  source <(fzf --zsh)
-  alias ff="fzf --filter"
-fi
-
-export BIN_DIR=$HOME/.local/bin
-export LIB_DIR=$HOME/.local/lib
 
 # XDG directories
 export XDG_CACHE_HOME=$HOME/.cache
@@ -29,7 +7,28 @@ export XDG_CONFIG_HOME=$HOME/.config
 export XDG_DATA_HOME=$HOME/.local/share
 export XDG_STATE_HOME=~/.local/state
 
-ostype() {
+# non XDG directories
+export BIN_DIR=$HOME/.local/bin
+export LIB_DIR=$HOME/.local/lib
+
+# Add $BIN_DIR to the search path
+[[ ":$PATH:" != *":$BIN_DIR:"* ]] && export PATH="$BIN_DIR:$PATH"
+
+# vim keybindings
+bindkey -v
+
+# use bat as pager for commands such as git diff
+[ -x "$(command -v bat 2>/dev/null)" ] && export PAGER=bat
+
+# Load ppm zsh command completions
+eval "$(ppm completions zsh)"
+
+if command -v fzf >/dev/null 2>&1; then
+  source <(fzf --zsh)
+  alias ff="fzf --filter"
+fi
+
+os() {
   case "$(uname)" in
     Darwin) echo "macos" ;;
     Linux)  echo "linux" ;;

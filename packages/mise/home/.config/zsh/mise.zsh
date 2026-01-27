@@ -4,8 +4,6 @@ if ! command -v mise >/dev/null 2>&1; then
   return
 fi
 
-# /opt/homebrew/share/zsh/site-functions
-
 eval "$(mise activate zsh)"
 
 alias mi="mise install"
