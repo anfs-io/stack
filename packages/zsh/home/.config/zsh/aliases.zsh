@@ -14,20 +14,6 @@ export LIB_DIR=$HOME/.local/lib
 # Add $BIN_DIR to the search path
 [[ ":$PATH:" != *":$BIN_DIR:"* ]] && export PATH="$BIN_DIR:$PATH"
 
-# vim keybindings
-bindkey -v
-
-# use bat as pager for commands such as git diff
-[ -x "$(command -v bat 2>/dev/null)" ] && export PAGER=bat
-
-# Load ppm zsh command completions
-eval "$(ppm completions zsh)"
-
-if command -v fzf >/dev/null 2>&1; then
-  source <(fzf --zsh)
-  alias ff="fzf --filter"
-fi
-
 os() {
   case "$(uname)" in
     Darwin) echo "macos" ;;
@@ -35,34 +21,6 @@ os() {
     *)      echo "unknown" ;;
   esac
 }
-
-# General Aliases and helpers
-alias cls="clear"
-alias lsar="lsa -R"
-
-
-tsa() {
-  # -a shows hidden files; -l follow symlinks; -I ignore
-  tree -a -l -I tmp -I .git -I .terraform -I .obsidian -I .ruby-lsp -I .DS_Store -I "._*" "$@"
-}
-
-# Helper: tsa with base dir, optional subdir (first non-flag param), and flags
-_tsa_base() {
-  local target_dir="$1"
-  shift
-
-  # First param: if not a flag, treat as subdir
-  if [[ $# -gt 0 && $1 != -* ]]; then
-    target_dir="$target_dir/$1"
-    shift
-  fi
-
-  tsa "$target_dir" "$@"
-}
-
-tsac() { _tsa_base "$XDG_CONFIG_HOME" "$@"; }
-tsap() { _tsa_base "$XDG_DATA_HOME/ppm" "$@"; }
-
 
 load_conf() {
   if [[ $1 == "ls" ]]; then
@@ -102,29 +60,9 @@ load_conf() {
   fi
 }
 
-zconf() {
-  local dir=$XDG_CONFIG_HOME/zsh file="aliases.zsh" ext="zsh"
-  if [[ $# == 1 && "$1" == ".zshrc" ]]; then
-    ext=""
-  fi
-  load_conf "$@"
-}
-
 zsrc() {
   setopt local_options nullglob extended_glob
   for file in $ZSH_CONFIG/**/*.zsh(N); do
     source "$file" # No need to check if files exist since nullglob only returns existing files
   done
-}
-
-# case-insensitive list of defined aliases
-ag() {
-  if [[ -z "$1" ]]; then
-    echo "Usage: ag <pattern>"
-    echo "Search for aliases matching the given pattern"
-    return 1
-  fi
-
-  echo "Aliases matching '$1':"
-  alias | grep --color=auto -i "$1" | sort
 }
