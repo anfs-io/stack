@@ -1,17 +1,13 @@
 # zsh
 
-paths() {
-  echo "$XDG_CONFIG_HOME/zsh"
-}
-
 install_linux() {
-  install_dep "bat" "fzf" "tree" "zsh"
+  install_dep bat fzf htop tree zsh
   local user=$(whoami)
   sudo usermod -s /bin/zsh $user
 }
 
 install_macos() {
-  install_dep "bat" "fzf" "tree"
+  install_dep bat fzf htop tree
 }
 
 post_install() {

@@ -1,10 +1,6 @@
 # hammerspoon
 # https://www.hammerspoon.org/go/#helloworld
 
-paths() {
-  echo "$HOME/.hammerspoon"
-}
-
 install_macos() {
   install_dep hammerspoon
 
