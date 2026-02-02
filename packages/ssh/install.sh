@@ -20,4 +20,5 @@ post_install() {
     curl -fsSL -o "$HOME/.ssh/authorized_keys" "$PPM_SSH_AUTHORIZED_KEYS_URL"
     chmod 600 "$HOME/.ssh/authorized_keys"
   fi
+  add_to_file "$HOME/.ssh/config" "Include config.d/*.conf"
 }

@@ -1,0 +1,3 @@
+# ghostty
+
+shell-integration-features = ssh-terminfo,ssh-env
