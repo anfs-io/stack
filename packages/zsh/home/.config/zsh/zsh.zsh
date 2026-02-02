@@ -102,3 +102,10 @@ zconf() {
   fi
   load_conf "$@"
 }
+
+# cd to the directory containing the real file behind a symlink
+lcd() {
+  [[ -z "$1" ]] && { echo "Usage: lcd <symlink>"; return 1; }
+  [[ ! -L "$1" ]] && return
+  cd "$(dirname "$(realpath "$1")")"
+}
