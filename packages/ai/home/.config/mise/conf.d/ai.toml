@@ -1,7 +1,8 @@
 # ai.toml
 
 [tools]
+# "bun" = "latest"
+"opencode" = "latest"
+"npm:openclaw" = "latest"
 "npm:prpm" = "latest"
-# "npm:openclaw" = "latest"
-"npm:opencode-ai" = "latest"
-# "npm:ralph-tui" = "latest"
+"npm:ralph-tui" = "latest"

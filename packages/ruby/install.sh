@@ -5,7 +5,7 @@ dependencies() {
 }
 
 install_linux() {
-  command -v ruby &> /dev/null && return
+  command -v ruby &> /dev/null && command -v mise &> /dev/null && return
 
   install_dep build-essential zlib1g-dev libssl-dev libreadline-dev libyaml-dev \
     libsqlite3-dev sqlite3 libxml2-dev libxslt1-dev libcurl4-openssl-dev libffi-dev
