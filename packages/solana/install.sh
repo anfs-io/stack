@@ -4,11 +4,14 @@ dependencies() {
   echo "rust node"
 }
 
-x_post_install() {
-  source <(mise activate bash)
-  curl --proto '=https' --tlsv1.2 -sSfL https://solana-install.solana.workers.dev | bash
+install_linux() {
+  if [[ "$(arch)" == "arm64" ]]; then
+    echo "There are no pre-built binaries for (arm64 Linux)"
+    echo "valid targets are: x86_64-unknown-linux-gnu, x86_64-apple-darwin and aarch64-apple-darwin"
+    echo "Building from source via cargo is the way to go for any arm64 Linux environment"
+    exit 1
+  fi
 }
-
 
 # From https://solana.com/docs/intro/installation/dependencies
 post_install() {
