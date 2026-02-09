@@ -5,6 +5,22 @@ if [ -f $HOME/.config/op/plugins.sh ]; then
   source $HOME/.config/op/plugins.sh
 fi
 
+ssho() {
+  local op_string="rjayroach/Service Account Auth Token Testing/credential"
+  local op_sa_token=$(op read "op://$op_string")
+  ssh -t "$@" "
+    export OP_SERVICE_ACCOUNT_TOKEN='$op_sa_token'
+    exec \$SHELL -l
+  "
+}
+
+if [ -n "$OP_SERVICE_ACCOUNT_TOKEN" ]; then
+  local op_string="Service Account Testing/GitHub Personal Access Token - Test 1/token"
+  export GH_TOKEN=$(op read 'op://DevCreds/GitHub CLI Token/credential')
+  # add others as needed
+fi
+
+
 # opcreds CLI alias
 if [ -x "$HOME/.local/bin/opcreds" ]; then
   alias opc='opcreds'
