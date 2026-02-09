@@ -6,9 +6,6 @@ bindkey -v
 # use bat as pager for commands such as git diff
 [ -x "$(command -v bat 2>/dev/null)" ] && export PAGER=bat
 
-# Load ppm zsh command completions
-[ -x "$(command -v ppm 2>/dev/null)" ] && eval "$(ppm completions zsh)"
-
 if command -v fzf >/dev/null 2>&1; then
   source <(fzf --zsh)
   alias ff="fzf --filter"

@@ -12,6 +12,14 @@ nconf() {
 
 alias vi=nvim
 
-vid() { vi -p "${1:-.}"/*; }
+vid() {
+  if [[ $# -eq 0 ]]; then
+    vi -p ./*
+  elif [[ $# -eq 1 && -d "$1" ]]; then
+    vi -p "$1"/*
+  else
+    vi -p "$@"
+  fi
+}
 
 alias vif='nvim $(fzf -m --preview="bat --color=always {}")'
