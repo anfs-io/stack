@@ -66,14 +66,17 @@ _op_sa_token_list() {
 # into the remote session. The vault/environment is determined by:
 #   1. OP_VAULT env var override:  OP_VAULT=staging rssh myhost
 #   2. Default:                    development
+#
+# The vault name on the remote is derived as "SA - <env>", e.g. "SA - development".
 
 rssh() {
-  local vault="${OP_VAULT:-development}"
+  local env="${OP_VAULT:-development}"
+  local vault="SA - ${env}"
   local op_sa_token
 
-  op_sa_token=$(_op_sa_token "$vault")
+  op_sa_token=$(_op_sa_token "$env")
   if [[ $? -ne 0 ]]; then
-    echo "Error: Could not retrieve SA token for vault '${vault}'" >&2
+    echo "Error: Could not retrieve SA token for environment '${env}'" >&2
     return 1
   fi
 
