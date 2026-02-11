@@ -4,10 +4,11 @@ require 'ostruct'
 require 'pathname'
 require 'open3'
 
-# Usage: TmuxinatorProject.new(path: "/home/user/.config/tmuxinator/ppm-core.yml").setup
+# Usage: TmuxinatorProject.new(path: "/home/user/.config/tmuxinator/ppm.yml").setup
 # override the default repo to lookup by passing a value for name that matches a repo
 class TmuxinatorProject < OpenStruct
-  attr_reader :file, :name, :root, :stdout, :status
+  attr_reader :file, :name, :stdout, :status
+  attr_accessor :root
 
   def initialize(path:, name: nil)
     # The absolute path to the tmuxinator file
@@ -16,7 +17,8 @@ class TmuxinatorProject < OpenStruct
     # The name minus path and extenstion, e.g. ppm-core
     @name = name || path.to_s.split('tmuxinator/').last.sub('.yml', '')
 
-    @stdout, @status = Open3.capture2("repo", "info", @name, "--path")
+    # @stdout, @status = Open3.capture2("repo", "path", @name)
+    @stdout, @status = Open3.capture2("hub", "list", "--path", @name)
 
     @root = Pathname.new(stdout.strip) if status.success?
     super
@@ -28,7 +30,7 @@ class TmuxinatorProject < OpenStruct
       Kernel.exit 1
     end
 
-    system("repo clone #{name}") unless root.exist?
+    # system("repo clone #{name}") unless root.exist?
     self
   end
 
@@ -64,17 +66,62 @@ class TmuxinatorProject < OpenStruct
   
   # Layout helper
   def layout(name = :main_vertical)
+    return claude_layout if name == :claude
+
     layouts = {
       even_horizontal: 'even-horizontal',
-      even_vertical: 'even-vertical', 
+      even_vertical: 'even-vertical',
       main_horizontal: 'main-horizontal',
       main_vertical: 'main-vertical',
       main_horizontal_mirrored: 'main-horizontal-mirrored',
       main_vertical_mirrored: 'main-vertical-mirrored',
-      tiled: 'tiled',
-      # Use tmux list-windows to get the layout of current windows
-      claude: 'f125,225x85,0,0{112x85,0,0[112x42,0,0,0,112x42,0,43,8],112x85,113,0,7}'
-    }[name] || layouts[:main_vertical]     # fallback to default
+      tiled: 'tiled'
+    }
+    layouts[name] || layouts[:main_vertical]
+  end
+
+  # Adaptive Claude layout: left split (claude + shell) | right full (nvim)
+  # Dynamically sizes based on current terminal dimensions
+  def claude_layout
+    cols, rows = terminal_size
+    left_w = cols / 2
+    right_w = cols - left_w - 1  # -1 for separator
+    top_h = rows / 2
+    bottom_h = rows - top_h - 1  # -1 for separator
+    right_x = left_w + 1
+    bottom_y = top_h + 1
+
+    # tmux custom layout format:
+    # {left_col[top_pane,bottom_pane],right_col}
+    # Checksum is first 4 hex chars — tmux recalculates it, so we use a placeholder
+    layout_body = "#{cols}x#{rows},0,0" \
+      "{#{left_w}x#{rows},0,0" \
+      "[#{left_w}x#{top_h},0,0,0," \
+      "#{left_w}x#{bottom_h},0,#{bottom_y},1]," \
+      "#{right_w}x#{rows},#{right_x},0,2}"
+
+    checksum = layout_checksum(layout_body)
+    "#{checksum},#{layout_body}"
+  end
+
+  # Get terminal dimensions, falling back to sensible defaults
+  def terminal_size
+    cols = `tput cols 2>/dev/null`.strip.to_i
+    rows = `tput lines 2>/dev/null`.strip.to_i
+    cols = 200 if cols < 40
+    rows = 50 if rows < 10
+    [cols, rows]
+  end
+
+  # tmux layout checksum (same algorithm tmux uses internally)
+  def layout_checksum(layout)
+    csum = 0
+    layout.each_byte do |b|
+      csum = (csum >> 1) + ((csum & 1) << 15)
+      csum += b
+      csum &= 0xffff
+    end
+    format('%04x', csum)
   end
   
   # Common pane configurations

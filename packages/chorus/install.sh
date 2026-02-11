@@ -1,10 +1,10 @@
 # chorus
 
 dependencies() {
-  echo "ruby"
+  echo "ruby gems"
 }
 
 post_install() {
   source <(mise activate bash)
-  install_gem git thor tmuxinator
+  install_gem tmuxinator
 }
