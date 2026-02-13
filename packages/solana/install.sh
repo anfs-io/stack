@@ -32,3 +32,23 @@ post_install() {
   curl -sL https://run.surfpool.run/ | bash
 }
 
+post_remove() {
+  # Solana CLI (installed via Anza installer)
+  rm -rf "$HOME/.local/share/solana"
+  rm -rf "$HOME/.cache/solana"
+
+  # Anchor/AVM
+  cargo uninstall avm 2>/dev/null || true
+  rm -rf "$HOME/.avm"
+
+  # Surfpool
+  rm -f "$HOME/.local/bin/surfpool"
+
+  echo ""
+  echo "Solana tools have been removed."
+  echo ""
+  echo "Note: Your Solana wallet config is preserved at: ~/.config/solana"
+  echo "To completely remove (including wallet keys):"
+  echo "  rm -rf ~/.config/solana"
+  echo ""
+}
