@@ -44,11 +44,11 @@ post_remove() {
   # Surfpool
   rm -f "$HOME/.local/bin/surfpool"
 
-  echo ""
-  echo "Solana tools have been removed."
-  echo ""
-  echo "Note: Your Solana wallet config is preserved at: ~/.config/solana"
-  echo "To completely remove (including wallet keys):"
-  echo "  rm -rf ~/.config/solana"
-  echo ""
+  if $force; then
+    rm -rf $HOME/.config/solana
+  else
+    echo "Note: Your Solana wallet config is preserved at: $HOME/.config/solana"
+    echo "To completely remove (including wallet keys):"
+    echo "  ppm remove -f solana"
+  fi
 }
