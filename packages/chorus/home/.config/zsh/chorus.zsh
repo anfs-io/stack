@@ -1,8 +1,5 @@
 # chorus
 
-# Override where tmuxinator looks for files
-# export TMUXINATOR_CONFIG="$XDG_CONFIG_HOME/chorus/tmuxinator"
-
 _chorus_cd() {
    local cmd=$1 name=$2
    local target="$($cmd ls --path "$name" 2>/dev/null)"
