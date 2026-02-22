@@ -2,4 +2,4 @@
 
 
 # Add solana release path to the search path
-ensure_path "$HOME/.local/share/solana/install/active_release/bin"
+ensure_path "$XDG_DATA_HOME/solana/install/active_release/bin"
