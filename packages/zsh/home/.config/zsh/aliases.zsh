@@ -11,8 +11,10 @@ export XDG_STATE_HOME=~/.local/state
 export BIN_DIR=$HOME/.local/bin
 export LIB_DIR=$HOME/.local/lib
 
+ensure_path() { [[ ":$PATH:" != *":$1:"* ]] && export PATH="$1:$PATH" }
+
 # Add $BIN_DIR to the search path
-[[ ":$PATH:" != *":$BIN_DIR:"* ]] && export PATH="$BIN_DIR:$PATH"
+ensure_path "$BIN_DIR"
 
 os() {
   case "$(uname)" in
@@ -43,8 +45,15 @@ load_conf() {
     echo $dir
   elif [[ $1 == "rm" ]]; then
     file="$dir/$2.${ext}"
-    if [[ $# -eq 2 && -f $file ]]; then
+    if [[ $# -eq 2 && ( -f $file || -L $file ) ]]; then
       rm $file
+    else
+      echo "Invalid file $file"
+    fi
+  elif [[ $1 == "bat" ]]; then
+    file="$dir/$2.${ext}"
+    if [[ -f $file ]]; then
+      bat $file
     else
       echo "Invalid file $file"
     fi

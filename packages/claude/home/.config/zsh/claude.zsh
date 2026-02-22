@@ -11,6 +11,6 @@ alias cc-version="claude --version"
 alias cc-rw='clear; claude --allowedTools "Read" "Edit" "Grep" "Find" "ListDir" "WebSearch" "Bash"'
 
 cconf() {
-  local dir=$HOME/.claude/commands file="." ext="md"
+  local dir=$HOME/.claude/context file="." ext="md"
   load_conf "$@"
 }
