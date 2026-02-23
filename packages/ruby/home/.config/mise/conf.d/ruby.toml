@@ -7,6 +7,8 @@ RUBOCOP_TARGET_VERSION = "3.0"
 
 [settings]
 idiomatic_version_file_enable_tools = ["ruby"]
+ruby.compile=false
+
 
 [hooks]
 postinstall = "{{ env.HOME }}/.local/share/mise/scripts/ruby-lsp.sh"
