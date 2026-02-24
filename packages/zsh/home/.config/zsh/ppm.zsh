@@ -13,9 +13,13 @@ ppm() {
     shift
     local verbose_flag=""
     [[ "${1:-}" == "-v" ]] && { verbose_flag="-v"; shift; }
-    local pkg_path
-    pkg_path=$(command ppm path $verbose_flag "$@") || return $?
-    cd "$pkg_path"
+    if [[ $# -eq 0 ]]; then
+      cd "${XDG_DATA_HOME:-$HOME/.local/share}/ppm"
+    else
+      local pkg_path
+      pkg_path=$(command ppm path $verbose_flag "$@") || return $?
+      cd "$pkg_path"
+    fi
   else
     command ppm "$@"
   fi
