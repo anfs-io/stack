@@ -2,7 +2,7 @@
 
 _chorus_cd() {
    local cmd=$1 name=$2
-   local target="$($cmd ls --path "$name" 2>/dev/null)"
+   local target="$(chorus $cmd show "$name" full_path 2>/dev/null)"
 
    if [[ -n "$target" ]]; then
      cd "$target"
@@ -28,7 +28,7 @@ rconf() {
   load_conf "$@"
 }
 
-alias hls="hub list"
+alias hls="chorus hub list"
 alias mx="tmuxinator"
-alias rcl="repo clone"
-alias rls="repo list"
+alias rcl="chorus repo clone"
+alias rls="chorus repo list"

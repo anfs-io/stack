@@ -23,3 +23,23 @@ vid() {
 }
 
 alias vif='nvim $(fzf -m --preview="bat --color=always {}")'
+
+viall() {
+  local debug=false
+  if [[ "$1" == "-d" ]]; then
+    debug=true
+    shift
+  fi
+  local pattern="${1:-*}"
+  local files=($(find . -not -path '*/.*' -type f -name "$pattern" | sort))
+  if [[ ${#files[@]} -eq 0 ]]; then
+    echo "No files matching '$pattern'"
+    return 1
+  fi
+  if $debug; then
+    echo "Files matching '$pattern':"
+    printf '  %s\n' "${files[@]}"
+  else
+    nvim -p "${files[@]}"
+  fi
+}
