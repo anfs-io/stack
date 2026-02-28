@@ -1,0 +1,3 @@
+[tools."pipx:gam7"]
+version = "latest"
+uvx = true
