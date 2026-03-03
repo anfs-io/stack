@@ -1,5 +1,31 @@
 # chorus
 
+export CHORUS_PATH="$HOME/spaces:$HOME/spikes"
+export CHORUS_DEBUG_PATH="$XDG_CACHE_HOME/chorus/debug"
+
+chorus_spaces() {
+  local IFS=':'
+  for base in $=CHORUS_PATH; do
+    [[ -d "$base" ]] || continue
+    for dir in "$base"/*(N/); do
+      print -l "$dir"
+    done
+  done
+}
+
+chorus_spaces > $XDG_CACHE_HOME/chorus/spaces
+
+
+chorus_repos() {
+  local -a repos=()
+  for space in $(chorus_spaces); do
+    while IFS= read -r gitdir; do
+      repos+=("${gitdir:h}")
+    done < <(find -L "$space" -name .git -type d 2>/dev/null)
+  done
+  print -l "${repos[@]}"
+}
+
 _chorus_cd() {
    local cmd=$1 name=$2
    local target="$(chorus $cmd show "$name" full_path 2>/dev/null)"
