@@ -57,6 +57,8 @@ load_conf() {
     else
       echo "Invalid file $file"
     fi
+  elif [[ $1 == "cd" ]]; then
+    cd "$dir"
   else
     if [[ $# -eq 1 ]]; then
       if [[ -d "$dir/$1" || -z ${ext} ]]; then
