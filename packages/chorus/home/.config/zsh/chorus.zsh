@@ -1,6 +1,7 @@
 # chorus
 
-export CHORUS_PATH="$HOME/spaces:$HOME/spikes"
+# export CHORUS_PATH="$HOME/spaces:$HOME/spikes"
+export CHORUS_PATH="$HOME/spaces"
 export CHORUS_DEBUG_PATH="$XDG_CACHE_HOME/chorus/debug"
 
 chorus_spaces() {
@@ -50,7 +51,7 @@ chorus_repos() {
     local existing=""
     [[ -f "$gitignore" ]] && existing=$(<"$gitignore")
     for repo in "${repos[@]}"; do
-      local entry="$repo"
+      local entry="$repo/"
       if ! grep -qxF "$entry" <<< "$existing" 2>/dev/null; then
         print "$entry" >> "$gitignore"
         existing+=$'\n'"$entry"
