@@ -1,5 +1,5 @@
 # claude.zsh
-CLAUDE_PLUGIN_PATH="$HOME/spikes/universe/plugins"
+CLAUDE_PLUGIN_PATH="$HOME/spaces/anfs/technical/universe/plugins:$HOME/spaces/anfs/technical/third/plugins"
 
 # --- Claude Plugin Path ---
 # Colon-separated list of directories containing Claude Code plugins.
