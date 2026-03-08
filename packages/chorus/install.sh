@@ -1,7 +1,7 @@
 # chorus
 
 dependencies() {
-  echo "ruby gems"
+  echo "gems"
 }
 
 post_install() {

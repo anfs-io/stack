@@ -14,8 +14,6 @@ chorus_spaces() {
   done
 }
 
-# chorus_spaces > $XDG_CACHE_HOME/chorus/spaces
-
 
 chorus_repos() {
   local -a repos=()
@@ -74,14 +72,6 @@ _chorus_cd() {
    fi
 }
 
-hcd() { _chorus_cd hub "$1" }
-
-hconf() {
-  local dir=$XDG_CONFIG_HOME/chorus/hubs.d file="../hubs.yml" ext="yml"
-  mkdir -p $dir
-  load_conf "$@"
-}
-
 rcd() { _chorus_cd repo "$1" }
 
 rconf() {
@@ -90,7 +80,9 @@ rconf() {
   load_conf "$@"
 }
 
-alias hls="chorus hub list"
+ccd() { cd $CHORUS_PATH/$1 }
+
+alias cls="chorus_spaces"
 alias mx="tmuxinator"
 alias rcl="chorus repo clone"
 alias rls="chorus repo list"

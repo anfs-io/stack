@@ -13,7 +13,6 @@ fi
 
 
 # General Aliases and helpers
-alias cls="clear"
 alias lsar="lsa -R"
 
 # case-insensitive list of defined aliases
