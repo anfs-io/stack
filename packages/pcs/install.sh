@@ -1,7 +1,7 @@
-# pcs-ppm/pcs
+# pdt/pcs
 
 dependencies() {
-  echo "podman gems tailscale"
+  echo "gems podman tailscale"
 }
 
 install_linux() {

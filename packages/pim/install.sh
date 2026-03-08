@@ -1,7 +1,7 @@
-# pim - Product Image Manager
+# pdt/pim - Product Image Manager
 
 dependencies() {
-  echo "ruby"
+  echo "gems"
 }
 
 # NOTE: these packages were here from when we were going to unpack an ISO; probably not needed
