@@ -5,7 +5,8 @@ if ! command -v ppm >/dev/null 2>&1; then
 fi
 
 # Load ppm zsh command completions
-eval "$(ppm completions zsh)"
+# eval "$(ppm completions zsh)"
+# ppm completions zsh > $PPM_FPATH/_ppm
 
 # Wrapper to handle `ppm cd` since subshells can't change parent directory
 ppm() {

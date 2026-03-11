@@ -16,6 +16,8 @@ ensure_path() { [[ ":$PATH:" != *":$1:"* ]] && export PATH="$1:$PATH" }
 # Add $BIN_DIR to the search path
 ensure_path "$BIN_DIR"
 
+export PPM_FPATH=$XDG_DATA_HOME/omz/custom/completions
+
 os() {
   case "$(uname)" in
     Darwin) echo "macos" ;;
