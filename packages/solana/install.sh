@@ -16,6 +16,7 @@ install_linux() {
 # From https://solana.com/docs/intro/installation/dependencies
 post_install() {
   source <(mise activate bash)
+  install_completion "solana completion -s zsh"
 
   # Solana CLI
   sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
@@ -34,20 +35,20 @@ post_install() {
 
 post_remove() {
   # Solana CLI (installed via Anza installer)
-  rm -rf "$HOME/.local/share/solana"
-  rm -rf "$HOME/.cache/solana"
+  rm -rf "$XDG_DATA_HOME/solana"
+  rm -rf "$XDG_CACHE_HOME/solana"
 
   # Anchor/AVM
   cargo uninstall avm 2>/dev/null || true
   rm -rf "$HOME/.avm"
 
   # Surfpool
-  rm -f "$HOME/.local/bin/surfpool"
+  rm -f "$BIN_DIR/surfpool"
 
   if $force; then
-    rm -rf $HOME/.config/solana
+    rm -rf $XDG_CONFIG_HOME/solana
   else
-    echo "Note: Your Solana wallet config is preserved at: $HOME/.config/solana"
+    echo "Note: Your Solana wallet config is preserved at: $XDG_CONFIG_HOME/solana"
     echo "To completely remove (including wallet keys):"
     echo "  ppm remove -f solana"
   fi

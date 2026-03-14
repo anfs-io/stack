@@ -21,3 +21,7 @@ install_macos() {
   #   sudo $HOMEBREW_PREFIX/bin/podman-mac-helper install
   # fi
 }
+
+post_install() {
+  install_completion "podman completion zsh"
+}
