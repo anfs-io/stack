@@ -11,3 +11,7 @@ install_macos() {
   # sudo -v
   install_dep --cask tailscale-app
 }
+
+post_install() {
+  install_completion "tailscale completion zsh"
+}
