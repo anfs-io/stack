@@ -1,5 +1,9 @@
 # pcm — Personal Credentials Manager
 
+install_macos() {
+  install_dep dmno-dev/tap/varlock
+}
+
 post_install() {
   curl -fsSL https://raw.githubusercontent.com/rjayroach/pcm/main/install.sh | bash
   target="$XDG_CONFIG_HOME/zsh/pcm.zsh"

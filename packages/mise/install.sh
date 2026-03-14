@@ -20,3 +20,7 @@ install_linux() {
 install_macos() {
   install_dep cosign gpg mise
 }
+
+post_install() {
+  install_completion "mise completion zsh"
+}
