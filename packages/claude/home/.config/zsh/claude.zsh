@@ -1,41 +1,47 @@
 # claude.zsh
-CLAUDE_PLUGIN_PATH="$HOME/spaces/anfs/technical/marketplace/plugins:$HOME/spaces/anfs/technical/third/plugins"
 
 # --- Claude Plugin Path ---
-# Colon-separated list of directories containing Claude Code plugins.
-# Each directory is scanned for plugin.json manifests, and matching
-# plugins are loaded via --plugin-dir flags.
-
-# Parse CLAUDE_PLUGIN_PATH into an array of plugin directories.
-# Each entry in the path is scanned for .claude-plugin/plugin.json files;
+# Plugin search directories are defined in ~/.config/claude/plugins.d/.
+# Each file contains one or more lines with directory paths to scan.
+# Each directory is scanned for .claude-plugin/plugin.json manifests;
 # the parent directory of each match is a loadable plugin root.
+
 _claude_plugin_dirs() {
   local -a dirs=()
-  local IFS=':'
-  for search_path in $=CLAUDE_PLUGIN_PATH; do
-    [[ -d "$search_path" ]] || continue
-    while IFS= read -r manifest; do
-      local plugin_dir="${manifest:h:h}"
-      dirs+=("$plugin_dir")
-    done < <(find "$search_path" -name "plugin.json" -path "*/.claude-plugin/*" 2>/dev/null)
+  local plugins_d="${XDG_CONFIG_HOME}/claude/plugins.d"
+  [[ -d "$plugins_d" ]] || return
+
+  for conf in "$plugins_d"/*(-.N); do
+    while IFS= read -r search_path; do
+      search_path="${search_path%%\#*}"   # strip comments
+      search_path="${search_path// /}"   # trim whitespace
+      [[ -z "$search_path" ]] && continue
+      search_path="${(e)search_path}"    # expand ~ and $HOME
+      [[ -d "$search_path" ]] || continue
+      while IFS= read -r manifest; do
+        dirs+=("${manifest:h:h}")
+      done < <(find "$search_path" -name "plugin.json" -path "*/.claude-plugin/*" 2>/dev/null)
+    done < "$conf"
   done
   print -l "${dirs[@]}"
 }
 
 # --- Shortcuts ---
-cc() {
-  clear
+_invoke_claude() {
+  local verbose=false
+  [[ "$1" == "--debug" ]] && { verbose=true; shift; }
   local -a flags=()
   for dir in $(_claude_plugin_dirs); do
     flags+=(--plugin-dir "$dir")
   done
-  # echo "${flags[@]}" "$@"
+  $verbose && echo "${flags[@]}" "$@"
   claude "${flags[@]}" "$@"
 }
 
-alias cc-continue="clear; cc --continue"
-alias cc-yolo="clear; cc --dangerously-skip-permissions $@"
-alias cc-resume="clear; cc --resume"
+alias cc="clear; _invoke_claude $@"
+alias cc-continue="clear; _invoke_claude --continue $@"
+alias cc-yolo="clear; _invoke_claude --dangerously-skip-permissions $@"
+alias cc-resume="clear; _invoke_claude --resume $@"
 alias cc-version="claude --version"
 
 cconf() {

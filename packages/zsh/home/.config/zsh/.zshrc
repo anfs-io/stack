@@ -115,9 +115,12 @@ source $ZSH/oh-my-zsh.sh
 # alias zshconfig="mate ~/.zshrc"
 # alias ohmyzsh="mate ~/.oh-my-zsh"
 #
+# echo $PATH | tr ':' '\n' > ~/path.txt
 setopt extended_glob
 for file in $ZSH_CONFIG/**/*.zsh(N); do
   source "$file"
 done
+# echo "\n\n" >> ~/path.txt
+# echo $PATH | tr ':' '\n' >> ~/path.txt
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 # [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
