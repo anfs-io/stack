@@ -6,10 +6,6 @@
 GAM7_CONFIG_DIR="$XDG_CONFIG_HOME/gam7"
 GAM7_WORK_DIR="$XDG_DATA_HOME/gam7"
 
-dependencies() {
-  echo "python"
-}
-
 post_install() {
   source <(mise activate bash)
   mise install pipx:gam7

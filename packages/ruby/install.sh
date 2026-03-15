@@ -1,9 +1,5 @@
 # ruby
 
-dependencies() {
-  echo "mise"
-}
-
 install_linux() {
   command -v ruby &> /dev/null && command -v mise &> /dev/null && return
 

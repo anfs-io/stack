@@ -1,9 +1,5 @@
 # rails
 
-dependencies() {
-  echo "ruby"
-}
-
 post_install() {
   source <(mise activate bash)
   install_gem \

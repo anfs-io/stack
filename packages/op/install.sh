@@ -1,9 +1,5 @@
 # op
 
-dependencies() {
-  echo "mise"
-}
-
 install_macos() {
   install_dep --cask 1password
 }
