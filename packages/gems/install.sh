@@ -8,10 +8,6 @@ REPOS=(
   "anfs:git@github.com:anfs-io/gems.git"
 )
 
-dependencies() {
-  echo "ruby"
-}
-
 post_install() {
   mkdir -p "$GEMS_ROOT"
 

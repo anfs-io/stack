@@ -1,10 +1,6 @@
 # phoenix
 # Phoenix Framework with Ash Framework for Elixir
 
-dependencies() {
-  echo "elixir"
-}
-
 # Linux dependencies for Phoenix (inotify for live reload)
 install_linux() {
   install_dep inotify-tools

@@ -1,9 +1,5 @@
 # solana
 
-dependencies() {
-  echo "rust node"
-}
-
 install_linux() {
   if [[ "$(arch)" == "arm64" ]]; then
     echo "There are no pre-built binaries for (arm64 Linux)"

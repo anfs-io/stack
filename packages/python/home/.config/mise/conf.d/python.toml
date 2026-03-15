@@ -5,4 +5,4 @@ python = "latest"
 uv = "latest"
 
 [settings]
-python_venv_auto_create = false
+# python_venv_auto_create = false

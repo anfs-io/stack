@@ -1,10 +1,6 @@
 # elixir
 # Elixir programming language with Erlang/OTP (BEAM VM)
 
-dependencies() {
-  echo "mise"
-}
-
 # Linux build dependencies for Erlang/OTP compilation
 # These are needed because mise compiles Erlang from source on Linux
 install_linux() {

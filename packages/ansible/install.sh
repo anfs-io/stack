@@ -1,9 +1,5 @@
 # ansible
 
-dependencies() {
-  echo "python"
-}
-
 post_install() {
   source <(mise activate bash)
   mise install pipx:ansible
