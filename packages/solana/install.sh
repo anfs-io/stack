@@ -2,10 +2,8 @@
 
 install_linux() {
   if [[ "$(arch)" == "arm64" ]]; then
-    echo "There are no pre-built binaries for (arm64 Linux)"
-    echo "valid targets are: x86_64-unknown-linux-gnu, x86_64-apple-darwin and aarch64-apple-darwin"
-    echo "Building from source via cargo is the way to go for any arm64 Linux environment"
-    exit 1
+    ppm_fail "No pre-built binaries for arm64 Linux.\nValid targets: x86_64-unknown-linux-gnu, x86_64-apple-darwin, aarch64-apple-darwin.\nBuild from source via cargo instead."
+    return
   fi
 }
 
@@ -44,8 +42,8 @@ post_remove() {
   if $force; then
     rm -rf $XDG_CONFIG_HOME/solana
   else
-    echo "Note: Your Solana wallet config is preserved at: $XDG_CONFIG_HOME/solana"
-    echo "To completely remove (including wallet keys):"
-    echo "  ppm remove -f solana"
+    user_message "Note: Your Solana wallet config is preserved at: $XDG_CONFIG_HOME/solana\n" \
+      "To completely remove (including wallet keys):\n" \
+      "  ppm remove -f solana"
   fi
 }
