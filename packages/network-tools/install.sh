@@ -1,4 +1,4 @@
-# network
+# network-tools
 
 install_linux() {
   install_dep iperf3 nmap
