@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Find the real sshfs binary (skip this wrapper)
+REAL_SSHFS=""
+while IFS= read -r p; do
+  [[ "$p" != "${BASH_SOURCE[0]}" ]] && { REAL_SSHFS="$p"; break; }
+done < <(type -aP sshfs)
+
+if [[ -z "$REAL_SSHFS" ]]; then
+  echo "sshfs is not installed. Install it with: ppm install ssh" >&2
+  exit 1
+fi
+
+SSHFS_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/sshfs"
+SSHFS_CONFIG="$SSHFS_CONFIG_DIR/mounts.conf"
+
+usage() {
+  cat <<'EOF'
+Usage: sshfs <command> [args]
+
+Commands:
+  list                                    Show configured mounts and status
+  mount <label>                           Mount a configured entry
+  mount <label> <remote> <mountpoint> [opts]  Create config entry and mount
+  umount <label>                          Unmount a configured entry
+  edit                                    Open config in $EDITOR
+  help                                    Show this help
+
+Unrecognized commands are passed through to the system sshfs binary.
+
+Config file: $XDG_CONFIG_HOME/sshfs/mounts.conf
+Format: <label>  <remote>  <mountpoint>  <options>
+EOF
+}
+
+ensure_config() {
+  if [[ ! -f "$SSHFS_CONFIG" ]]; then
+    mkdir -p "$SSHFS_CONFIG_DIR"
+    cat > "$SSHFS_CONFIG" <<'EOF'
+# sshfs mounts configuration
+# <label>   <remote>                <mountpoint>          <options>
+# server1   user@server:/home/user  /home/user/mnt/server defaults
+EOF
+  fi
+}
+
+cmd_list() {
+  ensure_config
+  local has_entries=false
+  printf "%-15s %-30s %-30s %-20s %s\n" "LABEL" "REMOTE" "MOUNTPOINT" "OPTIONS" "STATUS"
+  while read -r label remote mountpoint options; do
+    [[ -z "$label" || "$label" == \#* ]] && continue
+    has_entries=true
+    local status="unmounted"
+    if mountpoint -q "$mountpoint" 2>/dev/null; then
+      status="mounted"
+    fi
+    printf "%-15s %-30s %-30s %-20s %s\n" "$label" "$remote" "$mountpoint" "$options" "$status"
+  done < "$SSHFS_CONFIG"
+  if [[ "$has_entries" == false ]]; then
+    echo "No mounts configured. Use 'sshfs mount <label> <remote> <mountpoint> [opts]' to add one."
+  fi
+}
+
+lookup_label() {
+  local target="$1"
+  ensure_config
+  while read -r label remote mountpoint options; do
+    [[ -z "$label" || "$label" == \#* ]] && continue
+    if [[ "$label" == "$target" ]]; then
+      echo "$label $remote $mountpoint $options"
+      return 0
+    fi
+  done < "$SSHFS_CONFIG"
+  return 1
+}
+
+cmd_mount() {
+  if [[ $# -lt 1 ]]; then
+    echo "Usage: sshfs mount <label> [<remote> <mountpoint> [opts]]" >&2
+    return 1
+  fi
+
+  local label="$1"
+
+  if [[ $# -ge 3 ]]; then
+    # Create config entry + mount
+    local remote="$2" mountpoint="$3" options="${4:-defaults}"
+    ensure_config
+    if lookup_label "$label" >/dev/null 2>&1; then
+      echo "Label '$label' already exists in config" >&2
+      return 1
+    fi
+    printf "%-15s %-30s %-30s %s\n" "$label" "$remote" "$mountpoint" "$options" >> "$SSHFS_CONFIG"
+  fi
+
+  # Look up and mount
+  local entry
+  entry=$(lookup_label "$label") || { echo "Label '$label' not found in config" >&2; return 1; }
+  read -r _ remote mountpoint options <<< "$entry"
+
+  mkdir -p "$mountpoint"
+  local -a opts=()
+  if [[ "$options" != "defaults" ]]; then
+    opts=(-o "$options")
+  fi
+  "$REAL_SSHFS" "$remote" "$mountpoint" "${opts[@]}" && echo "Mounted $remote at $mountpoint"
+}
+
+cmd_umount() {
+  if [[ $# -lt 1 ]]; then
+    echo "Usage: sshfs umount <label>" >&2
+    return 1
+  fi
+
+  local label="$1"
+  local entry
+  entry=$(lookup_label "$label") || { echo "Label '$label' not found in config" >&2; return 1; }
+  read -r _ _ mountpoint _ <<< "$entry"
+
+  if ! mountpoint -q "$mountpoint" 2>/dev/null; then
+    echo "'$label' is not currently mounted" >&2
+    return 1
+  fi
+
+  umount "$mountpoint" && rmdir "$mountpoint" 2>/dev/null
+  echo "Unmounted $label"
+}
+
+cmd_edit() {
+  ensure_config
+  ${EDITOR:-vi} "$SSHFS_CONFIG"
+}
+
+cmd_completion() {
+  case "${1:-}" in
+    zsh)
+      cat <<'COMPLETION'
+#compdef sshfs
+
+_sshfs_labels() {
+  local config="${XDG_CONFIG_HOME:-$HOME/.config}/sshfs/mounts.conf"
+  [[ -f "$config" ]] || return
+  local -a labels
+  while read -r label rest; do
+    [[ -z "$label" || "$label" == \#* ]] && continue
+    labels+=("$label")
+  done < "$config"
+  compadd -a labels
+}
+
+_sshfs_mounted_labels() {
+  local config="${XDG_CONFIG_HOME:-$HOME/.config}/sshfs/mounts.conf"
+  [[ -f "$config" ]] || return
+  local -a labels
+  while read -r label remote mountpoint options; do
+    [[ -z "$label" || "$label" == \#* ]] && continue
+    mountpoint -q "$mountpoint" 2>/dev/null && labels+=("$label")
+  done < "$config"
+  compadd -a labels
+}
+
+_sshfs() {
+  local -a subcmds=(
+    'list:Show configured mounts and status'
+    'mount:Mount a configured entry'
+    'umount:Unmount a configured entry'
+    'edit:Open config in editor'
+    'help:Show usage'
+  )
+
+  if (( CURRENT == 2 )); then
+    _describe 'command' subcmds
+    return
+  fi
+
+  case "${words[2]}" in
+    mount)  _sshfs_labels ;;
+    umount) _sshfs_mounted_labels ;;
+  esac
+}
+
+_sshfs "$@"
+COMPLETION
+      ;;
+    *)
+      echo "Usage: sshfs completion zsh" >&2
+      return 1
+      ;;
+  esac
+}
+
+# Subcommand dispatch
+case "${1:-}" in
+  list)       shift; cmd_list "$@" ;;
+  mount)      shift; cmd_mount "$@" ;;
+  umount)     shift; cmd_umount "$@" ;;
+  edit)       shift; cmd_edit "$@" ;;
+  completion) shift; cmd_completion "$@" ;;
+  help|--help)      usage ;;
+  "")               usage ;;
+  *)          exec "$REAL_SSHFS" "$@" ;;
+esac

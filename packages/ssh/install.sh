@@ -21,4 +21,5 @@ post_install() {
     chmod 600 "$HOME/.ssh/authorized_keys"
   fi
   add_to_file "$HOME/.ssh/config" "Include config.d/*.conf"
+  install_completion "sshfs completion zsh"
 }
