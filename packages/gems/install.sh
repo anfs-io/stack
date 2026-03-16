@@ -19,10 +19,10 @@ post_install() {
     local target="$GEMS_SOURCE/$owner"
 
     if [[ -d "$target/.git" ]]; then
-      user_message "Pulling $owner..."
+      user_message "Pulled $owner into $target"
       git -C "$target" pull --quiet
     else
-      user_message "Cloning $owner..."
+      user_message "Cloned $owner into $target"
       git clone --quiet "$url" "$target"
     fi
   done
