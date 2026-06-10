@@ -1,14 +1,14 @@
 [tools]
-ruby = "latest"
+ruby = { version = "latest", postinstall = "{{ env.HOME }}/.local/share/mise/scripts/ruby-lsp.sh" }
 
 [env]
 MISE_RUBY_DEFAULT_PACKAGES_FILE = "{{ env.HOME }}/.config/ruby/default-gems"
 RUBOCOP_TARGET_VERSION = "3.0"
 
+# [hooks]
+# postinstall = "{{ env.HOME }}/.local/share/mise/scripts/ruby-lsp.sh"
+
 [settings]
+# experimental = true
 idiomatic_version_file_enable_tools = ["ruby"]
 ruby.compile=false
-
-
-[hooks]
-postinstall = "{{ env.HOME }}/.local/share/mise/scripts/ruby-lsp.sh"

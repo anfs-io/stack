@@ -1,0 +1,1 @@
+-m $XDG_CONFIG_HOME/rails/templates/new.rb --css=tailwind -T
