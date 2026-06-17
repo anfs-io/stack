@@ -1,4 +1,6 @@
-# templates/new.rb
+# new.rb
+#
+# Standard gem + tooling setup
 
 gem_group :development, :test do
   gem('factory_bot_rails')

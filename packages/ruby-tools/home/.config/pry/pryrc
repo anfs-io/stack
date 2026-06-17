@@ -1,10 +1,12 @@
+# pry/pryrc
+
 def ke = Kernel.exit
 
-if defined?(Rails)
-  def r
-    reload!
-  end
-  def c
-    cd Rails
-  end
-end
+# The location of this symlink is the only dir searched for now
+extensions_dirs = [Pathname.new(Pry.config.rc_file).parent]
+
+# Extensions are all files in the dirs that end with .rb
+extensions = extensions_dirs.flat_map { |dir| dir.glob('*.rb').select(&:file?) }
+
+# Now, require them all
+extensions.each { |path| require path }

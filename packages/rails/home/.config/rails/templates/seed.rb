@@ -1,4 +1,6 @@
-# templates/basic.rb
+# seed.rb
+#
+# Generate a scaffold for a Person
 
 generate(:scaffold, "person name:string")
 route "root to: 'people#index'"
