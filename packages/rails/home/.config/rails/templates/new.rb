@@ -14,10 +14,20 @@ end
 gem('amazing_print')
 gem('pry-rails')
 
-rails_command("g rspec:install")
+rails_command("generate rspec:install")
 
-after_bundle do
-  git :init
+def create_first_commit
   git add: "."
   git commit: %Q{ -m 'Initial commit' }
+end
+
+if self.class.name.include?("PluginGenerator")
+  say "Generating a plugin!"
+  create_first_commit
+else
+  say "Generating an application!"
+  after_bundle do
+    # git :init
+    create_first_commit
+  end
 end

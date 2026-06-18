@@ -11,9 +11,9 @@ alias rg="rails generate"
 alias rgm="rails generate model"
 alias rgs="rails generate scaffold"
 
-alias rsb="rails server -b 0.0.0.0"
+alias rpn="rails plugin new --rc ~/.config/rails/pluginrc"
 
-# rat() { rails app:template LOCATION=$HOME/.config/rails/templates.rb }
+alias rsb="rails server -b 0.0.0.0"
 
 # if alias rn >/dev/null 2>&1; then
 #   unalias rn
