@@ -3,7 +3,8 @@
 install_macos() {
   brew tap jundot/omlx https://github.com/jundot/omlx
   brew trust jundot/omlx
-  install_dep omlx
+  # install_dep omlx
+  brew install omlx --with-grammar
 }
 
 # install huggingface CLI
