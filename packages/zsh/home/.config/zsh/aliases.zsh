@@ -74,8 +74,43 @@ load_conf() {
 }
 
 zsrc() {
+  # Handle the optional -c flag
+  local opt run_compinit=0
+  local OPTIND=1 # Reset OPTIND locally so repeated calls work correctly
+
+  while getopts "c" opt; do
+    case "$opt" in
+      c) run_compinit=1 ;;
+      *) return 1 ;;
+    esac
+  done
+  shift $((OPTIND - 1)) # Remove the parsed flag, leaving extra arguments in $@
+
+  # Original logic to source the files
   setopt local_options nullglob extended_glob
   for file in $ZSH_CONFIG/**/*.zsh(N); do
     source "$file" # No need to check if files exist since nullglob only returns existing files
   done
+
+  # If -c was passed, handle completions
+  if (( run_compinit )); then
+    if (( $# > 0 )); then
+      local cmd="$1"
+
+      # Ensure the destination directory exists
+      mkdir -p "$PPM_FPATH"
+
+      # If only 1 argument was provided, expand it with defaults
+      if (( $# == 1 )); then
+        "$cmd" completion zsh > "$PPM_FPATH/_${cmd}"
+      else
+        # Otherwise, run the full exact arguments passed by the user
+        "$@" > "$PPM_FPATH/_${cmd}"
+      fi
+    fi
+  fi
+
+  # Re-initialize completion system to register the changes
+  autoload -Uz compinit
+  compinit
 }
