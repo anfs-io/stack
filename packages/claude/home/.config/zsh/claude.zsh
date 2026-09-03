@@ -39,9 +39,9 @@ _invoke_claude() {
 }
 
 alias cc="clear; _invoke_claude $@"
-alias cc-continue="clear; _invoke_claude --continue $@"
+alias cc-continue="clear; _invoke_claude --dangerously-skip-permissions --continue $@"
 alias cc-yolo="clear; _invoke_claude --dangerously-skip-permissions $@"
-alias cc-resume="clear; _invoke_claude --resume $@"
+alias cc-yolo-resume="clear; _invoke_claude --dangerously-skip-permissions --resume $@"
 alias cc-version="claude --version"
 
 cconf() {
