@@ -19,4 +19,5 @@ install_macos() {
 
 post_install() {
   install_completion "mise completion zsh"
+  install_completion "fnox completion zsh"
 }
