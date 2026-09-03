@@ -62,3 +62,56 @@ vim.filetype.add({
     base = 'yaml',
   }
 })
+
+-- Disable LSP warnings
+vim.lsp.set_log_level("off")
+
+-- Jump to the NEXT warning/error using 'gw'
+-- vim.keymap.set('n', 'gw', vim.diagnostic.goto_next, { desc = "Go to next diagnostic" })
+
+-- Jump to the PREVIOUS warning/error using 'gW' (shift + w)
+-- vim.keymap.set('n', 'gW', vim.diagnostic.goto_prev, { desc = "Go to previous diagnostic" })
+
+-- -- Automatically show diagnostics in a floating window on hover
+-- vim.api.nvim_create_autocmd("CursorHold", {
+--   -- buffer = bufnr,
+--   callback = function()
+--     vim.diagnostic.open_float(nil, { focusable = false })
+--   end,
+-- })
+--
+-- -- Speed up the hover delay (default is 4000ms/4 seconds, change to 400ms)
+-- vim.o.updatetime = 400
+--
+
+
+-- Helper function to open and focus the diagnostic window (with optional jumping)
+local function focus_diagnostic(direction_func)
+  -- 1. If a jump function was passed, execute it first
+  if direction_func then
+    direction_func({ float = false })
+  end
+
+  -- 2. Schedule the focused popup to open
+  vim.schedule(function()
+    local _, winnr = vim.diagnostic.open_float(nil, { focusable = true })
+    if winnr then
+      vim.api.nvim_set_current_win(winnr)
+    end
+  end)
+end
+
+-- Map 'gl' to view the warning on the CURRENT line
+vim.keymap.set('n', 'gl', function()
+  focus_diagnostic() -- No argument passed, so it just opens right here
+end, { desc = "Show line diagnostic and focus" })
+
+-- Map 'gw' for NEXT warning
+vim.keymap.set('n', 'gw', function()
+  focus_diagnostic(vim.diagnostic.goto_next)
+end, { desc = "Jump to next diagnostic and focus popup" })
+
+-- Map 'gW' for PREVIOUS warning
+vim.keymap.set('n', 'gW', function()
+  focus_diagnostic(vim.diagnostic.goto_prev)
+end, { desc = "Jump to previous diagnostic and focus popup" })

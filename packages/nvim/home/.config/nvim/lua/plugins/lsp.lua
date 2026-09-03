@@ -64,10 +64,15 @@ return {
 
       -- Keymaps
       vim.keymap.set('n', 'K', vim.lsp.buf.hover, {})
-      vim.keymap.set('n', '<leader>gd', vim.lsp.buf.definition, {})
-      vim.keymap.set('n', '<leader>gr', vim.lsp.buf.references, {})
-      vim.keymap.set('n', '<leader>gf', vim.lsp.buf.format, {})
       vim.keymap.set('n', '<leader>ca', vim.lsp.buf.code_action, {})
+
+      -- Jump to definition, but reuse the window/buffer if it's already open
+      vim.keymap.set('n', '<leader>gd', function()
+        vim.lsp.buf.definition({ reuse_win = true })
+      end, { desc = "LSP Definition (Reuse open buffer)" })
+
+      vim.keymap.set('n', '<leader>gf', vim.lsp.buf.format, {})
+      vim.keymap.set('n', '<leader>gr', vim.lsp.buf.references, {})
       vim.keymap.set('n', '<leader>rn', vim.lsp.buf.rename, {})
     end,
   },

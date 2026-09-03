@@ -10,7 +10,7 @@ nconf() {
   load_conf "$@"
 }
 
-alias vi=nvim
+alias vi="nvim -p"
 
 vid() {
   if [[ $# -eq 0 ]]; then
