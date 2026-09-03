@@ -21,7 +21,7 @@ tconf() {
 alias tls="tmux list-sessions"
 
 # Reload the config
-alias trc="tmux source-file $XDG_CONFIG_HOME/tmux/tmux.conf"
+alias tsrc="tmux source-file $XDG_CONFIG_HOME/tmux/tmux.conf"
 
 # Rename session and window
 alias trs="tmux rename-session $1"
