@@ -3,7 +3,7 @@ ruby = { version = "latest", postinstall = "{{ env.HOME }}/.local/share/mise/scr
 
 [env]
 MISE_RUBY_DEFAULT_PACKAGES_FILE = "{{ env.HOME }}/.config/ruby/default-gems"
-RUBOCOP_TARGET_VERSION = "3.0"
+RUBOCOP_TARGET_VERSION = "4.0"
 
 # [hooks]
 # postinstall = "{{ env.HOME }}/.local/share/mise/scripts/ruby-lsp.sh"

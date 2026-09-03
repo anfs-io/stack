@@ -2,11 +2,18 @@
 
 def ke = Kernel.exit
 
-# The location of this symlink is the only dir searched for now
-extensions_dirs = [Pathname.new(Pry.config.rc_file).parent]
-
-# Extensions are all files in the dirs that end with .rb
-extensions = extensions_dirs.flat_map { |dir| dir.glob('*.rb').select(&:file?) }
-
-# Now, require them all
-extensions.each { |path| require path }
+# if defined?(PryByebug)
+#   Pry.commands.alias_command 'n', 'next'
+#   Pry.commands.alias_command 's', 'step'
+#   Pry.commands.alias_command 'c', 'continue'
+#   Pry.commands.alias_command 'f', 'finish'
+# end
+# 
+# # The location of this symlink is the only dir searched for now
+# extensions_dirs = [Pathname.new(Pry.config.rc_file).parent]
+# 
+# # Extensions are all files in the dirs that end with .rb
+# extensions = extensions_dirs.flat_map { |dir| dir.glob('*.rb').select(&:file?) }
+# 
+# # Now, require them all
+# extensions.each { |path| require path }
