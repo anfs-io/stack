@@ -52,7 +52,9 @@ scan_for_gems() {
   done < "$config_file"
 }
 
-scan_repos
+rm -rf $RUBY_LOCAL_GEMS_HOME
+mkdir -p $RUBY_LOCAL_GEMS_HOME
+scan_for_gems
 
 # ----
 

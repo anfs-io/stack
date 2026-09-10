@@ -3,8 +3,7 @@
 export RUBY_LOCAL_GEMS_HOME="$XDG_DATA_HOME/gems"
 
 # Single bin dir from bundle install
-mkdir -p "$RUBY_LOCAL_GEMS_HOME/bin"
-[[ -d "$RUBY_LOCAL_GEMS_HOME/bin" ]] && ensure_path "$RUBY_LOCAL_GEMS_HOME/bin"
+ensure_path "$RUBY_LOCAL_GEMS_HOME/bin"
 
 # Build RUBYLIB from all gem lib/ dirs
 [[ ":$RUBYLIB:" != *":$RUBY_LOCAL_GEMS_HOME/"* ]] && {
