@@ -1,5 +1,22 @@
 # ruby/tools.zsh
 
+export RUBY_LOCAL_GEMS_HOME="$XDG_DATA_HOME/gems"
+
+# Single bin dir from bundle install
+mkdir -p "$RUBY_LOCAL_GEMS_HOME/bin"
+[[ -d "$RUBY_LOCAL_GEMS_HOME/bin" ]] && ensure_path "$RUBY_LOCAL_GEMS_HOME/bin"
+
+# Build RUBYLIB from all gem lib/ dirs
+[[ ":$RUBYLIB:" != *":$RUBY_LOCAL_GEMS_HOME/"* ]] && {
+  _gem_paths=()
+  for gemlib in "$RUBY_LOCAL_GEMS_HOME"/*/lib(N/); do
+    _gem_paths+=("$gemlib")
+  done
+  _joined=$(IFS=:; echo "${_gem_paths[*]}")
+  export RUBYLIB="${_joined}${RUBYLIB:+:$RUBYLIB}"
+  unset _gem_paths _joined
+}
+
 # bu - bundle
 alias bua="bundle add"
 

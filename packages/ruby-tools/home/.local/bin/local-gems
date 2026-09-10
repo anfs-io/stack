@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Steps
+# 1. manually clone repositories to anywhere on the file system
+#   "git@github.com:rjayroach/gems.git"
+#   "git@github.com:cnfs-io/gems.git"
+#   "git@github.com:anfs-io/gems.git"
+# 2. add the path to each repo to ~/.config/ruby/local-gems
+# 3. run local-gems will:
+#   - iterate over each path in local-gems searching for gemspec files
+#   - for each gem found, create a symlink in ~/.local/share/gems to the gem directory
+#   - invoke bundler to create an executable stub in ~/.local/share/gems/bin
+# 4. ~/.config/zsh/ruby/tools.zsh modifyes
+#   - $PATH to include ~/.local/share/gems/bin as a search path
+#   - $RUBYLIB to include the path to each gem's lib dir
+
+scan_for_gems() {
+  local config_file="$XDG_CONFIG_HOME/ruby/local-gems"
+
+  # Verify the configuration file exists
+  if [[ ! -f "$config_file" ]]; then
+    echo "Configuration file $config_file not found."
+    return 1
+  fi
+
+  # Read lines safely line-by-line
+  while IFS= read -r gems_source || [[ -n "$gems_source" ]]; do
+    # Skip comments and empty lines
+    [[ "$gems_source" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "${gems_source// }" ]] && continue
+
+    # Expand tilde ~ if present
+    gems_source="${gems_source/#\~/$HOME}"
+
+    # Ensure the source directory exists
+    if [[ ! -d "$gems_source" ]]; then
+      continue
+    fi
+
+    # Find all directories containing a *.gemspec file at any depth
+    while IFS= read -r gemdir; do
+      local gem_name="$(basename "$gemdir")"
+      local link="$RUBY_LOCAL_GEMS_HOME/$gem_name"
+
+      if [[ ! -L "$link" ]]; then
+        ln -s "$gemdir" "$link"
+        echo "Linked $gem_name"
+      fi
+    done < <(find -L "$gems_source" -name "*.gemspec" -exec dirname {} + | sort -u)
+
+  done < "$config_file"
+}
+
+scan_repos
+
+# ----
+
+# Generate Gemfile from symlinked gems
+echo "Generating Gemfile..."
+cat > "$RUBY_LOCAL_GEMS_HOME/Gemfile" <<'HEADER'
+source "https://rubygems.org"
+
+HEADER
+
+for gemdir in "$RUBY_LOCAL_GEMS_HOME"/*/; do
+  [[ -L "${gemdir%/}" ]] || continue
+  for gemspec in "$gemdir"*.gemspec; do
+    [[ -f "$gemspec" ]] || continue
+    gem_name="$(basename "$gemspec" .gemspec)"
+    echo "gem \"$gem_name\", path: \"$gemdir\"" >> "$RUBY_LOCAL_GEMS_HOME/Gemfile"
+    break
+  done
+done
+
+# Bundle install from RUBY_LOCAL_GEMS_HOME
+echo "Running bundle install..."
+cd "$RUBY_LOCAL_GEMS_HOME"
+bundle install --quiet
+bundle config set --local bin bin
+mkdir -p bin
+
+# Generate binstubs for gems with executables
+for gemdir in "$RUBY_LOCAL_GEMS_HOME"/*/; do
+  [[ -L "${gemdir%/}" ]] || continue
+  if [[ -d "$gemdir/exe" ]] && ls "$gemdir/exe"/* &>/dev/null; then
+    gem_name="$(basename "$gemdir")"
+    bundle binstubs "$gem_name" --force 2>&1 | grep -v "has no executables" || true
+    chmod +x "$gemdir"/exe/*
+  fi
+done
+
+[[ -d bin ]] && chmod +x bin/* 2>/dev/null || true
