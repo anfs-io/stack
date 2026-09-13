@@ -11,7 +11,17 @@ export XDG_STATE_HOME=~/.local/state
 export BIN_DIR=$HOME/.local/bin
 export LIB_DIR=$HOME/.local/lib
 
-ensure_path() { [[ ":$PATH:" != *":$1:"* ]] && export PATH="$1:$PATH" }
+ensure_path() {
+  local target="$1"
+  # Strip target from start, middle, and end of PATH
+  local clean_path=":$PATH:"
+  clean_path="${clean_path//:$target:/:}"
+  clean_path="${clean_path#:}"
+  clean_path="${clean_path%:}"
+
+  export PATH="$target${clean_path:+:$clean_path}"
+}
+
 
 # Add $BIN_DIR to the search path
 ensure_path "$BIN_DIR"

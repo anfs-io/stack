@@ -27,11 +27,13 @@ vim.g.background = "light"
 
 vim.opt.swapfile = false
 
--- Navigate vim panes better - REMOVED: handled by vim-tmux-navigator plugin
--- vim.keymap.set('n', '<c-k>', ':wincmd k<CR>')
--- vim.keymap.set('n', '<c-j>', ':wincmd j<CR>')
--- vim.keymap.set('n', '<c-h>', ':wincmd h<CR>')
--- vim.keymap.set('n', '<c-l>', ':wincmd l<CR>')
+-- Navigate vim panes better - inside tmux this is handled by vim-tmux-navigator plugin
+if not vim.env.TMUX then
+  vim.keymap.set('n', '<c-k>', ':wincmd k<CR>')
+  vim.keymap.set('n', '<c-j>', ':wincmd j<CR>')
+  vim.keymap.set('n', '<c-h>', ':wincmd h<CR>')
+  vim.keymap.set('n', '<c-l>', ':wincmd l<CR>')
+end
 vim.keymap.set('n', '<leader>w', '<Esc>:w<cr><Space>')
 vim.keymap.set('n', '<leader>wq', '<Esc>:wq<cr><Space>')
 vim.keymap.set('n', '<leader>wqa', '<Esc>:wqa<cr><Space>')

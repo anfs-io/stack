@@ -7,7 +7,12 @@ bindkey -v
 [ -x "$(command -v bat 2>/dev/null)" ] && export PAGER=bat
 
 if command -v fzf >/dev/null 2>&1; then
-  source <(fzf --zsh)
+  if [[ -n "${PPM_FPATH}" && ! -f "${PPM_FPATH}/_fzf" ]]; then
+    fzf --zsh > "${PPM_FPATH}/_fzf"
+  else
+    source <(fzf --zsh)
+  fi
+
   alias ff="fzf --filter"
 fi
 
