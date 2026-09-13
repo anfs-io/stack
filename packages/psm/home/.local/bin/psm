@@ -1,16 +1,64 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+: "${PSM_CONFIG_HOME:=${XDG_CONFIG_HOME:-$HOME/.config}/psm}"
+: "${PSM_SERVICES_HOME:=$PSM_CONFIG_HOME/services}"
+: "${PSM_DATA_HOME:=${XDG_DATA_HOME:-$HOME/.local/share}/psm}"
+: "${PSM_VOLUMES_HOME:=$PSM_DATA_HOME/volumes}"
+: "${PSM_HEALTH_TIMEOUT:=120}"
+export PSM_CONFIG_HOME PSM_SERVICES_HOME PSM_DATA_HOME PSM_VOLUMES_HOME
+
+# Compose runner: "podman compose" (default) or "podman-compose"
+read -ra RUNNER <<< "${PSM_COMPOSE:-podman compose}"
+
 usage() {
   cat <<'EOF'
 Usage: psm <command> [args]
 
 Commands:
-  list, ls              List available services
-  path <service>        Output path to a service definition
-  cd [service]          Change to a service definition (requires psm.zsh)
-  completions <shell>   Output shell completion code (zsh)
-  help                  Show this help
+  list, ls                      List available services
+  path <service>                Output path to a service definition
+  cd [service]                  Change to a service definition (requires psm.zsh)
+  up [options] <service>...     Start services (detached unless -d/--detach given)
+  down [options] <service>...   Stop services; refuses if running services depend
+                                on them unless --force (stops dependents first)
+  ps [flags]                    List containers (passthrough to podman ps)
+  validate [service...]         Check services against psm conventions (all if
+                                none given); `up` runs it before starting anything
+  completion <shell>            Output shell completion code (zsh)
+  help                          Show this help
+
+Any compose subcommand also works via the podman wrapper in psm.zsh:
+  podman compose --psm logs -f postgres
+
+Dependencies: a service's compose.yml may declare other psm services it needs
+
+  x-psm:
+    depends_on:
+      postgres:
+        database: glitchtip
+
+`psm up` starts any that aren't running, waits for them to be healthy, attaches
+the service to the shared network and runs the dependency's `provision` hook
+(if present) with the settings as key=value args. Each KEY=VALUE line the hook
+prints is exported to the service's compose as PSM_<DEP>_<KEY>, e.g.
+PSM_POSTGRES_URL. A value already set in the environment wins.
+
+Validation:
+  errors    volumes that aren't bind mounts under ${PSM_VOLUMES_HOME}/<service>/
+            (read-only :ro mounts from the service directory are allowed);
+            unknown or cyclic x-psm.depends_on
+  warnings  image-declared VOLUMEs with nothing mounted there (pulled images
+            only); host ports also published by another psm service
+
+  Other host paths must be listed in the service's compose.yml, and must exist:
+
+    x-psm:
+      allow_mounts:
+        - ${PSM_PODMAN_SOCKET}
+
+  PSM_PODMAN_SOCKET is set to the podman API socket (inside the podman machine
+  VM on macOS) for services that reference it.
 
 Services dir: $PSM_CONFIG_HOME/services
 EOF
@@ -42,7 +90,641 @@ cmd_path() {
   echo "$dir"
 }
 
-cmd_completions() {
+is_service() {
+  [[ -n "$1" && "$1" != */* && -f "$PSM_SERVICES_HOME/$1/compose.yml" ]]
+}
+
+compose_file() {
+  echo "$PSM_SERVICES_HOME/$1/compose.yml"
+}
+
+# Compose project name: top-level `name:` or the service directory name
+project_name() {
+  local name
+  name=$(yq eval '.name // ""' "$(compose_file "$1")")
+  echo "${name:-$1}"
+}
+
+project_containers() {
+  podman ps --filter "label=com.docker.compose.project=$(project_name "$1")" --format '{{.Names}}'
+}
+
+# Services listed in x-psm.depends_on (list or map form)
+service_deps() {
+  yq eval '.["x-psm"].depends_on | select(. != null) | ((select(tag == "!!seq") | .[]), (select(tag == "!!map") | keys | .[]))' "$(compose_file "$1")"
+}
+
+# key=value settings service $1 declares for dependency $2 (map form only)
+dep_settings() {
+  yq eval ".[\"x-psm\"].depends_on | select(tag == \"!!map\") | .[\"$2\"] | select(tag == \"!!map\") | to_entries | .[] | .key + \"=\" + (.value | tostring)" "$(compose_file "$1")"
+}
+
+# Resolve compose -f flags for a service into FLAGS
+compose_flags() {
+  local service="$1"
+  local file manifest="$PSM_CONFIG_HOME/registry.yml"
+  file=$(compose_file "$service")
+
+  FLAGS=(-f "$file")
+
+  # Attach to the shared network if listed in the registry or it has psm dependencies
+  local attached=false
+  if [[ -f "$manifest" ]] && yq eval ".network_attached_services[] | select(. == \"$service\")" "$manifest" 2>/dev/null | grep -qx "$service"; then
+    attached=true
+  fi
+  [[ -n "$(service_deps "$service")" ]] && attached=true
+  [[ "$attached" == true ]] || return 0
+
+  local network="dev-net"
+  [[ -f "$manifest" ]] && network=$(yq eval '.shared_network // "dev-net"' "$manifest")
+  podman network exists "$network" 2>/dev/null || podman network create "$network" >/dev/null || return 1
+
+  # Compose providers run as separate processes, so the override must be a real file.
+  # Services keep the project's default network; podman-compose requires it declared.
+  local override="${XDG_CACHE_HOME:-$HOME/.cache}/psm/${service}.network.yml"
+  mkdir -p "$(dirname "$override")"
+  {
+    echo "services:"
+    local key
+    while IFS= read -r key; do
+      [[ -n "$key" ]] && printf '  %s:\n    networks:\n      - default\n      - %s\n' "$key" "$network"
+    done < <(yq eval '.services | keys | .[]' "$file")
+    printf 'networks:\n  default: {}\n  %s:\n    external: true\n' "$network"
+  } > "$override"
+
+  FLAGS+=(-f "$override")
+}
+
+# Wait until every container in a service's project that has a healthcheck is healthy
+wait_healthy() {
+  local service="$1" deadline=$((SECONDS + PSM_HEALTH_TIMEOUT))
+  local name status waiting
+  while true; do
+    waiting=""
+    while IFS= read -r name; do
+      [[ -n "$name" ]] || continue
+      status=$(podman inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$name" 2>/dev/null || true)
+      if [[ -n "$status" && "$status" != "healthy" ]]; then
+        waiting+=" $name"
+        # Rootless podman without systemd timers never runs checks on its own
+        podman healthcheck run "$name" >/dev/null 2>&1 || true
+      fi
+    done < <(project_containers "$service")
+
+    [[ -z "$waiting" ]] && return 0
+    if (( SECONDS >= deadline )); then
+      echo "psm: timed out after ${PSM_HEALTH_TIMEOUT}s waiting for${waiting} to become healthy" >&2
+      return 1
+    fi
+    sleep 2
+  done
+}
+
+# Run dependency $2's provision hook for service $1.
+# Hook output lines KEY=VALUE are appended to PROVISIONED as PSM_<DEP>_<KEY>=VALUE.
+provision() {
+  local service="$1" dep="$2"
+  local hook="$PSM_SERVICES_HOME/$dep/provision"
+  [[ -x "$hook" ]] || return 0
+
+  local -a settings=()
+  local line
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && settings+=("$line")
+  done < <(dep_settings "$service" "$dep")
+
+  local output
+  output=$(cd "$PSM_SERVICES_HOME/$dep" && PSM_SERVICE="$dep" PSM_PROJECT="$(project_name "$dep")" PSM_DEPENDENT="$service" \
+    "$hook" ${settings[@]+"${settings[@]}"}) || {
+    echo "psm: provisioning $dep for $service failed" >&2
+    return 1
+  }
+
+  local prefix var
+  prefix="PSM_$(tr '[:lower:]-' '[:upper:]_' <<< "$dep")_"
+  while IFS= read -r line; do
+    [[ "$line" =~ ^[A-Z][A-Z0-9_]*= ]] || continue
+    var="$prefix${line%%=*}"
+    [[ -n "${!var+x}" ]] && continue  # a value already in the environment wins
+    PROVISIONED+=("$var=${line#*=}")
+  done <<< "$output"
+}
+
+# Start and provision a service's x-psm dependencies (recursively).
+# Leaves the provisioned env for the service in PROVISIONED.
+start_deps() {
+  local service="$1" chain="${2:-}"
+  local -a deps=() collected=()
+  local dep
+
+  if [[ " $chain " == *" $service "* ]]; then
+    echo "psm: dependency cycle:$chain $service" >&2
+    return 1
+  fi
+
+  while IFS= read -r dep; do
+    [[ -n "$dep" ]] && deps+=("$dep")
+  done < <(service_deps "$service")
+
+  for dep in ${deps[@]+"${deps[@]}"}; do
+    if ! is_service "$dep"; then
+      echo "psm: $service depends on unknown service '$dep'" >&2
+      return 1
+    fi
+
+    if [[ -z "$(project_containers "$dep")" ]]; then
+      start_deps "$dep" "$chain $service" || return 1
+      echo "psm: starting $dep (required by $service)" >&2
+      compose_flags "$dep" || return 1
+      ensure_mount_dirs "$dep"
+      env ${PROVISIONED[@]+"${PROVISIONED[@]}"} "${RUNNER[@]}" "${FLAGS[@]}" up -d || return 1
+    fi
+
+    wait_healthy "$dep" || return 1
+    PROVISIONED=()
+    provision "$service" "$dep" || return 1
+    collected+=(${PROVISIONED[@]+"${PROVISIONED[@]}"})
+  done
+
+  PROVISIONED=(${collected[@]+"${collected[@]}"})
+}
+
+# --- validate ----------------------------------------------------------------
+
+# Value of variable $2 for service $1: the environment first, then the service's .env
+env_value() {
+  local name="$2" envfile="$PSM_SERVICES_HOME/$1/.env" line
+  if [[ -n "${!name+x}" ]]; then
+    echo "${!name}"
+    return 0
+  fi
+  [[ -f "$envfile" ]] || return 0
+  line=$(grep -E "^${name}=" "$envfile" | tail -n1) || true
+  line="${line#*=}"
+  line="${line%\"}"; line="${line#\"}"
+  line="${line%\'}"; line="${line#\'}"
+  echo "$line"
+}
+
+# Expand ${VAR} and ${VAR:-default} in $2 as compose would for service $1
+expand_vars() {
+  local svc="$1" s="$2" out="" name def val
+  local re='^([^$]*)\$\{([A-Za-z_][A-Za-z0-9_]*)(:?-([^}]*))?\}(.*)$'
+  while [[ "$s" =~ $re ]]; do
+    out+="${BASH_REMATCH[1]}"
+    name="${BASH_REMATCH[2]}"
+    def="${BASH_REMATCH[4]}"
+    s="${BASH_REMATCH[5]}"
+    val=$(env_value "$svc" "$name")
+    out+="${val:-$def}"
+  done
+  echo "$out$s"
+}
+
+under() {
+  [[ "$1" == "$2" || "$1" == "$2/"* ]]
+}
+
+# True if $1 equals any of the remaining args
+in_list() {
+  local item="$1" x
+  shift
+  for x in "$@"; do
+    [[ "$item" == "$x" ]] && return 0
+  done
+  return 1
+}
+
+# Export PSM_PODMAN_SOCKET if any of the given services use it: the podman API
+# socket as seen by the engine running containers (local on Linux, inside the
+# podman machine VM on macOS)
+export_podman_socket() {
+  [[ -z "${PSM_PODMAN_SOCKET:-}" ]] || return 0
+  local svc
+  for svc in "$@"; do
+    if grep -q 'PSM_PODMAN_SOCKET' "$(compose_file "$svc")"; then
+      PSM_PODMAN_SOCKET=$(podman info --format '{{.Host.RemoteSocket.Path}}' 2>/dev/null) || true
+      PSM_PODMAN_SOCKET="${PSM_PODMAN_SOCKET#unix://}"
+      export PSM_PODMAN_SOCKET
+      return 0
+    fi
+  done
+  return 0
+}
+
+# Mounts for service $1, one per line: key|type|source|target|read_only
+# type is tmpfs, anonymous, invalid, or the declared/short-syntax type; source is unexpanded
+service_mounts() {
+  local file kind key a b c d
+  file=$(compose_file "$1")
+  local re='^((\$\{[^}]*\}|[^:$])*):([^:]+)(:([^:]*))?$'
+  while IFS='|' read -r kind key a b c d; do
+    if [[ "$kind" == "M" ]]; then
+      if [[ -z "$b" && "$a" != "tmpfs" ]]; then a="anonymous"; fi
+      echo "$key|$a|$b|$c|$d"
+    elif [[ "$a" != *:* ]]; then
+      echo "$key|anonymous||$a|false"
+    elif [[ "$a" =~ $re ]]; then
+      if [[ ",${BASH_REMATCH[5]}," == *,ro,* ]]; then d=true; else d=false; fi
+      echo "$key|bind|${BASH_REMATCH[1]}|${BASH_REMATCH[3]}|$d"
+    else
+      echo "$key|invalid|$a||false"
+    fi
+  done < <(yq eval '.services // {} | to_entries | .[] | .key as $k | (.value.volumes // [])[] |
+    ((select(tag == "!!str") | "S|" + $k + "|" + .),
+     (select(tag == "!!map") | "M|" + $k + "|" + (.type // "volume") + "|" + (.source // "") + "|" + (.target // "") + "|" + ((.read_only // false) | tostring)))' "$file")
+}
+
+# Host ports published by service $1, one per line
+service_ports() {
+  local svc="$1" key entry port
+  while IFS='|' read -r key entry; do
+    entry=$(expand_vars "$svc" "$entry")
+    entry="${entry%/*}"
+    case "$entry" in
+      *:*:*) port="${entry#*:}"; port="${port%%:*}" ;;
+      *:*)   port="${entry%%:*}" ;;
+      *)     continue ;;
+    esac
+    [[ -n "$port" ]] && echo "$port"
+  done < <(yq eval '.services // {} | to_entries | .[] | .key as $k | (.value.ports // [])[] |
+    ((select(tag != "!!map") | $k + "|" + tostring),
+     (select(tag == "!!map" and .published != null) | $k + "|" + (.published | tostring) + ":" + (.target | tostring)))' "$(compose_file "$svc")")
+  return 0
+}
+
+v_error() {
+  echo "psm: $1: error: $2" >&2
+  VALIDATE_ERRORS=$((VALIDATE_ERRORS + 1))
+}
+
+v_warn() {
+  echo "psm: $1: warning: $2" >&2
+}
+
+# Volumes must be bind mounts under ${PSM_VOLUMES_HOME}/<service>/,
+# or read-only mounts from the service directory
+check_volumes() {
+  local svc="$1" key type src target ro path where name line
+  local -a allowed=()
+
+  # x-psm.allow_mounts: extra host paths this service may mount
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && allowed+=("$(expand_vars "$svc" "$line")")
+  done < <(yq eval '.["x-psm"].allow_mounts // [] | .[]' "$(compose_file "$svc")")
+
+  while IFS='|' read -r key type src target ro; do
+    where="services.$key.volumes $target"
+    case "$type" in
+      tmpfs) continue ;;
+      invalid) v_error "$svc" "services.$key.volumes: can't parse '$src'"; continue ;;
+      anonymous) v_error "$svc" "$where: anonymous volume; bind mount it from \${PSM_VOLUMES_HOME}/$svc/"; continue ;;
+    esac
+
+    path=$(expand_vars "$svc" "$src")
+    case "$path" in
+      "~"*) path="$HOME${path:1}" ;;
+      .*)   path="$PSM_SERVICES_HOME/$svc/$path" ;;
+    esac
+
+    if [[ -z "$path" ]]; then
+      v_error "$svc" "$where: '$src' expands to an empty path"
+      continue
+    fi
+
+    if in_list "$path" ${allowed[@]+"${allowed[@]}"}; then
+      # On macOS sources live in the podman machine VM, so they can't be checked from here
+      if [[ "$OSTYPE" != darwin* && ! -e "$path" ]]; then
+        if [[ "$path" == */podman.sock ]]; then
+          v_error "$svc" "$where: podman API socket $path not found; enable it with: systemctl --user enable --now podman.socket"
+        else
+          v_error "$svc" "$where: allowed mount '$src' ($path) does not exist"
+        fi
+      fi
+      continue
+    fi
+
+    if [[ "$path" != /* ]]; then
+      v_error "$svc" "$where: named volume '$src'; bind mount it from \${PSM_VOLUMES_HOME}/$svc/"
+    elif [[ "$path" == */../* || "$path" == */.. ]]; then
+      v_error "$svc" "$where: '$src' must not contain '..'"
+    elif under "$path" "$PSM_VOLUMES_HOME/$svc"; then
+      :
+    elif [[ "$ro" == "true" ]] && under "$path" "$PSM_SERVICES_HOME/$svc"; then
+      :
+    elif [[ "$ro" == "true" ]]; then
+      v_error "$svc" "$where: read-only mount '$src' must come from the service directory"
+    else
+      v_error "$svc" "$where: '$src' is outside \${PSM_VOLUMES_HOME}/$svc/ (read-only mounts may use the service directory)"
+    fi
+  done < <(service_mounts "$svc")
+
+  while IFS= read -r name; do
+    [[ -n "$name" ]] && v_error "$svc" "declares named volume '$name' under top-level volumes:"
+  done < <(yq eval '.volumes // {} | keys | .[]' "$(compose_file "$svc")")
+  return 0
+}
+
+# VOLUMEs declared by an image (if pulled) must be covered by a mount,
+# otherwise podman creates a new anonymous volume on every container create
+check_image_volumes() {
+  local svc="$1" key image vol target covered
+  local -a targets
+  while IFS='|' read -r key image; do
+    [[ -n "$image" ]] || continue
+    image=$(expand_vars "$svc" "$image")
+    podman image exists "$image" 2>/dev/null || continue
+
+    targets=()
+    while IFS='|' read -r _ _ _ target _; do
+      [[ -n "$target" ]] && targets+=("${target%/}")
+    done < <(service_mounts "$svc" | grep "^$key|")
+
+    while IFS= read -r vol; do
+      [[ -n "$vol" ]] || continue
+      covered=false
+      for target in ${targets[@]+"${targets[@]}"}; do
+        if under "$vol" "$target"; then covered=true; break; fi
+      done
+      if [[ "$covered" != true ]]; then
+        v_warn "$svc" "services.$key: image $image declares VOLUME $vol but nothing is mounted there; podman creates a new anonymous volume for every container"
+      fi
+    done < <(podman image inspect --format '{{json .Config.Volumes}}' "$image" | yq -p json '. // {} | keys | .[]')
+  done < <(yq eval '.services // {} | to_entries | .[] | .key + "|" + (.value.image // "")' "$(compose_file "$svc")")
+  return 0
+}
+
+# Print a dependency path from $2 back to $1, if one exists
+find_cycle() {
+  local start="$1" cur="$2" chain="$3" dep
+  local -a deps=()
+  while IFS= read -r dep; do
+    [[ -n "$dep" ]] && deps+=("$dep")
+  done < <(service_deps "$cur")
+  for dep in ${deps[@]+"${deps[@]}"}; do
+    if [[ "$dep" == "$start" ]]; then
+      echo "$chain $dep"
+      return 0
+    fi
+    if is_service "$dep" && [[ " $chain " != *" $dep "* ]] && find_cycle "$start" "$dep" "$chain $dep"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# x-psm.depends_on must name existing services, without cycles
+check_deps() {
+  local svc="$1" dep cycle
+  while IFS= read -r dep; do
+    if [[ -n "$dep" ]] && ! is_service "$dep"; then
+      v_error "$svc" "x-psm.depends_on: unknown service '$dep'"
+    fi
+  done < <(service_deps "$svc")
+  if cycle=$(find_cycle "$svc" "$svc" "$svc"); then
+    v_error "$svc" "x-psm.depends_on: dependency cycle: $cycle"
+  fi
+  return 0
+}
+
+# Host ports shouldn't clash with other psm services
+check_ports() {
+  local svc="$1" other port
+  local -a mine=()
+  while IFS= read -r port; do
+    [[ -n "$port" ]] && mine+=("$port")
+  done < <(service_ports "$svc")
+  [[ ${#mine[@]} -gt 0 ]] || return 0
+
+  while IFS= read -r other; do
+    [[ -n "$other" && "$other" != "$svc" ]] || continue
+    while IFS= read -r port; do
+      if [[ " ${mine[*]} " == *" $port "* ]]; then
+        v_warn "$svc" "host port $port is also published by $other"
+      fi
+    done < <(service_ports "$other")
+  done < <(cmd_list 2>/dev/null)
+  return 0
+}
+
+# Validate services; fails if there were errors (warnings don't fail)
+validate_services() {
+  local svc
+  VALIDATE_ERRORS=0
+  for svc in "$@"; do
+    check_volumes "$svc"
+    check_image_volumes "$svc"
+    check_deps "$svc"
+    check_ports "$svc"
+  done
+  [[ $VALIDATE_ERRORS -eq 0 ]]
+}
+
+cmd_validate() {
+  local -a services=()
+  local svc
+  if [[ $# -eq 0 ]]; then
+    while IFS= read -r svc; do
+      [[ -n "$svc" ]] && services+=("$svc")
+    done < <(cmd_list 2>/dev/null)
+  else
+    for svc in "$@"; do
+      if ! is_service "$svc"; then
+        echo "psm: unknown service '$svc'" >&2
+        return 1
+      fi
+      services+=("$svc")
+    done
+  fi
+
+  if [[ ${#services[@]} -eq 0 ]]; then
+    echo "No services found in $PSM_SERVICES_HOME" >&2
+    return 1
+  fi
+
+  export_podman_socket "${services[@]}"
+  if ! validate_services "${services[@]}"; then
+    echo "psm: validation failed with $VALIDATE_ERRORS error(s)" >&2
+    return 1
+  fi
+  echo "psm: valid: ${services[*]}"
+}
+
+# Append $1 and its x-psm dependencies (recursively) to CLOSURE
+dep_closure() {
+  local dep
+  local -a deps=()
+  if [[ " ${CLOSURE[*]-} " == *" $1 "* ]]; then return 0; fi
+  CLOSURE+=("$1")
+  while IFS= read -r dep; do
+    [[ -n "$dep" ]] && deps+=("$dep")
+  done < <(service_deps "$1")
+  for dep in ${deps[@]+"${deps[@]}"}; do
+    if is_service "$dep"; then dep_closure "$dep"; fi
+  done
+  return 0
+}
+
+# Create missing bind mount directories under ${PSM_VOLUMES_HOME}/<service>/
+ensure_mount_dirs() {
+  local key type src target ro path
+  while IFS='|' read -r key type src target ro; do
+    [[ "$type" == "bind" ]] || continue
+    path=$(expand_vars "$1" "$src")
+    if under "$path" "$PSM_VOLUMES_HOME/$1" && [[ ! -e "$path" ]]; then
+      mkdir -p "$path"
+    fi
+  done < <(service_mounts "$1")
+  return 0
+}
+
+# Services whose x-psm.depends_on includes $1
+service_dependents() {
+  local svc
+  while IFS= read -r svc; do
+    if service_deps "$svc" | grep -qx "$1"; then echo "$svc"; fi
+  done < <(cmd_list 2>/dev/null)
+}
+
+# Append to ORDER the running dependents of $1 (recursively, deepest first), then $1.
+# Services not in NAMED are only included if running.
+shutdown_order() {
+  local service="$1" chain="${2:-}" dep
+  local -a dependents=()
+
+  if [[ " $chain " == *" $service "* ]]; then
+    echo "psm: dependency cycle:$chain $service" >&2
+    return 1
+  fi
+  if [[ " ${ORDER[*]-} " == *" $service "* ]]; then return 0; fi
+
+  while IFS= read -r dep; do
+    [[ -n "$dep" ]] && dependents+=("$dep")
+  done < <(service_dependents "$service")
+
+  for dep in ${dependents[@]+"${dependents[@]}"}; do
+    shutdown_order "$dep" "$chain $service" || return 1
+  done
+
+  if [[ "$NAMED" == *" $service "* || -n "$(project_containers "$service")" ]]; then
+    ORDER+=("$service")
+  fi
+}
+
+# Run a compose subcommand against each named service
+# PRE holds compose global options that belong before the subcommand
+cmd_compose() {
+  local subcmd="$1"
+  shift
+
+  local -a services=() args=()
+  local arg
+  for arg in "$@"; do
+    if is_service "$arg"; then services+=("$arg"); else args+=("$arg"); fi
+  done
+
+  if [[ ${#services[@]} -eq 0 ]]; then
+    echo "Usage: psm $subcmd [options] <service>..." >&2
+    echo "Available services:" >&2
+    cmd_list >&2
+    return 1
+  fi
+
+  if [[ "$subcmd" == "up" && " ${args[*]-} " != *" -d "* && " ${args[*]-} " != *" --detach "* ]]; then
+    args+=(-d)
+  fi
+
+  # up: validate the services and everything they depend on before touching podman
+  if [[ "$subcmd" == "up" ]]; then
+    CLOSURE=()
+    for arg in "${services[@]}"; do
+      dep_closure "$arg"
+    done
+    export_podman_socket "${CLOSURE[@]}"
+    if ! validate_services "${CLOSURE[@]}"; then
+      echo "psm: not starting ${services[*]}: validation failed with $VALIDATE_ERRORS error(s)" >&2
+      return 1
+    fi
+  fi
+
+  # down: running dependents are stopped first, which needs --force unless they were named too
+  if [[ "$subcmd" == "down" ]]; then
+    local force=false
+    local -a kept=()
+    for arg in ${args[@]+"${args[@]}"}; do
+      if [[ "$arg" == "--force" ]]; then force=true; else kept+=("$arg"); fi
+    done
+    args=(${kept[@]+"${kept[@]}"})
+
+    NAMED=" ${services[*]} "
+    ORDER=()
+    for arg in "${services[@]}"; do
+      shutdown_order "$arg" || return 1
+    done
+
+    local -a dependents=()
+    for arg in "${ORDER[@]}"; do
+      [[ "$NAMED" == *" $arg "* ]] || dependents+=("$arg")
+    done
+    if [[ ${#dependents[@]} -gt 0 && "$force" != true ]]; then
+      echo "psm: not stopping ${services[*]}: running services depend on it: ${dependents[*]}" >&2
+      echo "psm: stop those first, or pass --force to stop them before ${services[*]}" >&2
+      return 1
+    fi
+
+    services=("${ORDER[@]}")
+  fi
+
+  export_podman_socket "${services[@]}"
+
+  # One compose invocation per service so each keeps its own project
+  local service rc=0
+  local -a service_args
+  for service in "${services[@]}"; do
+    service_args=(${args[@]+"${args[@]}"})
+    PROVISIONED=()
+    if [[ "$subcmd" == "up" ]]; then
+      start_deps "$service" || { rc=1; continue; }
+      ensure_mount_dirs "$service"
+    elif [[ "$subcmd" == "down" && "$NAMED" != *" $service "* ]]; then
+      # Options like -v apply only to the services the user named
+      echo "psm: stopping dependent service $service" >&2
+      service_args=()
+    fi
+    compose_flags "$service" || { rc=1; continue; }
+    env ${PROVISIONED[@]+"${PROVISIONED[@]}"} \
+      "${RUNNER[@]}" ${PRE[@]+"${PRE[@]}"} "${FLAGS[@]}" "$subcmd" ${service_args[@]+"${service_args[@]}"} || {
+      rc=$?
+      # An orderly shutdown stops at the first failure
+      if [[ "$subcmd" == "down" ]]; then
+        echo "psm: failed to stop $service; not stopping the rest" >&2
+        return $rc
+      fi
+    }
+  done
+  return $rc
+}
+
+# Internal: entry point for `podman compose --psm ...` (--psm already stripped).
+# Falls back to plain compose with a warning when no psm service is named.
+cmd_wrapper() {
+  PRE=()
+  while [[ $# -gt 0 && "$1" == -* ]]; do PRE+=("$1"); shift; done
+
+  local arg named=false
+  for arg in "$@"; do
+    is_service "$arg" && { named=true; break; }
+  done
+
+  if [[ $# -eq 0 || "$named" == false ]]; then
+    echo "psm: --psm given but no psm service named; running plain ${RUNNER[*]}" >&2
+    exec "${RUNNER[@]}" ${PRE[@]+"${PRE[@]}"} "$@"
+  fi
+
+  cmd_compose "$@"
+}
+
+cmd_completion() {
   case "${1:-}" in
     zsh)
       cat <<'COMPLETION'
@@ -58,7 +740,11 @@ _psm() {
     'list:List available services'
     'path:Output path to a service definition'
     'cd:Change to a service definition'
-    'completions:Output shell completion code'
+    'up:Start services'
+    'down:Stop services'
+    'ps:List containers (podman ps)'
+    'validate:Check services against psm conventions'
+    'completion:Output shell completion code'
     'help:Show usage'
   )
 
@@ -67,10 +753,12 @@ _psm() {
     return
   fi
 
-  (( CURRENT == 3 )) || return
   case "${words[2]}" in
-    path|cd)     _psm_services ;;
-    completions) compadd zsh ;;
+    up)          _psm_services ;;
+    down)        compadd -- --force; _psm_services ;;
+    validate)    _psm_services ;;
+    path|cd)     (( CURRENT == 3 )) && _psm_services ;;
+    completion)  (( CURRENT == 3 )) && compadd zsh ;;
   esac
 }
 
@@ -82,18 +770,29 @@ fi
 COMPLETION
       ;;
     *)
-      echo "Usage: psm completions <zsh>" >&2
+      echo "Usage: psm completion <zsh>" >&2
       return 1
       ;;
   esac
 }
+
+PRE=()
+PROVISIONED=()
+NAMED=""
+ORDER=()
+CLOSURE=()
+VALIDATE_ERRORS=0
 
 # Subcommand dispatch
 case "${1:-}" in
   list|ls)     shift; cmd_list "$@" ;;
   path)        shift; cmd_path "$@" ;;
   cd)          echo "psm cd requires the psm shell function (source psm.zsh)" >&2; exit 1 ;;
-  completions) shift; cmd_completions "$@" ;;
+  up|down)     cmd_compose "$@" ;;
+  ps)          shift; exec podman ps "$@" ;;
+  validate)    shift; cmd_validate "$@" ;;
+  __compose)   shift; cmd_wrapper "$@" ;;
+  completion) shift; cmd_completion "$@" ;;
   help|--help) usage ;;
   "")          usage ;;
   *)           echo "psm: unknown command '$1'" >&2; usage >&2; exit 1 ;;

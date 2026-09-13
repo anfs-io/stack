@@ -10,5 +10,5 @@ post_install() {
   # Create PSM data directory
   mkdir -p "$psm_data/volumes"
 
-  install_completion "psm completions zsh"
+  install_completion "psm completion zsh"
 }

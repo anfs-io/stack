@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# provision — psm dependency hook for postgres
+#
+# Run by psm (from this directory) once postgres is healthy, for each service
+# that declares it in x-psm.depends_on:
+#
+#   provision [database=<name>]
+#
+# Creates the database if it doesn't exist (default: POSTGRES_DB) and prints
+# connection details as KEY=VALUE. psm exports each to the dependent service's
+# compose as PSM_POSTGRES_<KEY>: URL, HOST, PORT, USER, PASSWORD, DATABASE.
+set -euo pipefail
+
+if [[ -f .env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  . ./.env
+  set +a
+fi
+
+: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in $PWD/.env}"
+user="${POSTGRES_USER:-postgres}"
+admin_db="${POSTGRES_DB:-postgres}"
+database="$admin_db"
+
+for arg in "$@"; do
+  case "$arg" in
+    database=*) database="${arg#*=}" ;;
+    *) echo "provision: unknown setting '$arg'" >&2; exit 1 ;;
+  esac
+done
+
+if [[ ! "$database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+  echo "provision: invalid database name '$database'" >&2
+  exit 1
+fi
+
+container=$(podman ps \
+  --filter "label=com.docker.compose.project=${PSM_PROJECT:-postgres}" \
+  --filter "label=com.docker.compose.service=postgres" \
+  --format '{{.Names}}' | head -n1)
+if [[ -z "$container" ]]; then
+  echo "provision: postgres container is not running" >&2
+  exit 1
+fi
+
+exists=$(podman exec "$container" psql -U "$user" -d "$admin_db" -tAc \
+  "SELECT 1 FROM pg_database WHERE datname = '$database'")
+if [[ "$exists" != "1" ]]; then
+  podman exec "$container" createdb -U "$user" "$database" >&2
+  echo "provision: created database '$database' for ${PSM_DEPENDENT:-unknown}" >&2
+fi
+
+urlencode() {
+  local LC_ALL=C s="$1" out="" c hex i
+  for (( i = 0; i < ${#s}; i++ )); do
+    c="${s:i:1}"
+    case "$c" in
+      [A-Za-z0-9._~-]) out+="$c" ;;
+      *) printf -v hex '%%%02X' "'$c"; out+="$hex" ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+# Container name resolves via DNS on the shared network
+cat <<EOF
+URL=postgres://$(urlencode "$user"):$(urlencode "$POSTGRES_PASSWORD")@${container}:5432/${database}
+HOST=${container}
+PORT=5432
+USER=${user}
+PASSWORD=${POSTGRES_PASSWORD}
+DATABASE=${database}
+EOF

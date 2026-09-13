@@ -10,8 +10,10 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
-      - ${PSM_VOLUMES_HOME}/postgres/pgdata:/var/lib/postgresql/data/pgdata
-      # - ${PSM_CONFIG_HOME}/initdb:/docker-entrypoint-initdb.d
+      # Mount the image's declared VOLUME itself so podman doesn't add an anonymous
+      # volume; the cluster lives in the pgdata subdirectory (PGDATA)
+      - ${PSM_VOLUMES_HOME}/postgres:/var/lib/postgresql/data
+      # - ./initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 10s

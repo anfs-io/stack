@@ -1,19 +1,17 @@
 # GlitchTip — self-hosted error tracking (Sentry-compatible).
 #
-# Generic dev-env service: boots with `podman compose up` and no .env edits.
-# All tunables live in .env.schema (the canonical var docs). Secrets ship with
-# an insecure dev-only default — override them for anything shared.
+# psm service: uses the shared psm postgres. Start with `psm up glitchtip`, which
+# starts postgres if needed, creates the `glitchtip` database and injects
+# PSM_POSTGRES_URL. All tunables live in .env.schema (the canonical var docs).
+# Secrets ship with an insecure dev-only default — override them for anything shared.
 name: glitchtip
 
-services:
-  postgres:
-    image: ${POSTGRES_IMAGE:-docker.io/library/postgres}:${POSTGRES_TAG:-18}
-    environment:
-      POSTGRES_HOST_AUTH_METHOD: ${POSTGRES_HOST_AUTH_METHOD:-trust}
-    restart: unless-stopped
-    volumes:
-      - pg-data:/var/lib/postgresql
+x-psm:
+  depends_on:
+    postgres:
+      database: glitchtip
 
+services:
   valkey:
     image: ${VALKEY_IMAGE:-docker.io/valkey/valkey}:${VALKEY_TAG:-9}
     restart: unless-stopped
@@ -21,12 +19,11 @@ services:
   web:
     image: ${GLITCHTIP_IMAGE:-docker.io/glitchtip/glitchtip}:${GLITCHTIP_TAG:-6}
     depends_on:
-      - postgres
       - valkey
     ports:
       - "${GLITCHTIP_PORT:-8000}:8000"
     environment:
-      DATABASE_URL: ${GLITCHTIP_DATABASE_URL:-postgres://postgres:postgres@postgres:5432/postgres}
+      DATABASE_URL: ${PSM_POSTGRES_URL:-}
       VALKEY_URL: ${GLITCHTIP_VALKEY_URL:-redis://valkey:6379}
       SECRET_KEY: ${GLITCHTIP_SECRET_KEY:-dev-insecure-change-me}
       EMAIL_URL: ${GLITCHTIP_EMAIL_URL:-consolemail://}
@@ -39,8 +36,5 @@ services:
       SERVER_ROLE: all_in_one
     restart: unless-stopped
     volumes:
-      - uploads:/code/uploads
-
-volumes:
-  pg-data:
-  uploads:
+      # :U chowns the host dir to the image's non-root `app` user (rootless podman)
+      - ${PSM_VOLUMES_HOME}/glitchtip/uploads:/code/uploads:U
