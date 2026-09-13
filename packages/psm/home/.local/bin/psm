@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PSM_CONFIG_HOME="${PSM_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/psm}"
-PSM_SERVICES_DIR="$PSM_CONFIG_HOME/services"
-
 usage() {
   cat <<'EOF'
 Usage: psm <command> [args]
@@ -21,13 +18,13 @@ EOF
 
 cmd_list() {
   local found=false dir
-  for dir in "$PSM_SERVICES_DIR"/*/; do
+  for dir in "$PSM_SERVICES_HOME"/*/; do
     [[ -f "${dir}compose.yml" ]] || continue
     found=true
     basename "$dir"
   done
   if [[ "$found" == false ]]; then
-    echo "No services found in $PSM_SERVICES_DIR" >&2
+    echo "No services found in $PSM_SERVICES_HOME" >&2
   fi
 }
 
@@ -37,9 +34,9 @@ cmd_path() {
     return 1
   fi
 
-  local dir="$PSM_SERVICES_DIR/$1"
+  local dir="$PSM_SERVICES_HOME/$1"
   if [[ ! -f "$dir/compose.yml" ]]; then
-    echo "Service '$1' not found in $PSM_SERVICES_DIR" >&2
+    echo "Service '$1' not found in $PSM_SERVICES_HOME" >&2
     return 1
   fi
   echo "$dir"

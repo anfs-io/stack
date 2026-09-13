@@ -1,10 +1,19 @@
 # solana
 
-install_linux() {
-  if [[ "$(arch)" == "arm64" ]]; then
-    ppm_fail "No pre-built binaries for arm64 Linux.\nValid targets: x86_64-unknown-linux-gnu, x86_64-apple-darwin, aarch64-apple-darwin.\nBuild from source via cargo instead."
+xinstall_linux() {
+  if [[ "$(arch)" != "arm64" ]]; then
+    # ppm_fail "No pre-built binaries for arm64 Linux.\nValid targets: x86_64-unknown-linux-gnu, x86_64-apple-darwin, aarch64-apple-darwin.\nBuild from source via cargo instead."
     return
   fi
+  # See: https://github.com/anza-xyz/agave
+  install_dep pkg-config librust-libudev-dev libclang-19-dev
+  cd /tmp
+  git clone https://github.com/anza-xyz/agave.git
+  cd agave
+  git checkout v4.2.2
+  cargo build --release
+  ./scripts/cargo-install-all.sh ~/.local/bin
+  avm install 1.2.0 --from-source
 }
 
 # NOTE: Not using brew for surfpool since post_install uses a cross platform installer, but here in case future want to use packagges; Linux can use `snap`
@@ -15,7 +24,7 @@ install_linux() {
 # }
 
 # From https://solana.com/docs/intro/installation/dependencies
-post_install() {
+xpost_install() {
   # 1. Solana CLI
   if command -v agave-install &> /dev/null; then
     # Update the Solana CLI to the latest version
@@ -44,7 +53,7 @@ post_install() {
   mv _surfpool $PPM_FPATH
 }
 
-post_remove() {
+xpost_remove() {
   # 1. Solana CLI (installed via Anza installer)
   rm -rf "$XDG_DATA_HOME/solana"
   rm -rf "$XDG_CACHE_HOME/solana"

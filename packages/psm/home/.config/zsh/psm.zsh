@@ -2,14 +2,17 @@
 # Sets PSM-specific env vars and delegates to the ppm engine
 
 export PSM_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/psm"
+export PSM_SERVICES_HOME="$PSM_CONFIG_HOME/services"
+
 export PSM_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/psm"
+export PSM_VOLUMES_HOME="$PSM_DATA_HOME/volumes"
 
 # Wrapper to handle `psm cd` since subshells can't change parent directory
 psm() {
   if [[ "${1:-}" == "cd" ]]; then
     shift
     if [[ $# -eq 0 ]]; then
-      builtin cd "$PSM_CONFIG_HOME/services"
+      builtin cd "$PSM_SERVICES_HOME"
     else
       local service_path
       service_path=$(command psm path "$@") || return $?
@@ -23,20 +26,19 @@ psm() {
 # Resolve compose -f flags for a service into $reply
 _podman_resolve_compose_flags() {
   local service="$1"
-  local base_dir=$PSM_CONFIG_HOME
-  local compose_dir="${base_dir}/services/${service}"
-  local service_file="${compose_dir}/compose.yml"
-  local manifest="${base_dir}/registry.yml"
-  local net_file="${base_dir}/compose/network.yml"
+  local service_dir="${PSM_SERVICES_HOME}/${service}"
+  local compose_file="${service_dir}/compose.yml"
+  local manifest="${PSM_CONFIG_HOME}/registry.yml"
+  local net_file="${PSM_CONFIG_HOME}/compose/network.yml"
 
   reply=()
-  if [[ ! -f "$service_file" ]]; then
-    echo "Error: Service compose file not found at $service_file" >&2
+  if [[ ! -f "$compose_file" ]]; then
+    echo "Error: Service compose file not found at $compose_file" >&2
     return 1
   fi
 
   # Store base service compose file
-  reply=("-f" "$service_file")
+  reply=("-f" "$compose_file")
 
   # Check if service is listed in network_attached_services
   if [[ -f "$manifest" ]] && yq eval ".network_attached_services[] | select(. == \"$service\")" "$manifest" 2>/dev/null | grep -qx "$service"; then
