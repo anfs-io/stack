@@ -1,0 +1,46 @@
+# GlitchTip — self-hosted error tracking (Sentry-compatible).
+#
+# Generic dev-env service: boots with `podman compose up` and no .env edits.
+# All tunables live in .env.schema (the canonical var docs). Secrets ship with
+# an insecure dev-only default — override them for anything shared.
+name: glitchtip
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-docker.io/library/postgres}:${POSTGRES_TAG:-18}
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: ${POSTGRES_HOST_AUTH_METHOD:-trust}
+    restart: unless-stopped
+    volumes:
+      - pg-data:/var/lib/postgresql
+
+  valkey:
+    image: ${VALKEY_IMAGE:-docker.io/valkey/valkey}:${VALKEY_TAG:-9}
+    restart: unless-stopped
+
+  web:
+    image: ${GLITCHTIP_IMAGE:-docker.io/glitchtip/glitchtip}:${GLITCHTIP_TAG:-6}
+    depends_on:
+      - postgres
+      - valkey
+    ports:
+      - "${GLITCHTIP_PORT:-8000}:8000"
+    environment:
+      DATABASE_URL: ${GLITCHTIP_DATABASE_URL:-postgres://postgres:postgres@postgres:5432/postgres}
+      VALKEY_URL: ${GLITCHTIP_VALKEY_URL:-redis://valkey:6379}
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:-dev-insecure-change-me}
+      EMAIL_URL: ${GLITCHTIP_EMAIL_URL:-consolemail://}
+      GLITCHTIP_DOMAIN: ${GLITCHTIP_DOMAIN:-http://localhost:8000}
+      DEFAULT_FROM_EMAIL: ${GLITCHTIP_DEFAULT_FROM_EMAIL:-glitchtip@localhost}
+      ENABLE_ADMIN: ${GLITCHTIP_ENABLE_ADMIN:-False}
+      ENABLE_OPENAPI: ${GLITCHTIP_ENABLE_OPENAPI:-False}
+      GLITCHTIP_ENABLE_MCP: ${GLITCHTIP_ENABLE_MCP:-False}
+      GLITCHTIP_ENABLE_DUCKDB: ${GLITCHTIP_ENABLE_DUCKDB:-False}
+      SERVER_ROLE: all_in_one
+    restart: unless-stopped
+    volumes:
+      - uploads:/code/uploads
+
+volumes:
+  pg-data:
+  uploads:

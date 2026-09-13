@@ -11,9 +11,9 @@ install_macos() {
     podman machine init
   fi
 
-  if ! podman machine list --format "{{.Running}}" | grep -q "true"; then
-    podman machine start
-  fi
+  # if ! podman machine list --format "{{.Running}}" | grep -q "true"; then
+  #   podman machine start
+  # fi
 
   # You need it for tools that expect the Docker socket at the standard location - like LocalStack, docker-compose, or other tools that don't read $DOCKER_HOST reliably.
   # If podman ps works and LocalStack also works with your current $DOCKER_HOST setup, you might not need the helper at all.

@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PSM_CONFIG_HOME="${PSM_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/psm}"
+PSM_SERVICES_DIR="$PSM_CONFIG_HOME/services"
+
+usage() {
+  cat <<'EOF'
+Usage: psm <command> [args]
+
+Commands:
+  list, ls              List available services
+  path <service>        Output path to a service definition
+  cd [service]          Change to a service definition (requires psm.zsh)
+  completions <shell>   Output shell completion code (zsh)
+  help                  Show this help
+
+Services dir: $PSM_CONFIG_HOME/services
+EOF
+}
+
+cmd_list() {
+  local found=false dir
+  for dir in "$PSM_SERVICES_DIR"/*/; do
+    [[ -f "${dir}compose.yml" ]] || continue
+    found=true
+    basename "$dir"
+  done
+  if [[ "$found" == false ]]; then
+    echo "No services found in $PSM_SERVICES_DIR" >&2
+  fi
+}
+
+cmd_path() {
+  if [[ $# -eq 0 ]]; then
+    echo "Usage: psm path <service>" >&2
+    return 1
+  fi
+
+  local dir="$PSM_SERVICES_DIR/$1"
+  if [[ ! -f "$dir/compose.yml" ]]; then
+    echo "Service '$1' not found in $PSM_SERVICES_DIR" >&2
+    return 1
+  fi
+  echo "$dir"
+}
+
+cmd_completions() {
+  case "${1:-}" in
+    zsh)
+      cat <<'COMPLETION'
+#compdef psm
+
+_psm_services() {
+  local -a services=(${(f)"$(command psm list 2>/dev/null)"})
+  compadd -a services
+}
+
+_psm() {
+  local -a subcmds=(
+    'list:List available services'
+    'path:Output path to a service definition'
+    'cd:Change to a service definition'
+    'completions:Output shell completion code'
+    'help:Show usage'
+  )
+
+  if (( CURRENT == 2 )); then
+    _describe 'command' subcmds
+    return
+  fi
+
+  (( CURRENT == 3 )) || return
+  case "${words[2]}" in
+    path|cd)     _psm_services ;;
+    completions) compadd zsh ;;
+  esac
+}
+
+if [[ "${funcstack[1]}" == "_psm" ]]; then
+  _psm "$@"
+else
+  compdef _psm psm
+fi
+COMPLETION
+      ;;
+    *)
+      echo "Usage: psm completions <zsh>" >&2
+      return 1
+      ;;
+  esac
+}
+
+# Subcommand dispatch
+case "${1:-}" in
+  list|ls)     shift; cmd_list "$@" ;;
+  path)        shift; cmd_path "$@" ;;
+  cd)          echo "psm cd requires the psm shell function (source psm.zsh)" >&2; exit 1 ;;
+  completions) shift; cmd_completions "$@" ;;
+  help|--help) usage ;;
+  "")          usage ;;
+  *)           echo "psm: unknown command '$1'" >&2; usage >&2; exit 1 ;;
+esac
