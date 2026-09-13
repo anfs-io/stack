@@ -25,7 +25,7 @@ install_linux() {
   # Neovim version - using 'stable' to always get the latest stable release
   # NOTE: The latest (0.11.5) nvim 64 bit appimage download is actually 32 bit so pin the version to 0.11.4 for now
   # local nvim_version="stable"
-  local nvim_version="v0.11.4"
+  local nvim_version="v0.12.5"
   local download_url="https://github.com/neovim/neovim/releases/download/${nvim_version}/nvim-linux-${nvim_arch}.appimage"
 
   curl -L -o "$install_path" "$download_url"
@@ -46,4 +46,9 @@ post_install() {
   elif [[ "$(os)" == "macos" ]]; then
     /opt/homebrew/bin/nvim --headless "+Lazy! sync" +qa
   fi
+}
+
+post_remove() {
+  local install_path="${BIN_DIR}/nvim"
+  rm -rf $install_path
 }
