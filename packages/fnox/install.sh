@@ -1,7 +1,7 @@
 # fnox
 
 post_install() {
-  mise install fnox
   source <(mise activate bash)
+  mise install fnox
   install_completion "fnox completion zsh"
 }

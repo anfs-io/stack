@@ -5,7 +5,6 @@ if ! command -v mise >/dev/null 2>&1; then
 fi
 
 eval "$(mise activate zsh)"
-eval "$(fnox activate zsh)"
 
 alias mi="mise install"
 alias mra="mise run all"
