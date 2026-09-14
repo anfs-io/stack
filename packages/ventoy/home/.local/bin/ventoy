@@ -21,11 +21,16 @@ Commands:
   status [disk]               Show Ventoy info for a disk (Linux)
   ls [target]                 List ISOs on a Ventoy stick and whether they match VENTOY_ISO_DIR
   copy [target]               Copy ISOs from VENTOY_ISO_DIR to a Ventoy stick
+  rm <iso>... [-t target]     Remove ISOs from a stick (paths as shown by `ventoy ls`)
+  sync [target] [-n] [-y]     Make the stick's ISOs match VENTOY_ISO_DIR exactly: copy missing or
+                              changed ISOs, remove all others (an empty dir removes every ISO)
+                                -n  show what would change    -y  don't ask for confirmation
   info                        Show paths, Ventoy version and the ISOs that would be copied
   help                        Show this help
 
   A target is the stick's disk or data partition (Linux; mounted for you) or a mounted
   directory (default on macOS: /Volumes/Ventoy). Commands without a disk use VENTOY_DISK.
+  Only *.iso files on the stick are ever copied or removed.
 
 Environment:
   VENTOY_DISK     Default disk, e.g. /dev/disk/by-id/usb-... (stable across replugs, unlike /dev/sdX)
@@ -188,26 +193,55 @@ human_size() {
   ls -lhL "$1" | awk '{ print $5 }'
 }
 
+# ISOs on the stick, NUL-separated (Ventoy also boots ISOs in subdirectories); skips macOS ._ files
+stick_isos() {
+  find "$STICK_DIR" -type f -iname '*.iso' ! -name '._*' -print0 | sort -z
+}
+
+# Status of an ISO on the stick (path relative to STICK_DIR) compared with VENTOY_ISO_DIR
+stick_iso_status() {
+  local rel="$1" name
+  name="$(basename "$rel")"
+  if [[ "$rel" == */* || ! -f "$VENTOY_ISO_DIR/$name" ]]; then
+    echo "only on stick"
+  elif [[ "$(file_size "$STICK_DIR/$rel")" == "$(file_size "$VENTOY_ISO_DIR/$name")" ]]; then
+    echo "on stick"
+  else
+    echo "differs"
+  fi
+}
+
+# True when a local ISO is missing from the stick's top level or has a different size there
+needs_copy() {
+  local iso="$1" dest="$STICK_DIR/$(basename "$1")"
+  [[ ! -f "$dest" || "$(file_size "$dest")" != "$(file_size "$iso")" ]]
+}
+
+copy_iso() {
+  # -L: follow symlinked ISOs; -X (macOS): skip xattrs so no ._ files land on the exFAT stick
+  local opts=(-L)
+  [[ "$(uname -s)" == "Darwin" ]] && opts+=(-X)
+  cp "${opts[@]}" "$1" "$STICK_DIR/$(basename "$1")"
+}
+
+# Remove an ISO (path relative to STICK_DIR) and any macOS ._ sidecar next to it
+remove_iso() {
+  local rel="$1"
+  rm -f "$STICK_DIR/$rel"
+  rm -f "$STICK_DIR/$(dirname "$rel")/._$(basename "$rel")"
+}
+
 cmd_ls() {
   open_stick "$(disk_arg "${1:-}")" ro
 
-  local rel iso name status found=0
+  local rel iso name found=0
   printf "%-6s %-14s %s\n" SIZE STATUS ISO
 
-  # Everything on the stick (Ventoy also boots ISOs in subdirectories); skip macOS ._ files
   while IFS= read -r -d '' iso; do
     found=1
     rel="${iso#"$STICK_DIR"/}"
-    name="$(basename "$rel")"
-    if [[ "$rel" == */* || ! -f "$VENTOY_ISO_DIR/$name" ]]; then
-      status="only on stick"
-    elif [[ "$(file_size "$iso")" == "$(file_size "$VENTOY_ISO_DIR/$name")" ]]; then
-      status="on stick"
-    else
-      status="differs"
-    fi
-    printf "%-6s %-14s %s\n" "$(human_size "$iso")" "$status" "$rel"
-  done < <(find "$STICK_DIR" -type f -iname '*.iso' ! -name '._*' -print0 | sort -z)
+    printf "%-6s %-14s %s\n" "$(human_size "$iso")" "$(stick_iso_status "$rel")" "$rel"
+  done < <(stick_isos)
 
   # ISOs `ventoy copy` would still add
   shopt -s nullglob
@@ -228,27 +262,124 @@ cmd_copy() {
   [[ ${#isos[@]} -gt 0 ]] || die "no ISOs in $VENTOY_ISO_DIR"
 
   open_stick "$(disk_arg "${1:-}")" rw
-  local dest="$STICK_DIR"
-
-  # -L: follow symlinked ISOs; -X (macOS): skip xattrs so no ._ files land on the exFAT stick
-  local cp_opts=(-L)
-  [[ "$(uname -s)" == "Darwin" ]] && cp_opts+=(-X)
 
   local iso name copied=0 skipped=0
   for iso in "${isos[@]}"; do
     name="$(basename "$iso")"
-    if [[ -f "$dest/$name" && "$(file_size "$dest/$name")" == "$(file_size "$iso")" ]]; then
+    if ! needs_copy "$iso"; then
       echo "Skipping $name (already on the stick)"
       skipped=$((skipped + 1))
       continue
     fi
     echo "Copying $name"
-    cp "${cp_opts[@]}" "$iso" "$dest/$name"
+    copy_iso "$iso"
     copied=$((copied + 1))
   done
 
   sync
   echo "Done: $copied copied, $skipped skipped"
+}
+
+cmd_rm() {
+  local target="" names=() name
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -t|--target) target="${2:?$1 needs a value}"; shift ;;
+      -*) die "unknown option $1" ;;
+      *) names+=("$1") ;;
+    esac
+    shift
+  done
+  [[ ${#names[@]} -gt 0 ]] || die "usage: ventoy rm <iso>... [-t target] (paths as shown by: ventoy ls)"
+
+  # Validate every name before touching the stick
+  for name in "${names[@]}"; do
+    [[ "$name" != /* && "/$name/" != */../* ]] || die "'$name': use a path relative to the stick, as shown by: ventoy ls"
+    [[ "$(echo "$name" | tr '[:upper:]' '[:lower:]')" == *.iso ]] || die "'$name' is not an .iso file"
+  done
+
+  open_stick "$(disk_arg "$target")" rw
+
+  local missing=0
+  for name in "${names[@]}"; do
+    if [[ -f "$STICK_DIR/$name" ]]; then
+      remove_iso "$name"
+      echo "Removed $name"
+    else
+      echo "Not on the stick: $name" >&2
+      missing=1
+    fi
+  done
+
+  sync
+  [[ "$missing" -eq 0 ]] || exit 1
+}
+
+cmd_sync() {
+  local target="" dry_run=0 yes=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -n|--dry-run) dry_run=1 ;;
+      -y|--yes) yes=1 ;;
+      -*) die "unknown option $1" ;;
+      *) target="$1" ;;
+    esac
+    shift
+  done
+
+  # A missing dir (e.g. a broken symlink) must not be mistaken for "remove everything"
+  [[ -d "$VENTOY_ISO_DIR" ]] || die "ISO dir $VENTOY_ISO_DIR not found; refusing to sync (it would remove every ISO)"
+
+  if [[ "$dry_run" -eq 1 ]]; then
+    open_stick "$(disk_arg "$target")" ro
+  else
+    open_stick "$(disk_arg "$target")" rw
+  fi
+
+  local removes=() copies=() iso rel
+  while IFS= read -r -d '' iso; do
+    rel="${iso#"$STICK_DIR"/}"
+    [[ "$(stick_iso_status "$rel")" == "only on stick" ]] && removes+=("$rel")
+  done < <(stick_isos)
+
+  shopt -s nullglob
+  for iso in "$VENTOY_ISO_DIR"/*.iso; do
+    needs_copy "$iso" && copies+=("$iso")
+  done
+
+  if [[ ${#removes[@]} -eq 0 && ${#copies[@]} -eq 0 ]]; then
+    echo "Stick already matches $VENTOY_ISO_DIR"
+    return
+  fi
+
+  # ${arr[@]+"${arr[@]}"}: empty arrays are an unbound-variable error under set -u in bash 3.2
+  for rel in ${removes[@]+"${removes[@]}"}; do
+    printf "  remove  %-6s %s\n" "$(human_size "$STICK_DIR/$rel")" "$rel"
+  done
+  for iso in ${copies[@]+"${copies[@]}"}; do
+    printf "  copy    %-6s %s\n" "$(human_size "$iso")" "$(basename "$iso")"
+  done
+
+  [[ "$dry_run" -eq 0 ]] || return 0
+
+  if [[ "$yes" -eq 0 ]]; then
+    local answer
+    read -r -p "Apply? [y/N] " answer
+    [[ "$answer" == [yY] ]] || die "aborted"
+  fi
+
+  # Remove first to free space for the copies
+  for rel in ${removes[@]+"${removes[@]}"}; do
+    remove_iso "$rel"
+    echo "Removed $rel"
+  done
+  for iso in ${copies[@]+"${copies[@]}"}; do
+    echo "Copying $(basename "$iso")"
+    copy_iso "$iso"
+  done
+
+  sync
+  echo "Done: ${#removes[@]} removed, ${#copies[@]} copied"
 }
 
 cmd_info() {
@@ -290,6 +421,8 @@ case "${1:-}" in
   status)  shift; cmd_status "$@" ;;
   ls)      shift; cmd_ls "$@" ;;
   copy)    shift; cmd_copy "$@" ;;
+  rm)      shift; cmd_rm "$@" ;;
+  sync)    shift; cmd_sync "$@" ;;
   info)    cmd_info ;;
   help|-h|--help|"") usage ;;
   *) echo "ventoy: unknown command '$1'" >&2; usage >&2; exit 1 ;;
