@@ -2,10 +2,12 @@
 # ventoy — wrapper around the upstream Ventoy release (Ventoy2Disk.sh)
 set -euo pipefail
 
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 VENTOY_HOME="${VENTOY_HOME:-$XDG_DATA_HOME/ventoy/current}"
 VENTOY_ISO_DIR="${VENTOY_ISO_DIR:-$XDG_CACHE_HOME/ventoy/isos}"
+VENTOY_ISO_LIST="${VENTOY_ISO_LIST:-$XDG_CONFIG_HOME/ventoy/isos.yml}"
 VENTOY_MOUNT="$XDG_CACHE_HOME/ventoy/mnt"
 
 usage() {
@@ -25,6 +27,10 @@ Commands:
   sync [target] [-n] [-y]     Make the stick's ISOs match VENTOY_ISO_DIR exactly: copy missing or
                               changed ISOs, remove all others (an empty dir removes every ISO)
                                 -n  show what would change    -y  don't ask for confirmation
+  get [id...] [--all]         Download ISOs listed in VENTOY_ISO_LIST into VENTOY_ISO_DIR and verify
+      [--force] [--keep]      their checksums; without ids, list them. A newer version replaces the
+                              file `get` downloaded before for that id, unless --keep.
+                              --force downloads again even if the file is already there
   info                        Show paths, Ventoy version and the ISOs that would be copied
   help                        Show this help
 
@@ -36,6 +42,7 @@ Environment:
   VENTOY_DISK     Default disk, e.g. /dev/disk/by-id/usb-... (stable across replugs, unlike /dev/sdX)
   VENTOY_ISO_DIR  ISOs to copy (default ~/.cache/ventoy/isos)
                   to use pim's ISOs: ln -s ~/.cache/pim/isos ~/.cache/ventoy/isos
+  VENTOY_ISO_LIST ISO catalog for `get`, in pim's isos.yml format (default ~/.config/ventoy/isos.yml)
   VENTOY_HOME     Ventoy release directory (default ~/.local/share/ventoy/current)
 EOF
 }
@@ -382,6 +389,200 @@ cmd_sync() {
   echo "Done: ${#removes[@]} removed, ${#copies[@]} copied"
 }
 
+# --- get: download ISOs from VENTOY_ISO_LIST (same YAML format as pim's data/isos.yml) ---
+
+require_iso_list() {
+  command -v yq >/dev/null && yq --version 2>&1 | grep -q mikefarah \
+    || die "'get' needs yq (https://github.com/mikefarah/yq), which ppm installs"
+  [[ -f "$VENTOY_ISO_LIST" ]] || die "ISO list $VENTOY_ISO_LIST not found (reinstall with: ppm install ventoy)"
+}
+
+# A field of the entry with this id, or "" when unset
+iso_field() {
+  ID="$1" yq -r ".[] | select(.id == strenv(ID)) | .$2 // \"\"" "$VENTOY_ISO_LIST"
+}
+
+# File name in VENTOY_ISO_DIR; defaults to <id>.iso like pim
+iso_filename() {
+  local filename
+  filename="$(iso_field "$1" filename)"
+  echo "${filename:-$1.iso}"
+}
+
+sha256_file() {
+  if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | awk '{ print $1 }'
+}
+
+# Expected sha256 for an entry: `checksum` (optionally "sha256:"-prefixed), else the line for
+# its file name in `checksum_url`: "hash  file", "hash *file", BSD "SHA256 (file) = hash",
+# or a file that holds only the hash. Prints nothing when the entry has neither.
+expected_sha256() {
+  local id="$1" filename="$2" checksum url body
+  checksum="$(iso_field "$id" checksum)"
+  if [[ -n "$checksum" ]]; then
+    echo "${checksum#sha256:}" | tr '[:upper:]' '[:lower:]'
+    return
+  fi
+
+  url="$(iso_field "$id" checksum_url)"
+  [[ -n "$url" ]] || return 0
+  body="$(curl -fsSL "$url")" || die "$id: could not fetch checksums from $url"
+
+  printf '%s\n' "$body" | tr -d '\r' | awk -v file="$filename" '
+    function is_hash(s) { return length(s) == 64 && s !~ /[^0-9a-fA-F]/ }
+    is_hash($1) {
+      hashes++
+      name = $2; sub(/^\*/, "", name)
+      if (name == file) { print tolower($1); found = 1; exit }
+      if (NF == 1) bare = $1
+    }
+    index($0, "SHA256 (") == 1 {
+      rest = substr($0, 9); p = index(rest, ") = ")
+      if (p && substr(rest, 1, p - 1) == file) { print tolower(substr(rest, p + 4)); found = 1; exit }
+    }
+    END { if (!found && hashes == 1 && bare != "") print tolower(bare) }'
+}
+
+# Tab-separated "id  file" records of what `get` downloaded, so a newer version can replace it
+GET_STATE_NAME=".ventoy-get"
+
+state_filename() {
+  local state="$VENTOY_ISO_DIR/$GET_STATE_NAME"
+  [[ -f "$state" ]] || return 0
+  awk -F'\t' -v id="$1" '$1 == id { file = $2 } END { if (file != "") print file }' "$state"
+}
+
+record_state() {
+  local state="$VENTOY_ISO_DIR/$GET_STATE_NAME"
+  {
+    [[ -f "$state" ]] && awk -F'\t' -v id="$1" '$1 != id' "$state"
+    printf '%s\t%s\n' "$1" "$2"
+  } > "$state.tmp"
+  mv "$state.tmp" "$state"
+}
+
+get_one() {
+  local id="$1" force="$2" keep="$3"
+  local url filename dest previous expected actual code
+
+  url="$(iso_field "$id" url)"
+  [[ -n "$url" ]] || die "$id: no url in $VENTOY_ISO_LIST"
+  filename="$(iso_filename "$id")"
+  dest="$VENTOY_ISO_DIR/$filename"
+  previous="$(state_filename "$id")"
+
+  if [[ -f "$dest" && "$force" -eq 0 ]]; then
+    echo "$id: already have $filename (--force to download again)"
+  else
+    expected="$(expected_sha256 "$id" "$filename")"
+    [[ "$force" -eq 1 ]] && rm -f "$dest.part"
+
+    echo "$id: downloading $filename"
+    # -C -: resume an interrupted download from the .part file
+    if ! code="$(curl -fL --retry 3 -C - -# -o "$dest.part" -w '%{http_code}' "$url")"; then
+      case "$code" in
+        416)
+          # The .part is already complete; its checksum decides below
+          [[ -n "$expected" ]] || die "$id: $filename.part looks complete but has no checksum to verify it; delete it and retry"
+          ;;
+        200|206)
+          # The server can't resume: start over
+          rm -f "$dest.part"
+          code="$(curl -fL --retry 3 -# -o "$dest.part" -w '%{http_code}' "$url")" \
+            || die "$id: download failed (HTTP ${code:-none}) from $url"
+          ;;
+        404) die "$id: $url not found (HTTP 404); update the url in $VENTOY_ISO_LIST" ;;
+        *) die "$id: download failed (HTTP ${code:-none}) from $url" ;;
+      esac
+    fi
+
+    if [[ -n "$expected" ]]; then
+      actual="$(sha256_file "$dest.part")"
+      if [[ "$actual" != "$expected" ]]; then
+        rm -f "$dest.part"
+        die "$id: checksum mismatch for $filename (expected $expected, got $actual)"
+      fi
+      echo "$id: checksum OK"
+    else
+      echo "$id: WARNING: no checksum or checksum_url in $VENTOY_ISO_LIST; not verified" >&2
+    fi
+
+    mv "$dest.part" "$dest"
+    record_state "$id" "$filename"
+  fi
+
+  # Replace the older file `get` downloaded for this id
+  if [[ -n "$previous" && "$previous" != "$filename" && -f "$VENTOY_ISO_DIR/$previous" ]]; then
+    if [[ "$keep" -eq 1 ]]; then
+      echo "$id: keeping older $previous (--keep)"
+    else
+      rm -f "$VENTOY_ISO_DIR/$previous"
+      echo "$id: removed older $previous"
+    fi
+  fi
+}
+
+cmd_get() {
+  require_iso_list
+  local force=0 keep=0 all=0 ids=() id known
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -f|--force) force=1 ;;
+      -k|--keep) keep=1 ;;
+      -a|--all) all=1 ;;
+      -*) die "unknown option $1" ;;
+      *) ids+=("$1") ;;
+    esac
+    shift
+  done
+
+  known="$(yq -r '.[].id' "$VENTOY_ISO_LIST")"
+
+  if [[ "$all" -eq 1 ]]; then
+    ids=()
+    while IFS= read -r id; do [[ -n "$id" ]] && ids+=("$id"); done <<< "$known"
+  fi
+
+  if [[ ${#ids[@]} -eq 0 ]]; then
+    local filename
+    printf "%-10s %-11s %s\n" ID STATUS FILE
+    while IFS= read -r id; do
+      [[ -n "$id" ]] || continue
+      filename="$(iso_filename "$id")"
+      if [[ -f "$VENTOY_ISO_DIR/$filename" ]]; then
+        printf "%-10s %-11s %s\n" "$id" "downloaded" "$filename"
+      else
+        printf "%-10s %-11s %s\n" "$id" "missing" "$filename"
+      fi
+    done <<< "$known"
+    echo
+    echo "From $VENTOY_ISO_LIST; download with: ventoy get <id>... (or --all)"
+    return
+  fi
+
+  # Check every id before downloading anything
+  for id in "${ids[@]}"; do
+    printf '%s\n' "$known" | grep -qxF -- "$id" || die "unknown ISO '$id' (list them with: ventoy get)"
+  done
+
+  mkdir -p "$VENTOY_ISO_DIR" || die "cannot create ISO dir $VENTOY_ISO_DIR"
+
+  if [[ ${#ids[@]} -eq 1 ]]; then
+    get_one "${ids[0]}" "$force" "$keep"
+    return
+  fi
+
+  # Several ids: one child process each, so a stale URL doesn't stop the rest
+  local flags=() failed=()
+  [[ "$force" -eq 1 ]] && flags+=(--force)
+  [[ "$keep" -eq 1 ]] && flags+=(--keep)
+  for id in "${ids[@]}"; do
+    "$BASH" "$0" get "$id" ${flags[@]+"${flags[@]}"} || failed+=("$id")
+  done
+
+  [[ ${#failed[@]} -eq 0 ]] || die "failed: ${failed[*]}"
+}
+
 cmd_info() {
   echo "Ventoy home: $VENTOY_HOME"
   if [[ -f "$VENTOY_HOME/ventoy/version" ]]; then
@@ -403,6 +604,7 @@ cmd_info() {
   else
     echo "ISO dir:     $VENTOY_ISO_DIR"
   fi
+  echo "ISO list:    $VENTOY_ISO_LIST"
 
   shopt -s nullglob
   local isos=("$VENTOY_ISO_DIR"/*.iso)
@@ -423,6 +625,7 @@ case "${1:-}" in
   copy)    shift; cmd_copy "$@" ;;
   rm)      shift; cmd_rm "$@" ;;
   sync)    shift; cmd_sync "$@" ;;
+  get)     shift; cmd_get "$@" ;;
   info)    cmd_info ;;
   help|-h|--help|"") usage ;;
   *) echo "ventoy: unknown command '$1'" >&2; usage >&2; exit 1 ;;

@@ -1,0 +1,68 @@
+# Ventoy ISO catalog for `ventoy get <id>` (same format as pim's data/isos.yml)
+#
+#   id            name to use with `ventoy get`
+#   name          description
+#   url           download URL
+#   filename      file name in VENTOY_ISO_DIR (default: <id>.iso, as in pim)
+#   checksum      sha256:<hex>                      -- or --
+#   checksum_url  checksum file that lists filename (sha256sum style, BSD "SHA256 (file) = hash", or a bare hash)
+#   architecture  informational
+#
+# Versioned URLs stop working when a newer release ships: bump the version here when `ventoy get` reports a 404.
+---
+- id: debian
+  name: Debian 13.7.0 amd64 netinst
+  url: https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-13.7.0-amd64-netinst.iso
+  checksum_url: https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/SHA256SUMS
+  filename: debian-13.7.0-amd64-netinst.iso
+  architecture: amd64
+
+- id: ubuntu
+  name: Ubuntu 26.04.1 LTS live server amd64
+  url: https://releases.ubuntu.com/26.04/ubuntu-26.04.1-live-server-amd64.iso
+  checksum_url: https://releases.ubuntu.com/26.04/SHA256SUMS
+  filename: ubuntu-26.04.1-live-server-amd64.iso
+  architecture: amd64
+
+# Arch keeps this file name for every monthly release: refresh with `ventoy get arch --force`
+- id: arch
+  name: Arch Linux (latest monthly) x86_64
+  url: https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso
+  checksum_url: https://geo.mirror.pkgbuild.com/iso/latest/sha256sums.txt
+  filename: archlinux-x86_64.iso
+  architecture: amd64
+
+- id: alpine
+  name: Alpine Linux 3.24.1 standard x86_64
+  url: https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/x86_64/alpine-standard-3.24.1-x86_64.iso
+  checksum_url: https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/x86_64/alpine-standard-3.24.1-x86_64.iso.sha256
+  filename: alpine-standard-3.24.1-x86_64.iso
+  architecture: amd64
+
+- id: truenas
+  name: TrueNAS Community Edition 25.10.7 (Goldeye)
+  url: https://download.sys.truenas.net/TrueNAS-SCALE-Goldeye/25.10.7/TrueNAS-SCALE-25.10.7.iso
+  checksum_url: https://download.sys.truenas.net/TrueNAS-SCALE-Goldeye/25.10.7/TrueNAS-SCALE-25.10.7.iso.sha256
+  filename: TrueNAS-SCALE-25.10.7.iso
+  architecture: amd64
+
+- id: mint
+  name: Linux Mint 22.3 Cinnamon 64-bit
+  url: https://mirrors.edge.kernel.org/linuxmint/stable/22.3/linuxmint-22.3-cinnamon-64bit.iso
+  checksum_url: https://mirrors.edge.kernel.org/linuxmint/stable/22.3/sha256sum.txt
+  filename: linuxmint-22.3-cinnamon-64bit.iso
+  architecture: amd64
+
+- id: fedora
+  name: Fedora Workstation 44 Live x86_64
+  url: https://download.fedoraproject.org/pub/fedora/linux/releases/44/Workstation/x86_64/iso/Fedora-Workstation-Live-44-1.7.x86_64.iso
+  checksum_url: https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Workstation/x86_64/iso/Fedora-Workstation-44-1.7-x86_64-CHECKSUM
+  filename: Fedora-Workstation-Live-44-1.7.x86_64.iso
+  architecture: amd64
+
+- id: proxmox
+  name: Proxmox VE 9.2-1
+  url: https://enterprise.proxmox.com/iso/proxmox-ve_9.2-1.iso
+  checksum_url: https://enterprise.proxmox.com/iso/SHA256SUMS
+  filename: proxmox-ve_9.2-1.iso
+  architecture: amd64
