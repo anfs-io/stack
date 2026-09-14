@@ -14,18 +14,21 @@ Usage: ventoy <command> [args]
 
 Commands:
   list                        List USB disks (macOS: with USB IDs and bus:addr for QEMU passthrough)
-  prepare <disk> [-f] [opts]  Install Ventoy to a USB disk, e.g. /dev/sdb (Linux; ERASES the disk)
+  prepare [disk] [-f] [opts]  Install Ventoy to a USB disk, e.g. /dev/sdb (Linux; ERASES the disk)
                                 -f    reinstall even if Ventoy is already on the disk
                                 opts  passed to Ventoy2Disk.sh, e.g. -g (GPT), -L LABEL, -r MiB
-  update <disk>               Upgrade Ventoy on a disk, keeping its ISOs (Linux)
-  status <disk>               Show Ventoy info for a disk (Linux)
-  copy <target>               Copy ISOs to a Ventoy stick. Target is the stick's disk or data
-                              partition (Linux; mounted for you) or a mounted directory
-                              (default on macOS: /Volumes/Ventoy)
+  update [disk]               Upgrade Ventoy on a disk, keeping its ISOs (Linux)
+  status [disk]               Show Ventoy info for a disk (Linux)
+  ls [target]                 List ISOs on a Ventoy stick and whether they match VENTOY_ISO_DIR
+  copy [target]               Copy ISOs from VENTOY_ISO_DIR to a Ventoy stick
   info                        Show paths, Ventoy version and the ISOs that would be copied
   help                        Show this help
 
+  A target is the stick's disk or data partition (Linux; mounted for you) or a mounted
+  directory (default on macOS: /Volumes/Ventoy). Commands without a disk use VENTOY_DISK.
+
 Environment:
+  VENTOY_DISK     Default disk, e.g. /dev/disk/by-id/usb-... (stable across replugs, unlike /dev/sdX)
   VENTOY_ISO_DIR  ISOs to copy (default ~/.cache/ventoy/isos)
                   to use pim's ISOs: ln -s ~/.cache/pim/isos ~/.cache/ventoy/isos
   VENTOY_HOME     Ventoy release directory (default ~/.local/share/ventoy/current)
@@ -45,6 +48,13 @@ require_linux() {
   is_linux || die "'$1' needs Linux (Ventoy2Disk.sh is Linux-only); use a Linux VM with the USB stick passed through"
 }
 
+# The argument, else $VENTOY_DISK; symlinks such as /dev/disk/by-id/... resolve to the real device
+disk_arg() {
+  local disk="${1:-${VENTOY_DISK:-}}"
+  [[ -n "$disk" && -L "$disk" ]] && disk="$(readlink -f "$disk")"
+  echo "$disk"
+}
+
 # Run Ventoy2Disk.sh from its own directory, as it expects
 ventoy2disk() {
   [[ -f "$VENTOY_HOME/Ventoy2Disk.sh" ]] || die "Ventoy not found in $VENTOY_HOME (reinstall with: ppm install ventoy)"
@@ -54,7 +64,7 @@ ventoy2disk() {
 # Whole, unmounted disk only
 check_disk() {
   local disk="$1"
-  [[ -b "$disk" ]] || die "$disk is not a block device (list disks with: lsblk -d -o NAME,SIZE,TRAN,MODEL)"
+  [[ -b "$disk" ]] || die "$disk is not a block device (list disks with: ventoy list)"
   [[ "$(lsblk -dno TYPE "$disk")" == "disk" ]] || die "$disk is a partition; pass the whole disk (e.g. /dev/sdb, not /dev/sdb1)"
   if lsblk -nro MOUNTPOINT "$disk" | grep -q .; then
     lsblk -o NAME,SIZE,MOUNTPOINT "$disk" >&2
@@ -70,6 +80,37 @@ confirm_erase() {
   [[ "$answer" == "$disk" ]] || die "aborted"
 }
 
+# Sets STICK_DIR to the stick's ISO directory. A directory is used as-is; a disk or partition
+# (Linux) has Ventoy's data partition mounted ("ro" or "rw") and unmounted again on exit.
+open_stick() {
+  local target="$1" mode="$2"
+
+  if [[ -z "$target" ]]; then
+    is_linux && die "no disk given (pass one, or set VENTOY_DISK)"
+    target="/Volumes/Ventoy"
+  fi
+
+  if [[ -d "$target" ]]; then
+    STICK_DIR="$target"
+    return
+  fi
+  is_linux && [[ -b "$target" ]] || die "$target is not a directory or block device"
+
+  local part="$target"
+  if [[ "$(lsblk -dno TYPE "$target")" == "disk" ]]; then
+    # Ventoy's ISO (exFAT) partition is the first one
+    part="$(lsblk -lnpo NAME,TYPE "$target" | awk '$2 == "part" { print $1; exit }')"
+    [[ -n "$part" ]] || die "$target has no partitions; run: ventoy prepare $target"
+  fi
+
+  STICK_DIR="$VENTOY_MOUNT"
+  mkdir -p "$STICK_DIR"
+  echo "Mounting $part on $STICK_DIR ($mode)" >&2
+  sudo mount -o "$mode,uid=$(id -u),gid=$(id -g)" "$part" "$STICK_DIR" \
+    || die "could not mount $part; if it is already mounted, pass its mount directory instead"
+  trap "sync; sudo umount '$STICK_DIR' && echo 'Unmounted $part' >&2" EXIT
+}
+
 cmd_prepare() {
   require_linux prepare
   local disk="" mode="-i"
@@ -83,7 +124,8 @@ cmd_prepare() {
     esac
     shift
   done
-  [[ -n "$disk" ]] || die "usage: ventoy prepare <disk> [-f] [opts]"
+  disk="$(disk_arg "$disk")"
+  [[ -n "$disk" ]] || die "usage: ventoy prepare <disk> [-f] [opts] (or set VENTOY_DISK)"
 
   check_disk "$disk"
   confirm_erase "$disk"
@@ -93,16 +135,20 @@ cmd_prepare() {
 
 cmd_update() {
   require_linux update
-  [[ -n "${1:-}" ]] || die "usage: ventoy update <disk>"
-  check_disk "$1"
-  printf 'y\n' | ventoy2disk -u "$1"
+  local disk
+  disk="$(disk_arg "${1:-}")"
+  [[ -n "$disk" ]] || die "usage: ventoy update <disk> (or set VENTOY_DISK)"
+  check_disk "$disk"
+  printf 'y\n' | ventoy2disk -u "$disk"
 }
 
 cmd_status() {
   require_linux status
-  [[ -n "${1:-}" ]] || die "usage: ventoy status <disk>"
-  [[ -b "$1" ]] || die "$1 is not a block device"
-  ventoy2disk -l "$1"
+  local disk
+  disk="$(disk_arg "${1:-}")"
+  [[ -n "$disk" ]] || die "usage: ventoy status <disk> (or set VENTOY_DISK)"
+  [[ -b "$disk" ]] || die "$disk is not a block device"
+  ventoy2disk -l "$disk"
 }
 
 cmd_list() {
@@ -138,37 +184,51 @@ file_size() {
   wc -c < "$1" | tr -d ' '
 }
 
-cmd_copy() {
-  local target="${1:-}" dest
+human_size() {
+  ls -lhL "$1" | awk '{ print $5 }'
+}
 
+cmd_ls() {
+  open_stick "$(disk_arg "${1:-}")" ro
+
+  local rel iso name status found=0
+  printf "%-6s %-14s %s\n" SIZE STATUS ISO
+
+  # Everything on the stick (Ventoy also boots ISOs in subdirectories); skip macOS ._ files
+  while IFS= read -r -d '' iso; do
+    found=1
+    rel="${iso#"$STICK_DIR"/}"
+    name="$(basename "$rel")"
+    if [[ "$rel" == */* || ! -f "$VENTOY_ISO_DIR/$name" ]]; then
+      status="only on stick"
+    elif [[ "$(file_size "$iso")" == "$(file_size "$VENTOY_ISO_DIR/$name")" ]]; then
+      status="on stick"
+    else
+      status="differs"
+    fi
+    printf "%-6s %-14s %s\n" "$(human_size "$iso")" "$status" "$rel"
+  done < <(find "$STICK_DIR" -type f -iname '*.iso' ! -name '._*' -print0 | sort -z)
+
+  # ISOs `ventoy copy` would still add
+  shopt -s nullglob
+  for iso in "$VENTOY_ISO_DIR"/*.iso; do
+    name="$(basename "$iso")"
+    [[ -f "$STICK_DIR/$name" ]] && continue
+    found=1
+    printf "%-6s %-14s %s\n" "$(human_size "$iso")" "not copied" "$name"
+  done
+
+  [[ "$found" -eq 1 ]] || echo "(no ISOs on the stick or in $VENTOY_ISO_DIR)"
+}
+
+cmd_copy() {
   [[ -d "$VENTOY_ISO_DIR" ]] || die "ISO dir $VENTOY_ISO_DIR not found (mkdir it, or: ln -s ~/.cache/pim/isos $VENTOY_ISO_DIR)"
   shopt -s nullglob
   local isos=("$VENTOY_ISO_DIR"/*.iso)
   [[ ${#isos[@]} -gt 0 ]] || die "no ISOs in $VENTOY_ISO_DIR"
 
-  if [[ -z "$target" ]]; then
-    is_linux && die "usage: ventoy copy <disk|partition|directory>"
-    target="/Volumes/Ventoy"
-  fi
-
-  if [[ -d "$target" ]]; then
-    dest="$target"
-  elif is_linux && [[ -b "$target" ]]; then
-    local part="$target"
-    if [[ "$(lsblk -dno TYPE "$target")" == "disk" ]]; then
-      # Ventoy's ISO (exFAT) partition is the first one
-      part="$(lsblk -lnpo NAME,TYPE "$target" | awk '$2 == "part" { print $1; exit }')"
-      [[ -n "$part" ]] || die "$target has no partitions; run: ventoy prepare $target"
-    fi
-    dest="$VENTOY_MOUNT"
-    mkdir -p "$dest"
-    echo "Mounting $part on $dest"
-    sudo mount -o "uid=$(id -u),gid=$(id -g)" "$part" "$dest" \
-      || die "could not mount $part; if it is already mounted, pass its mount directory instead"
-    trap "sync; sudo umount '$dest' && echo 'Unmounted $part'" EXIT
-  else
-    die "$target is not a directory or block device"
-  fi
+  open_stick "$(disk_arg "${1:-}")" rw
+  local dest="$STICK_DIR"
 
   # -L: follow symlinked ISOs; -X (macOS): skip xattrs so no ._ files land on the exFAT stick
   local cp_opts=(-L)
@@ -201,6 +261,12 @@ cmd_info() {
     echo "Version:     not installed (prepare/update/status need Linux)"
   fi
 
+  if [[ -n "${VENTOY_DISK:-}" ]]; then
+    echo "Disk:        $VENTOY_DISK$([[ -L "$VENTOY_DISK" ]] && echo " -> $(readlink -f "$VENTOY_DISK")")"
+  else
+    echo "Disk:        (VENTOY_DISK not set)"
+  fi
+
   if [[ -L "$VENTOY_ISO_DIR" ]]; then
     echo "ISO dir:     $VENTOY_ISO_DIR -> $(readlink "$VENTOY_ISO_DIR")"
   else
@@ -222,6 +288,7 @@ case "${1:-}" in
   prepare) shift; cmd_prepare "$@" ;;
   update)  shift; cmd_update "$@" ;;
   status)  shift; cmd_status "$@" ;;
+  ls)      shift; cmd_ls "$@" ;;
   copy)    shift; cmd_copy "$@" ;;
   info)    cmd_info ;;
   help|-h|--help|"") usage ;;
