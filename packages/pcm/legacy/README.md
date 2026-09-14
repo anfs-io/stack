@@ -1,5 +1,10 @@
 # psm legacy: ideas from the ppm services backend
 
+> **Note for Claude:** psm (Podman Service Manager) has been renamed to **pcm (Personal
+> Container Manager)**. The package, binary, `pcm.zsh`, `~/.config/pcm`, the `x-pcm` compose key
+> and the `PCM_*` env vars all use the new name. This folder deliberately still says psm: read
+> every `psm`/`PSM_` below as `pcm`/`PCM_`, and port into `home/.local/bin/pcm`.
+
 These files are verbatim copies of `ppm/lib/services/*.sh` from the ppm repo. That code was
 psm's first design, which ran on top of ppm (`PPM_ASSET_DIR=services`). They are kept here
 so the ideas survive when the psm code is deleted from ppm.

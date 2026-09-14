@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# provision — psm dependency hook for postgres
+# provision — pcm dependency hook for postgres
 #
-# Run by psm (from this directory) once postgres is healthy, for each service
-# that declares it in x-psm.depends_on:
+# Run by pcm (from this directory) once postgres is healthy, for each service
+# that declares it in x-pcm.depends_on:
 #
 #   provision [database=<name>]
 #
 # Creates the database if it doesn't exist (default: POSTGRES_DB) and prints
-# connection details as KEY=VALUE. psm exports each to the dependent service's
-# compose as PSM_POSTGRES_<KEY>: URL, HOST, PORT, USER, PASSWORD, DATABASE.
+# connection details as KEY=VALUE. pcm exports each to the dependent service's
+# compose as PCM_POSTGRES_<KEY>: URL, HOST, PORT, USER, PASSWORD, DATABASE.
 #
-# psm runs it under varlock, which sets the POSTGRES_* vars from .env.schema
+# pcm runs it under varlock, which sets the POSTGRES_* vars from .env.schema
 # (overridden by .env and the environment).
 set -euo pipefail
 
-: "${POSTGRES_PASSWORD:?not set; run via psm (varlock resolves it from .env.schema)}"
-user="${POSTGRES_USER:?not set; run via psm (varlock resolves it from .env.schema)}"
-admin_db="${POSTGRES_DB:?not set; run via psm (varlock resolves it from .env.schema)}"
+: "${POSTGRES_PASSWORD:?not set; run via pcm (varlock resolves it from .env.schema)}"
+user="${POSTGRES_USER:?not set; run via pcm (varlock resolves it from .env.schema)}"
+admin_db="${POSTGRES_DB:?not set; run via pcm (varlock resolves it from .env.schema)}"
 database="$admin_db"
 
 for arg in "$@"; do
@@ -32,7 +32,7 @@ if [[ ! "$database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
 fi
 
 container=$(podman ps \
-  --filter "label=com.docker.compose.project=${PSM_PROJECT:-postgres}" \
+  --filter "label=com.docker.compose.project=${PCM_PROJECT:-postgres}" \
   --filter "label=com.docker.compose.service=postgres" \
   --format '{{.Names}}' | head -n1)
 if [[ -z "$container" ]]; then
@@ -44,7 +44,7 @@ exists=$(podman exec "$container" psql -U "$user" -d "$admin_db" -tAc \
   "SELECT 1 FROM pg_database WHERE datname = '$database'")
 if [[ "$exists" != "1" ]]; then
   podman exec "$container" createdb -U "$user" "$database" >&2
-  echo "provision: created database '$database' for ${PSM_DEPENDENT:-unknown}" >&2
+  echo "provision: created database '$database' for ${PCM_DEPENDENT:-unknown}" >&2
 fi
 
 urlencode() {

@@ -12,7 +12,7 @@ services:
     volumes:
       # Mount the image's declared VOLUME itself so podman doesn't add an anonymous
       # volume; the cluster lives in the pgdata subdirectory (PGDATA)
-      - ${PSM_VOLUMES_HOME}/postgres:/var/lib/postgresql/data
+      - ${PCM_VOLUMES_HOME}/postgres:/var/lib/postgresql/data
       # - ./initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
