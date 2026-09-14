@@ -9,18 +9,14 @@
 # Creates the database if it doesn't exist (default: POSTGRES_DB) and prints
 # connection details as KEY=VALUE. psm exports each to the dependent service's
 # compose as PSM_POSTGRES_<KEY>: URL, HOST, PORT, USER, PASSWORD, DATABASE.
+#
+# psm runs it under varlock, which sets the POSTGRES_* vars from .env.schema
+# (overridden by .env and the environment).
 set -euo pipefail
 
-if [[ -f .env ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  . ./.env
-  set +a
-fi
-
-: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in $PWD/.env}"
-user="${POSTGRES_USER:-postgres}"
-admin_db="${POSTGRES_DB:-postgres}"
+: "${POSTGRES_PASSWORD:?not set; run via psm (varlock resolves it from .env.schema)}"
+user="${POSTGRES_USER:?not set; run via psm (varlock resolves it from .env.schema)}"
+admin_db="${POSTGRES_DB:?not set; run via psm (varlock resolves it from .env.schema)}"
 database="$admin_db"
 
 for arg in "$@"; do

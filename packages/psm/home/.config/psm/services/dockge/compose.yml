@@ -2,7 +2,7 @@
 #
 # psm service: `psm up dockge`. Dockge manages its own stacks in
 # ${PSM_VOLUMES_HOME}/dockge/stacks; those are not psm services.
-# All tunables live in .env.schema.
+# Every variable, with its default, lives in .env.schema.
 name: dockge
 
 x-psm:
@@ -12,10 +12,10 @@ x-psm:
 
 services:
   dockge:
-    image: ${DOCKGE_IMAGE:-docker.io/louislam/dockge}:${DOCKGE_TAG:-1}
+    image: ${DOCKGE_IMAGE}:${DOCKGE_TAG}
     restart: unless-stopped
     ports:
-      - "${DOCKGE_BIND:-127.0.0.1}:${DOCKGE_PORT:-5001}:5001"
+      - "${DOCKGE_BIND}:${DOCKGE_PORT}:5001"
     volumes:
       - ${PSM_PODMAN_SOCKET}:/var/run/docker.sock
       - ${PSM_VOLUMES_HOME}/dockge/data:/app/data

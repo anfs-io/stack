@@ -2,7 +2,7 @@
 #
 # psm service: uses the shared psm postgres. Start with `psm up glitchtip`, which
 # starts postgres if needed, creates the `glitchtip` database and injects
-# PSM_POSTGRES_URL. All tunables live in .env.schema (the canonical var docs).
+# PSM_POSTGRES_URL. Every variable, with its default, lives in .env.schema.
 # Secrets ship with an insecure dev-only default — override them for anything shared.
 name: glitchtip
 
@@ -13,26 +13,26 @@ x-psm:
 
 services:
   valkey:
-    image: ${VALKEY_IMAGE:-docker.io/valkey/valkey}:${VALKEY_TAG:-9}
+    image: ${VALKEY_IMAGE}:${VALKEY_TAG}
     restart: unless-stopped
 
   web:
-    image: ${GLITCHTIP_IMAGE:-docker.io/glitchtip/glitchtip}:${GLITCHTIP_TAG:-6}
+    image: ${GLITCHTIP_IMAGE}:${GLITCHTIP_TAG}
     depends_on:
       - valkey
     ports:
-      - "${GLITCHTIP_PORT:-8000}:8000"
+      - "${GLITCHTIP_PORT}:8000"
     environment:
-      DATABASE_URL: ${PSM_POSTGRES_URL:-}
-      VALKEY_URL: ${GLITCHTIP_VALKEY_URL:-redis://valkey:6379}
-      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:-dev-insecure-change-me}
-      EMAIL_URL: ${GLITCHTIP_EMAIL_URL:-consolemail://}
-      GLITCHTIP_DOMAIN: ${GLITCHTIP_DOMAIN:-http://localhost:8000}
-      DEFAULT_FROM_EMAIL: ${GLITCHTIP_DEFAULT_FROM_EMAIL:-glitchtip@localhost}
-      ENABLE_ADMIN: ${GLITCHTIP_ENABLE_ADMIN:-False}
-      ENABLE_OPENAPI: ${GLITCHTIP_ENABLE_OPENAPI:-False}
-      GLITCHTIP_ENABLE_MCP: ${GLITCHTIP_ENABLE_MCP:-False}
-      GLITCHTIP_ENABLE_DUCKDB: ${GLITCHTIP_ENABLE_DUCKDB:-False}
+      DATABASE_URL: ${PSM_POSTGRES_URL}
+      VALKEY_URL: ${GLITCHTIP_VALKEY_URL}
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY}
+      EMAIL_URL: ${GLITCHTIP_EMAIL_URL}
+      GLITCHTIP_DOMAIN: ${GLITCHTIP_DOMAIN}
+      DEFAULT_FROM_EMAIL: ${GLITCHTIP_DEFAULT_FROM_EMAIL}
+      ENABLE_ADMIN: ${GLITCHTIP_ENABLE_ADMIN}
+      ENABLE_OPENAPI: ${GLITCHTIP_ENABLE_OPENAPI}
+      GLITCHTIP_ENABLE_MCP: ${GLITCHTIP_ENABLE_MCP}
+      GLITCHTIP_ENABLE_DUCKDB: ${GLITCHTIP_ENABLE_DUCKDB}
       SERVER_ROLE: all_in_one
     restart: unless-stopped
     volumes:

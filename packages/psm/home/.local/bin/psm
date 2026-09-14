@@ -11,6 +11,10 @@ export PSM_CONFIG_HOME PSM_SERVICES_HOME PSM_DATA_HOME PSM_VOLUMES_HOME
 # Compose runner: "podman compose" (default) or "podman-compose"
 read -ra RUNNER <<< "${PSM_COMPOSE:-podman compose}"
 
+# varlock resolves each service's env; don't send usage analytics from psm runs
+: "${VARLOCK_TELEMETRY_DISABLED:=1}"
+export VARLOCK_TELEMETRY_DISABLED
+
 usage() {
   cat <<'EOF'
 Usage: psm <command> [args]
@@ -44,8 +48,18 @@ the service to the shared network and runs the dependency's `provision` hook
 prints is exported to the service's compose as PSM_<DEP>_<KEY>, e.g.
 PSM_POSTGRES_URL. A value already set in the environment wins.
 
+Configuration: a service's .env.schema declares every variable its compose.yml
+uses, with types and defaults. psm runs compose and provision hooks through
+`varlock run` from the service directory, so values resolve as
+environment > .env > .env.schema defaults, and invalid values stop the command.
+No .env is shipped; stow your own next to the schema to override. If fnox is
+installed and a fnox.toml is in the service directory or $PSM_SERVICES_HOME,
+the call is wrapped in `fnox exec` so its secrets are in the environment first.
+
 Validation:
-  errors    volumes that aren't bind mounts under ${PSM_VOLUMES_HOME}/<service>/
+  errors    env that doesn't pass the service's .env.schema (or no schema when
+            compose.yml uses variables)
+            volumes that aren't bind mounts under ${PSM_VOLUMES_HOME}/<service>/
             (read-only :ro mounts from the service directory are allowed);
             unknown or cyclic x-psm.depends_on
   warnings  image-declared VOLUMEs with nothing mounted there (pulled images
@@ -155,6 +169,57 @@ compose_flags() {
   FLAGS+=(-f "$override")
 }
 
+# True if a fnox config applies to service directory $1
+uses_fnox() {
+  local dir name
+  for dir in "$1" "$PSM_SERVICES_HOME"; do
+    for name in fnox.toml .fnox.toml fnox.local.toml; do
+      [[ -f "$dir/$name" ]] && return 0
+    done
+  done
+  return 1
+}
+
+# Run a command from service $1's directory with PROVISIONED exported and, when
+# fnox is installed and configured, fnox secrets loaded
+in_service_dir() {
+  local dir="$PSM_SERVICES_HOME/$1"
+  shift
+  (
+    cd "$dir"
+    [[ ${#PROVISIONED[@]} -eq 0 ]] || export "${PROVISIONED[@]}"
+    if command -v fnox >/dev/null 2>&1 && uses_fnox "$dir"; then
+      exec fnox exec -- "$@"
+    fi
+    exec "$@"
+  )
+}
+
+# Run a command for service $1 with its env resolved and validated by varlock.
+# varlock refuses a directory with nothing to load, so a service without an
+# .env.schema (one whose compose.yml uses no variables) runs the command as is.
+# Extra `varlock run` options may come before a `--`.
+service_run() {
+  local service="$1"
+  shift
+  local -a opts=()
+  while [[ $# -gt 0 && "$1" != "--" ]]; do opts+=("$1"); shift; done
+  [[ "${1:-}" == "--" ]] && shift
+
+  if [[ -f "$PSM_SERVICES_HOME/$service/.env.schema" ]]; then
+    in_service_dir "$service" varlock run --inject vars ${opts[@]+"${opts[@]}"} -- "$@"
+  else
+    in_service_dir "$service" "$@"
+  fi
+}
+
+# Run compose for service $1
+compose_run() {
+  local service="$1"
+  shift
+  service_run "$service" -- "${RUNNER[@]}" "$@"
+}
+
 # Wait until every container in a service's project that has a healthcheck is healthy
 wait_healthy() {
   local service="$1" deadline=$((SECONDS + PSM_HEALTH_TIMEOUT))
@@ -193,9 +258,13 @@ provision() {
     [[ -n "$line" ]] && settings+=("$line")
   done < <(dep_settings "$service" "$dep")
 
+  # The hook gets the dependency's resolved env; its captured output carries the
+  # connection details, so it must not be redacted
   local output
-  output=$(cd "$PSM_SERVICES_HOME/$dep" && PSM_SERVICE="$dep" PSM_PROJECT="$(project_name "$dep")" PSM_DEPENDENT="$service" \
-    "$hook" ${settings[@]+"${settings[@]}"}) || {
+  output=$(
+    export PSM_SERVICE="$dep" PSM_PROJECT="$(project_name "$dep")" PSM_DEPENDENT="$service"
+    service_run "$dep" --no-redact-stdout -- "$hook" ${settings[@]+"${settings[@]}"}
+  ) || {
     echo "psm: provisioning $dep for $service failed" >&2
     return 1
   }
@@ -237,7 +306,7 @@ start_deps() {
       echo "psm: starting $dep (required by $service)" >&2
       compose_flags "$dep" || return 1
       ensure_mount_dirs "$dep"
-      env ${PROVISIONED[@]+"${PROVISIONED[@]}"} "${RUNNER[@]}" "${FLAGS[@]}" up -d || return 1
+      compose_run "$dep" "${FLAGS[@]}" up -d || return 1
     fi
 
     wait_healthy "$dep" || return 1
@@ -251,15 +320,24 @@ start_deps() {
 
 # --- validate ----------------------------------------------------------------
 
-# Value of variable $2 for service $1: the environment first, then the service's .env
+# Cache service $1's env as resolved by varlock (KEY=value lines); fails if the
+# env doesn't pass its .env.schema. Call from the main shell: $(...) loses the cache.
+load_env() {
+  local var="RESOLVED_ENV_${1//[^A-Za-z0-9_]/_}" out
+  [[ -z "${!var+x}" ]] || return 0
+  out=$(in_service_dir "$1" varlock load --format env 2>/dev/null) || return 1
+  printf -v "$var" '%s' "$out"
+}
+
+# Value of variable $2 for service $1: the environment first, then the env
+# load_env resolved (.env over .env.schema defaults)
 env_value() {
-  local name="$2" envfile="$PSM_SERVICES_HOME/$1/.env" line
+  local name="$2" var="RESOLVED_ENV_${1//[^A-Za-z0-9_]/_}" line
   if [[ -n "${!name+x}" ]]; then
     echo "${!name}"
     return 0
   fi
-  [[ -f "$envfile" ]] || return 0
-  line=$(grep -E "^${name}=" "$envfile" | tail -n1) || true
+  line=$(grep -E "^${name}=" <<< "${!var-}" | tail -n1) || true
   line="${line#*=}"
   line="${line%\"}"; line="${line#\"}"
   line="${line%\'}"; line="${line#\'}"
@@ -360,6 +438,26 @@ v_error() {
 
 v_warn() {
   echo "psm: $1: warning: $2" >&2
+}
+
+# The service's env must resolve and pass its .env.schema
+check_env() {
+  local svc="$1"
+  if [[ ! -f "$PSM_SERVICES_HOME/$svc/.env.schema" ]]; then
+    if grep -q '\${' "$(compose_file "$svc")"; then
+      v_error "$svc" "compose.yml uses variables but there is no .env.schema"
+    fi
+    return 0
+  fi
+  if ! command -v varlock >/dev/null 2>&1; then
+    v_error "$svc" "varlock is not installed; it resolves .env.schema"
+    return 0
+  fi
+  if ! load_env "$svc"; then
+    in_service_dir "$svc" varlock load >&2 || true
+    v_error "$svc" "env does not pass .env.schema (details above)"
+  fi
+  return 0
 }
 
 # Volumes must be bind mounts under ${PSM_VOLUMES_HOME}/<service>/,
@@ -498,6 +596,7 @@ check_ports() {
 
   while IFS= read -r other; do
     [[ -n "$other" && "$other" != "$svc" ]] || continue
+    load_env "$other" || true
     while IFS= read -r port; do
       if [[ " ${mine[*]} " == *" $port "* ]]; then
         v_warn "$svc" "host port $port is also published by $other"
@@ -512,6 +611,7 @@ validate_services() {
   local svc
   VALIDATE_ERRORS=0
   for svc in "$@"; do
+    check_env "$svc"
     check_volumes "$svc"
     check_image_volumes "$svc"
     check_deps "$svc"
@@ -692,8 +792,7 @@ cmd_compose() {
       service_args=()
     fi
     compose_flags "$service" || { rc=1; continue; }
-    env ${PROVISIONED[@]+"${PROVISIONED[@]}"} \
-      "${RUNNER[@]}" ${PRE[@]+"${PRE[@]}"} "${FLAGS[@]}" "$subcmd" ${service_args[@]+"${service_args[@]}"} || {
+    compose_run "$service" ${PRE[@]+"${PRE[@]}"} "${FLAGS[@]}" "$subcmd" ${service_args[@]+"${service_args[@]}"} || {
       rc=$?
       # An orderly shutdown stops at the first failure
       if [[ "$subcmd" == "down" ]]; then

@@ -16,8 +16,8 @@ podman compose --psm logs -f glitchtip
 
 `psm up` starts postgres if it isn't running, waits for it to be healthy, creates
 the `glitchtip` database and passes the connection string in as
-`PSM_POSTGRES_URL`. Plain `podman compose up` in this directory won't have a
-database URL, so use psm (or `--psm`).
+`PSM_POSTGRES_URL`. Plain `podman compose up` in this directory has neither the
+database URL nor the defaults from `.env.schema`, so use psm (or `--psm`).
 
 Web UI: <http://localhost:8000> — create the first account via the sign-up form
 (the first user can be promoted to superuser).
@@ -27,12 +27,14 @@ set it as your Sentry `dsn`.
 
 ## Configuration
 
-All tunables — images, ports, connections, feature flags — are documented in
-[`.env.schema`](./.env.schema), which is the canonical reference. Defaults are
-baked into `compose.yml`, so first run needs nothing beyond psm's postgres.
+All tunables — images, ports, connections, feature flags — and their defaults
+live in [`.env.schema`](./.env.schema), so first run needs nothing beyond psm's
+postgres.
 
-To override, copy [`.env.example`](./.env.example) to `.env` and edit. `.env` is
-git-ignored.
+To override, add a `.env` next to it (e.g. stowed from your own ppm layer); none
+is shipped. Real secrets belong in fnox: a `fnox.toml` in this directory, with
+providers in `../fnox.toml`. psm resolves the environment first, then `.env`, then
+the schema defaults, and validates the result before starting anything.
 
 > **Secret:** `GLITCHTIP_SECRET_KEY` ships with an insecure dev default. Set a
 > real one (`openssl rand -hex 32`) before exposing GlitchTip beyond localhost.
