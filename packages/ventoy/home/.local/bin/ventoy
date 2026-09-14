@@ -13,6 +13,7 @@ usage() {
 Usage: ventoy <command> [args]
 
 Commands:
+  list                        List USB disks (macOS: with USB IDs and bus:addr for QEMU passthrough)
   prepare <disk> [-f] [opts]  Install Ventoy to a USB disk, e.g. /dev/sdb (Linux; ERASES the disk)
                                 -f    reinstall even if Ventoy is already on the disk
                                 opts  passed to Ventoy2Disk.sh, e.g. -g (GPT), -L LABEL, -r MiB
@@ -104,6 +105,35 @@ cmd_status() {
   ventoy2disk -l "$1"
 }
 
+cmd_list() {
+  if is_linux; then
+    lsblk -dp -o NAME,SIZE,TRAN,VENDOR,MODEL | awk 'NR == 1 || $3 == "usb"'
+    return
+  fi
+
+  # ioreg links each USB device to its disk (BSD name); partitions (diskNsM) are skipped
+  local usb
+  usb="$(ioreg -r -c IOUSBHostDevice -l -w0 | awk '
+    /"USB Product Name" = / { sub(/.*= "/, ""); sub(/"$/, ""); name = $0 }
+    /"idVendor" = /         { vid = $NF }
+    /"idProduct" = /        { pid = $NF }
+    /"locationID" = /       { bus = int($NF / 16777216) }
+    /"USB Address" = /      { addr = $NF }
+    /"BSD Name" = "disk[0-9]+"/ {
+      sub(/.*= "/, ""); sub(/"$/, "")
+      printf "%s %04x:%04x %d:%d %s\n", $0, vid, pid, bus, addr, name
+    }')"
+  [[ -n "$usb" ]] || { echo "No USB disks found"; return; }
+
+  local disk id busaddr name size mounts
+  printf "%-12s %-10s %-10s %-8s %-24s %s\n" DEVICE SIZE USB-ID BUS:ADDR MOUNTED NAME
+  while read -r disk id busaddr name; do
+    size="$(diskutil info "$disk" | awk -F': *' '/Disk Size/ { sub(/ \(.*/, "", $2); print $2; exit }')"
+    mounts="$(mount | awk -v d="/dev/${disk}s" 'index($1, d) == 1 { printf "%s%s", sep, $3; sep = "," }')"
+    printf "%-12s %-10s %-10s %-8s %-24s %s\n" "/dev/$disk" "$size" "$id" "$busaddr" "${mounts:--}" "$name"
+  done <<< "$usb"
+}
+
 file_size() {
   wc -c < "$1" | tr -d ' '
 }
@@ -188,6 +218,7 @@ cmd_info() {
 }
 
 case "${1:-}" in
+  list)    cmd_list ;;
   prepare) shift; cmd_prepare "$@" ;;
   update)  shift; cmd_update "$@" ;;
   status)  shift; cmd_status "$@" ;;
