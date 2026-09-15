@@ -7,6 +7,4 @@ install_macos() {
 post_install() {
   source <(mise activate bash)
   mise install op
-  source <(mise activate bash)
-  install_completion "op completion zsh"
 }

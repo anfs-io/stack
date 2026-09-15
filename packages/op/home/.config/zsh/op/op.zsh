@@ -9,6 +9,8 @@
 #   OP_SPACE                 — space component forwarded from Mac session
 #   OP_AREA                  — area component forwarded from Mac session (if set)
 
+zcomp op
+
 # ---------------------------------------------------------------------------
 # Context discovery
 # ---------------------------------------------------------------------------

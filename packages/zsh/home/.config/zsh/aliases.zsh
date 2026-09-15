@@ -28,6 +28,22 @@ ensure_path "$BIN_DIR"
 
 export PPM_FPATH=$XDG_DATA_HOME/omz/custom/completions
 
+# Write a completion file for <cmd> to $PPM_FPATH if <cmd> is installed and the file is missing
+# Packages call this from their own .zsh file; `zsrc -c <cmd>` forces a refresh
+# Usage: zcomp <cmd> [generator args...]   (default args: completion zsh)
+zcomp() {
+  local cmd=$1 file=$PPM_FPATH/_$1
+  shift
+  (( $+commands[$cmd] )) && [[ -n $PPM_FPATH && ! -s $file ]] || return 0
+  (( $# )) || set -- completion zsh
+  mkdir -p $PPM_FPATH
+  if command $cmd "$@" > $file.tmp 2>/dev/null && [[ -s $file.tmp ]]; then
+    mv $file.tmp $file
+  else
+    rm -f $file.tmp
+  fi
+}
+
 os() {
   case "$(uname)" in
     Darwin) echo "macos" ;;
@@ -102,22 +118,10 @@ zsrc() {
     source "$file" # No need to check if files exist since nullglob only returns existing files
   done
 
-  # If -c was passed, handle completions
-  if (( run_compinit )); then
-    if (( $# > 0 )); then
-      local cmd="$1"
-
-      # Ensure the destination directory exists
-      mkdir -p "$PPM_FPATH"
-
-      # If only 1 argument was provided, expand it with defaults
-      if (( $# == 1 )); then
-        "$cmd" completion zsh > "$PPM_FPATH/_${cmd}"
-      else
-        # Otherwise, run the full exact arguments passed by the user
-        "$@" > "$PPM_FPATH/_${cmd}"
-      fi
-    fi
+  # If -c was passed, regenerate the completion file: zsrc -c <cmd> [generator args...]
+  if (( run_compinit && $# > 0 )); then
+    rm -f "$PPM_FPATH/_$1"
+    zcomp "$@"
   fi
 
   # Re-initialize completion system to register the changes

@@ -7,11 +7,8 @@ bindkey -v
 [ -x "$(command -v bat 2>/dev/null)" ] && export PAGER=bat
 
 if command -v fzf >/dev/null 2>&1; then
-  if [[ -n "${PPM_FPATH}" && ! -f "${PPM_FPATH}/_fzf" ]]; then
-    fzf --zsh > "${PPM_FPATH}/_fzf"
-  else
-    source <(fzf --zsh)
-  fi
+  # key bindings (ctrl-r, ctrl-t) and completion; this must be sourced, it is not a fpath completion file
+  source <(fzf --zsh)
 
   alias ff="fzf --filter"
 fi
