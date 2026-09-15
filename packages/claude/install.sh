@@ -11,7 +11,9 @@ REPOS=(
 post_install() {
   source <(mise activate bash)
   mise install claude
+}
 
+x_install() {
   mkdir -p "$PLUGINS_DIR"
 
   for url in "${REPOS[@]}"; do

@@ -39,12 +39,17 @@ _invoke_claude() {
 }
 
 alias cc="clear; _invoke_claude $@"
-alias cc-continue="clear; _invoke_claude --dangerously-skip-permissions --continue $@"
-alias cc-yolo="clear; _invoke_claude --dangerously-skip-permissions $@"
-alias cc-yolo-resume="clear; _invoke_claude --dangerously-skip-permissions --resume $@"
+alias cc-continue="cc --continue $@"
+alias cc-resume="cc --resume $@"
 alias cc-version="claude --version"
 
-cconf() {
-  local dir=$HOME/.claude/context file="." ext="md"
-  load_conf "$@"
-}
+# alias cc-yolo="clear; _invoke_claude --dangerously-skip-permissions $@"
+alias cc-yolo="cc --dangerously-skip-permissions $@"
+alias cc-yolo-continue="cc-yolo --continue $@"
+alias cc-yolo-resume="cc-yolo --resume $@"
+
+
+# cconf() {
+#   local dir=$HOME/.claude/context file="." ext="md"
+#   load_conf "$@"
+# }

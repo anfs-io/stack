@@ -1,0 +1,395 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${XDG_CONFIG_HOME:=$HOME/.config}"
+: "${XDG_DATA_HOME:=$HOME/.local/share}"
+: "${PSM_CONFIG_HOME:=$XDG_CONFIG_HOME/psm}"
+: "${PSM_CLI_VERSION:=latest}"
+export PSM_CONFIG_HOME
+
+# ppm layout, used to detect installed agent packages (mirrors ppm/ppm defaults)
+: "${PPM_DATA_HOME:=$XDG_DATA_HOME/ppm}"
+: "${PPM_ASSET_DIR:=packages}"
+: "${PPM_ASSET_META:=package.yml}"
+
+usage() {
+  cat <<'EOF'
+Usage: psm <command> [args]
+
+Commands:
+  sync [config...]        Install declared skills that are missing, or not yet
+                          linked to every target agent (all configs if none given)
+  update [config...]      Update remote skills (skills update -g) and re-copy
+                          local-path sources so edits take effect
+  list, ls                Show each declared skill: ok, partial, missing or * (glob)
+  agents                  List agent ids detected from installed ppm packages
+  prune [-y]              Show installed skills no config declares; -y removes them
+  remove <skill>...       Remove skills globally
+  path [config]           Output path to the config dir or a config file
+  cd [config]             Change to the config dir (requires psm.zsh)
+  completion <shell>      Output shell completion code (zsh)
+  help                    Show this help
+
+Config: $PSM_CONFIG_HOME/*.yml, each holding a `sources:` list
+
+  sources:
+    - repo: DietrichGebert/ponytail
+      skills: [ponytail, ponytail-audit]
+    - repo: obra/superpowers
+      skills: ["*"]           # every skill in the repo
+      agents: [claude-code]   # optional: override agent auto-detection
+    - repo: ~/src/my-skills   # local paths are copied; run `psm update` after edits
+      skills: ["*"]
+
+Agents are auto-detected: any installed ppm package whose package.yml declares
+`agent: <skills-cli-id>` becomes a target.
+EOF
+}
+
+die()  { echo "psm: $*" >&2; exit 1; }
+warn() { echo "psm: $*" >&2; }
+
+# node comes from mise via the `node` dependency
+require_npx() {
+  command -v npx &>/dev/null && return 0
+  command -v mise &>/dev/null && eval "$(mise env -s bash 2>/dev/null)" || true
+  command -v npx &>/dev/null || die "npx not found — install node first: ppm install node"
+}
+
+# </dev/null: the CLI reads stdin, which would otherwise swallow rows from the
+# while-loops feeding it
+skills_cli() {
+  npx --yes "skills@$PSM_CLI_VERSION" "$@" </dev/null
+}
+
+# Skills-CLI agent ids for every installed ppm package that declares `agent:`.
+# The package dir is derived from the tracker path so that a package overridden
+# by a higher-priority repo resolves to the one actually installed.
+_installed_agents() {
+  local tracker repo pkg meta
+
+  for tracker in "$PPM_DATA_HOME"/.installed/*/*.yml; do
+    [[ -f "$tracker" ]] || continue
+    repo=$(basename "$(dirname "$tracker")")
+    pkg=$(basename "$tracker" .yml)
+    meta="$PPM_DATA_HOME/$repo/$PPM_ASSET_DIR/$pkg/$PPM_ASSET_META"
+    [[ -f "$meta" ]] || continue
+    yq -r '[.agent] | flatten | .[] | select(. != null)' "$meta" 2>/dev/null || true
+  done | sort -u | paste -sd, -
+}
+
+# `skills list --json` reports agents by display name, not id. Unknown ids
+# return 1, so those sources are always re-added rather than wrongly skipped.
+_agent_display() {
+  case "$1" in
+    claude-code)     echo "Claude Code" ;;
+    opencode)        echo "OpenCode" ;;
+    pi)              echo "Pi" ;;
+    hermes-agent)    echo "Hermes Agent" ;;
+    antigravity)     echo "Antigravity" ;;
+    antigravity-cli) echo "Antigravity CLI" ;;
+    *)               return 1 ;;
+  esac
+}
+
+# Config files, all or by name (basename without extension)
+_config_files() {
+  local name file
+
+  if [[ $# -eq 0 ]]; then
+    for file in "$PSM_CONFIG_HOME"/*.yml "$PSM_CONFIG_HOME"/*.yaml; do
+      [[ -f "$file" ]] && echo "$file"
+    done
+    return 0
+  fi
+
+  for name in "$@"; do
+    if [[ -f "$PSM_CONFIG_HOME/$name.yml" ]]; then
+      echo "$PSM_CONFIG_HOME/$name.yml"
+    elif [[ -f "$PSM_CONFIG_HOME/$name.yaml" ]]; then
+      echo "$PSM_CONFIG_HOME/$name.yaml"
+    else
+      die "no config named '$name' in $PSM_CONFIG_HOME"
+    fi
+  done
+}
+
+# Declared sources as |-separated rows: <config>|<repo>|<skills csv>|<agents csv>
+# (| rather than tab: read collapses consecutive tabs, losing empty fields)
+_config_sources() {
+  local file
+
+  _config_files "$@" | while IFS= read -r file; do
+    yq -r '.sources[]? | [.repo,
+                          ((.skills // ["*"]) | join(",")),
+                          ((.agents // []) | join(","))] | join("|")' "$file" 2>/dev/null \
+      | awk -v c="$(basename "${file%.*}")" 'NF { print c "|" $0 }' \
+      || warn "can't parse $file"
+  done
+}
+
+_expand_home() {
+  case "$1" in
+    "~")   echo "$HOME" ;;
+    "~/"*) echo "$HOME/${1#\~/}" ;;
+    *)     echo "$1" ;;
+  esac
+}
+
+_is_local() {
+  [[ "$1" == /* || "$1" == ./* || "$1" == ../* ]]
+}
+
+# Installed skills as |-separated rows: <name>|<agent display names csv>|<source>.
+# Loaded once per run; a failed lookup yields nothing, so nothing is skipped.
+INSTALLED=""
+_load_installed() {
+  INSTALLED=$(skills_cli list -g --json 2>/dev/null \
+    | yq -p json -r '.[] | [.name, ((.agents // []) | join(",")), (.source // "")] | join("|")' 2>/dev/null) || true
+}
+
+# Agent display names a skill is installed for; returns 1 if not installed
+_skill_agents() {
+  awk -F'|' -v n="$1" '$1 == n { print $2; found = 1; exit } END { exit !found }' <<< "$INSTALLED"
+}
+
+# True when <skill> is installed for every agent id in <agents csv>
+_has_skill() {
+  local have agent display
+  have=$(_skill_agents "$1") || return 1
+
+  for agent in ${2//,/ }; do
+    display=$(_agent_display "$agent") || return 1
+    [[ ",$have," == *",$display,"* ]] || return 1
+  done
+}
+
+cmd_agents() {
+  _installed_agents | tr ',' '\n'
+}
+
+cmd_sync() {
+  local force_local=false
+  local -a names=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --local) force_local=true ;;
+      -*)      die "sync: unknown option '$1'" ;;
+      *)       names+=("$1") ;;
+    esac
+    shift
+  done
+
+  _config_files ${names[@]+"${names[@]}"} >/dev/null
+  require_npx
+  _load_installed
+
+  local detected
+  detected=$(_installed_agents)
+
+  local config repo skills agents item
+  local installed=0 current=0 failed=0
+  local -a list args
+
+  while IFS='|' read -r config repo skills agents; do
+    [[ -n "$repo" ]] || continue
+    repo=$(_expand_home "$repo")
+    [[ -n "$agents" ]] || agents=$detected
+
+    if [[ -z "$agents" ]]; then
+      warn "$repo: no agents — install an agent package or set agents: in $config"
+      failed=$((failed + 1))
+      continue
+    fi
+
+    args=(add "$repo" -g -y)
+    IFS=',' read -r -a list <<< "$skills"
+    for item in "${list[@]}"; do
+      # "*" can't be enumerated ahead of time; local copies go stale on edit
+      if [[ "$item" == '*' ]] || { $force_local && _is_local "$repo"; } || ! _has_skill "$item" "$agents"; then
+        args+=(-s "$item")
+      fi
+    done
+
+    if [[ ${#args[@]} -eq 4 ]]; then
+      echo "ok     $repo"
+      current=$((current + 1))
+      continue
+    fi
+
+    for item in ${agents//,/ }; do
+      args+=(-a "$item")
+    done
+
+    echo "sync   $repo"
+    if skills_cli "${args[@]}"; then
+      installed=$((installed + 1))
+    else
+      warn "skills add $repo failed"
+      failed=$((failed + 1))
+    fi
+  done < <(_config_sources ${names[@]+"${names[@]}"})
+
+  if [[ $((installed + current + failed)) -eq 0 ]]; then
+    echo "No skill sources configured in $PSM_CONFIG_HOME"
+  else
+    echo "Sources: $installed synced, $current up to date, $failed failed"
+  fi
+  [[ $failed -eq 0 ]]
+}
+
+cmd_update() {
+  require_npx
+  skills_cli update -g -y || warn "skills update failed"
+  cmd_sync --local "$@"
+}
+
+cmd_list() {
+  require_npx
+  _load_installed
+
+  local detected
+  detected=$(_installed_agents)
+
+  local config repo skills agents item status
+  local -a list
+
+  while IFS='|' read -r config repo skills agents; do
+    [[ -n "$repo" ]] || continue
+    [[ -n "$agents" ]] || agents=$detected
+    IFS=',' read -r -a list <<< "$skills"
+    for item in "${list[@]}"; do
+      if [[ "$item" == '*' ]]; then
+        status="*"
+      elif _has_skill "$item" "$agents"; then
+        status="ok"
+      elif _skill_agents "$item" >/dev/null; then
+        status="partial"
+      else
+        status="missing"
+      fi
+      printf '%-8s %-12s %-24s %s\n' "$status" "$config" "$item" "$repo"
+    done
+  done < <(_config_sources)
+}
+
+cmd_prune() {
+  local yes=false
+  [[ "${1:-}" == "-y" ]] && yes=true
+
+  require_npx
+  _load_installed
+
+  # Named skills are protected by name; "*" sources protect whatever the CLI
+  # recorded as coming from that repo
+  local declared="" globs="" config repo skills agents
+  while IFS='|' read -r config repo skills agents; do
+    declared+="${skills//,/$'\n'}"$'\n'
+    [[ ",$skills," == *",*,"* ]] && globs+="$repo"$'\n'
+  done < <(_config_sources)
+
+  local name source
+  local -a orphans=()
+  while IFS='|' read -r name agents source; do
+    [[ -n "$name" ]] || continue
+    grep -qxF "$name" <<< "$declared" && continue
+    [[ -n "$source" ]] && grep -qxF "$source" <<< "$globs" && continue
+    orphans+=("$name")
+  done <<< "$INSTALLED"
+
+  if [[ ${#orphans[@]} -eq 0 ]]; then
+    echo "Nothing to prune"
+    return 0
+  fi
+
+  printf 'undeclared  %s\n' "${orphans[@]}"
+  if $yes; then
+    skills_cli remove -g -y "${orphans[@]}"
+  else
+    echo "Re-run with -y to remove them"
+  fi
+}
+
+cmd_remove() {
+  [[ $# -gt 0 ]] || die "Usage: psm remove <skill>..."
+  require_npx
+  skills_cli remove -g -y "$@"
+}
+
+cmd_path() {
+  if [[ $# -eq 0 ]]; then
+    echo "$PSM_CONFIG_HOME"
+  else
+    _config_files "$1"
+  fi
+}
+
+cmd_completion() {
+  case "${1:-}" in
+    zsh)
+      cat <<'COMPLETION'
+#compdef psm
+
+_psm_configs() {
+  local dir=${PSM_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/psm}
+  local -a configs=($dir/*.y(a|)ml(N:t:r))
+  compadd -a configs
+}
+
+_psm() {
+  local -a subcmds=(
+    'sync:Install missing skills for every target agent'
+    'update:Update remote skills and re-copy local sources'
+    'list:Show declared skills and their status'
+    'agents:List detected agent ids'
+    'prune:Show or remove undeclared skills'
+    'remove:Remove skills globally'
+    'path:Output path to the config dir or a config'
+    'cd:Change to the config dir'
+    'completion:Output shell completion code'
+    'help:Show usage'
+  )
+
+  if (( CURRENT == 2 )); then
+    _describe 'command' subcmds
+    return
+  fi
+
+  case "${words[2]}" in
+    sync)        compadd -- --local; _psm_configs ;;
+    update)      _psm_configs ;;
+    prune)       compadd -- -y ;;
+    path|cd)     (( CURRENT == 3 )) && _psm_configs ;;
+    completion)  (( CURRENT == 3 )) && compadd zsh ;;
+  esac
+}
+
+if [[ "${funcstack[1]}" == "_psm" ]]; then
+  _psm "$@"
+else
+  compdef _psm psm
+fi
+COMPLETION
+      ;;
+    *)
+      echo "Usage: psm completion <zsh>" >&2
+      return 1
+      ;;
+  esac
+}
+
+case "${1:-}" in
+  sync)        shift; cmd_sync "$@" ;;
+  update)      shift; cmd_update "$@" ;;
+  list|ls)     shift; cmd_list "$@" ;;
+  agents)      shift; cmd_agents ;;
+  prune)       shift; cmd_prune "$@" ;;
+  remove|rm)   shift; cmd_remove "$@" ;;
+  path)        shift; cmd_path "$@" ;;
+  cd)          echo "psm cd requires the psm shell function (source psm.zsh)" >&2; exit 1 ;;
+  completion)  shift; cmd_completion "$@" ;;
+  help|--help) usage ;;
+  "")          usage ;;
+  *)           echo "psm: unknown command '$1'" >&2; usage >&2; exit 1 ;;
+esac
