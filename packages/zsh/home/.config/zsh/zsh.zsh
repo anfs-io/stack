@@ -72,10 +72,18 @@ bata() {
 }
 
 
+# Directories/globs to ignore in tree/file listings (shared by tsa, viall, ...).
+# Override by reassigning the array in a later-sourced or machine-local zsh file.
+(( ${+PPM_IGNORE_DIRS} )) || typeset -ga PPM_IGNORE_DIRS=(
+  tmp .git .terraform .obsidian .ruby-lsp .DS_Store '._*'
+)
+
 # invoke tree in various forms with specific hidden files
 tsa() {
   # -a shows hidden files; -l follow symlinks; -I ignore
-  tree -a -l -I tmp -I .git -I .terraform -I .obsidian -I .ruby-lsp -I .DS_Store -I "._*" "$@"
+  local -a iargs; local p
+  for p in "${PPM_IGNORE_DIRS[@]}"; do iargs+=( -I "$p" ); done
+  tree -a -l "${iargs[@]}" "$@"
 }
 
 # Helper: tsa with base dir, optional subdir (first non-flag param), and flags

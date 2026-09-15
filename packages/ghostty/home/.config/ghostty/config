@@ -1,3 +1,25 @@
 # ghostty
 
+# --- SSH: auto-install terminfo on remotes and forward TERM/COLORTERM ---
+# ssh-terminfo wraps `ssh` to run `ghostty +ssh`, which installs xterm-ghostty
+# terminfo on first connect (cached per user@host). ssh-env forwards
+# COLORTERM/TERM_PROGRAM and falls back to TERM=xterm-256color when needed.
 shell-integration-features = ssh-terminfo,ssh-env
+
+# --- Keyboard: make Option behave as Alt/Meta (nvim, tmux, readline) ---
+macos-option-as-alt = true
+
+# --- Selection / clipboard ---
+copy-on-select = clipboard
+clipboard-paste-protection = true
+
+# --- UX ---
+mouse-hide-while-typing = true
+window-save-state = always
+confirm-close-surface = false
+scrollback-limit = 100000000
+
+# --- Appearance (uncomment and adjust to taste) ---
+# theme = dark:GruvboxDark,light:GruvboxLight   # auto-switch with macOS appearance
+# font-family = "JetBrainsMono Nerd Font"
+# font-size = 14
