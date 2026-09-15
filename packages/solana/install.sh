@@ -32,7 +32,6 @@ xpost_install() {
   else
     sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
   fi
-  install_completion "solana completion --shell zsh"
 
   # 2. Anchor Version Manager (avm)
   if command -v avm &> /dev/null; then
@@ -44,13 +43,9 @@ xpost_install() {
   # 3. Anchor Framework
   avm install latest
   avm use latest
-  install_completion "anchor completions zsh"
 
   # 4. Surfpool local validator
   curl -sL https://run.surfpool.run/ | bash
-  # Surfpool does not output to STDOUT, but rather writes a file
-  surfpool completions zsh
-  mv _surfpool $PPM_FPATH
 }
 
 xpost_remove() {

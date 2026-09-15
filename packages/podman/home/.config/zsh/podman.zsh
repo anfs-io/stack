@@ -3,6 +3,8 @@
 # disables podman compose notification
 export PODMAN_COMPOSE_WARNING_LOGS=false
 
+zcomp podman
+
 if [[ "$(os)" == "macos" ]] && [[ "$(podman machine inspect --format '{{.State}}' 2>/dev/null)" != "running" ]]; then
   podman machine start
 fi

@@ -9,6 +9,8 @@ export PCM_VOLUMES_HOME="$PCM_DATA_HOME/volumes"
 
 export PCM_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}/pcm"
 
+zcomp pcm
+
 cconf() {
   local dir=$PCM_CONTAINERS_HOME file="../registry.yml" ext="compose.yml"
   load_conf "$@"

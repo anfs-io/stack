@@ -3,6 +3,14 @@
 # Add solana release path to the search path
 ensure_path "$XDG_DATA_HOME/solana/install/active_release/bin"
 
+zcomp solana completion --shell zsh
+zcomp anchor completions zsh
+
+# surfpool writes _surfpool into the current directory instead of printing it
+if (( $+commands[surfpool] )) && [[ -n $PPM_FPATH && ! -s $PPM_FPATH/_surfpool ]]; then
+  mkdir -p $PPM_FPATH && (cd $PPM_FPATH && surfpool completions zsh >/dev/null 2>&1)
+fi
+
 # grind out vanity keypair(s) starting with <param>
 solkg() {
     # Check if the first required parameter is missing

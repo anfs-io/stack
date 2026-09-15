@@ -23,8 +23,6 @@ post_install() {
 
   # Create PCM data directory
   mkdir -p "$pcm_data/volumes"
-
-  install_completion "pcm completion zsh"
 }
 
 # Refuse removal while compose containers are running (override with ppm remove -f)
