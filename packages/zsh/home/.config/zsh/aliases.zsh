@@ -11,6 +11,18 @@ export XDG_STATE_HOME=~/.local/state
 export BIN_DIR=$HOME/.local/bin
 export LIB_DIR=$HOME/.local/lib
 
+# Homebrew on PATH, wherever it is installed. This file loads first, so every other .zsh file
+# can use brew tools; it runs before $BIN_DIR is added so ~/.local/bin stays first on PATH
+if [[ -z $HOMEBREW_PREFIX ]]; then
+  for _brew_prefix in /opt/homebrew /home/linuxbrew/.linuxbrew; do
+    if [[ -x $_brew_prefix/bin/brew ]]; then
+      eval "$($_brew_prefix/bin/brew shellenv zsh)"
+      break
+    fi
+  done
+  unset _brew_prefix
+fi
+
 ensure_path() {
   local target="$1"
   # Strip target from start, middle, and end of PATH
