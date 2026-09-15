@@ -87,7 +87,6 @@ EOF
 post_install() {
   mkdir -p "$PSM_CONFIG_HOME"
   _seed_config
-  install_completion "psm completion zsh"
   psm sync || ppm_fail "psm sync reported failures — fix and re-run: psm sync" || true
 }
 
