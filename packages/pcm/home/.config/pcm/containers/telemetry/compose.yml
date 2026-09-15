@@ -1,0 +1,56 @@
+# Telemetry — local tracing stack (traces only).
+#
+#   host app --OTLP--> otel-collector --OTLP--> tempo <--query-- grafana
+#
+# pcm service: `pcm up telemetry`. Every variable, with its default, lives in .env.schema.
+# App-independent: ships no dashboards; GRAFANA_DASHBOARDS_DIR points at a project's.
+name: telemetry
+
+x-pcm:
+  allow_mounts:
+    # Dashboard JSON, possibly from a project dir outside pcm's volumes
+    - ${GRAFANA_DASHBOARDS_DIR}
+
+services:
+  # Trace storage. Receives OTLP from the collector on :4317 (in-network only),
+  # serves the query API on :3200 for Grafana. No host ports published.
+  tempo:
+    image: ${TEMPO_IMAGE}:${TEMPO_TAG}
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    restart: unless-stopped
+    volumes:
+      - ./tempo.yaml:/etc/tempo/tempo.yaml:ro
+      # :U chowns the host dir to the image's non-root user (uid 10001)
+      - ${PCM_VOLUMES_HOME}/telemetry/tempo:/var/tempo:U
+
+  # OTLP ingest. The app's host SDK exports to localhost:4317 (gRPC) or :4318 (HTTP).
+  otel-collector:
+    image: ${OTELCOL_IMAGE}:${OTELCOL_TAG}
+    command: ["--config=/etc/otelcol/config.yaml"]
+    restart: unless-stopped
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "${OTLP_GRPC_PORT}:4317"
+      - "${OTLP_HTTP_PORT}:4318"
+    depends_on: [tempo]
+
+  # Viewer. Tempo datasource is provisioned on boot (no click-ops).
+  # Anonymous admin — local dev only.
+  grafana:
+    image: ${GRAFANA_IMAGE}:${GRAFANA_TAG}
+    restart: unless-stopped
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_FEATURE_TOGGLES_ENABLE: "traceqlEditor"
+    volumes:
+      # Mount files, not a directory: ppm stows files as relative symlinks, which a
+      # directory mount passes into the container unresolved (and broken)
+      - ./grafana-datasource.yaml:/etc/grafana/provisioning/datasources/tempo.yaml:ro
+      - ./grafana-dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+      - ${GRAFANA_DASHBOARDS_DIR}:/var/lib/grafana/dashboards:ro
+    ports:
+      - "${GRAFANA_PORT}:3000"
+    depends_on: [tempo]

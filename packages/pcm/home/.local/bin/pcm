@@ -2,11 +2,11 @@
 set -euo pipefail
 
 : "${PCM_CONFIG_HOME:=${XDG_CONFIG_HOME:-$HOME/.config}/pcm}"
-: "${PCM_SERVICES_HOME:=$PCM_CONFIG_HOME/services}"
+: "${PCM_CONTAINERS_HOME:=$PCM_CONFIG_HOME/containers}"
 : "${PCM_DATA_HOME:=${XDG_DATA_HOME:-$HOME/.local/share}/pcm}"
 : "${PCM_VOLUMES_HOME:=$PCM_DATA_HOME/volumes}"
 : "${PCM_HEALTH_TIMEOUT:=120}"
-export PCM_CONFIG_HOME PCM_SERVICES_HOME PCM_DATA_HOME PCM_VOLUMES_HOME
+export PCM_CONFIG_HOME PCM_CONTAINERS_HOME PCM_DATA_HOME PCM_VOLUMES_HOME
 
 # Compose runner: "podman compose" (default) or "podman-compose"
 read -ra RUNNER <<< "${PCM_COMPOSE:-podman compose}"
@@ -53,7 +53,7 @@ uses, with types and defaults. pcm runs compose and provision hooks through
 `varlock run` from the service directory, so values resolve as
 environment > .env > .env.schema defaults, and invalid values stop the command.
 No .env is shipped; stow your own next to the schema to override. If fnox is
-installed and a fnox.toml is in the service directory or $PCM_SERVICES_HOME,
+installed and a fnox.toml is in the service directory or $PCM_CONTAINERS_HOME,
 the call is wrapped in `fnox exec` so its secrets are in the environment first.
 
 Validation:
@@ -74,19 +74,19 @@ Validation:
   PCM_PODMAN_SOCKET is set to the podman API socket (inside the podman machine
   VM on macOS) for services that reference it.
 
-Services dir: $PCM_CONFIG_HOME/services
+Containers dir: $PCM_CONFIG_HOME/containers
 EOF
 }
 
 cmd_list() {
   local found=false dir
-  for dir in "$PCM_SERVICES_HOME"/*/; do
+  for dir in "$PCM_CONTAINERS_HOME"/*/; do
     [[ -f "${dir}compose.yml" ]] || continue
     found=true
     basename "$dir"
   done
   if [[ "$found" == false ]]; then
-    echo "No services found in $PCM_SERVICES_HOME" >&2
+    echo "No services found in $PCM_CONTAINERS_HOME" >&2
   fi
 }
 
@@ -96,20 +96,20 @@ cmd_path() {
     return 1
   fi
 
-  local dir="$PCM_SERVICES_HOME/$1"
+  local dir="$PCM_CONTAINERS_HOME/$1"
   if [[ ! -f "$dir/compose.yml" ]]; then
-    echo "Service '$1' not found in $PCM_SERVICES_HOME" >&2
+    echo "Service '$1' not found in $PCM_CONTAINERS_HOME" >&2
     return 1
   fi
   echo "$dir"
 }
 
 is_service() {
-  [[ -n "$1" && "$1" != */* && -f "$PCM_SERVICES_HOME/$1/compose.yml" ]]
+  [[ -n "$1" && "$1" != */* && -f "$PCM_CONTAINERS_HOME/$1/compose.yml" ]]
 }
 
 compose_file() {
-  echo "$PCM_SERVICES_HOME/$1/compose.yml"
+  echo "$PCM_CONTAINERS_HOME/$1/compose.yml"
 }
 
 # Compose project name: top-level `name:` or the service directory name
@@ -172,7 +172,7 @@ compose_flags() {
 # True if a fnox config applies to service directory $1
 uses_fnox() {
   local dir name
-  for dir in "$1" "$PCM_SERVICES_HOME"; do
+  for dir in "$1" "$PCM_CONTAINERS_HOME"; do
     for name in fnox.toml .fnox.toml fnox.local.toml; do
       [[ -f "$dir/$name" ]] && return 0
     done
@@ -183,7 +183,7 @@ uses_fnox() {
 # Run a command from service $1's directory with PROVISIONED exported and, when
 # fnox is installed and configured, fnox secrets loaded
 in_service_dir() {
-  local dir="$PCM_SERVICES_HOME/$1"
+  local dir="$PCM_CONTAINERS_HOME/$1"
   shift
   (
     cd "$dir"
@@ -206,7 +206,7 @@ service_run() {
   while [[ $# -gt 0 && "$1" != "--" ]]; do opts+=("$1"); shift; done
   [[ "${1:-}" == "--" ]] && shift
 
-  if [[ -f "$PCM_SERVICES_HOME/$service/.env.schema" ]]; then
+  if [[ -f "$PCM_CONTAINERS_HOME/$service/.env.schema" ]]; then
     in_service_dir "$service" varlock run --inject vars ${opts[@]+"${opts[@]}"} -- "$@"
   else
     in_service_dir "$service" "$@"
@@ -249,7 +249,7 @@ wait_healthy() {
 # Hook output lines KEY=VALUE are appended to PROVISIONED as PCM_<DEP>_<KEY>=VALUE.
 provision() {
   local service="$1" dep="$2"
-  local hook="$PCM_SERVICES_HOME/$dep/provision"
+  local hook="$PCM_CONTAINERS_HOME/$dep/provision"
   [[ -x "$hook" ]] || return 0
 
   local -a settings=()
@@ -443,7 +443,7 @@ v_warn() {
 # The service's env must resolve and pass its .env.schema
 check_env() {
   local svc="$1"
-  if [[ ! -f "$PCM_SERVICES_HOME/$svc/.env.schema" ]]; then
+  if [[ ! -f "$PCM_CONTAINERS_HOME/$svc/.env.schema" ]]; then
     if grep -q '\${' "$(compose_file "$svc")"; then
       v_error "$svc" "compose.yml uses variables but there is no .env.schema"
     fi
@@ -482,7 +482,7 @@ check_volumes() {
     path=$(expand_vars "$svc" "$src")
     case "$path" in
       "~"*) path="$HOME${path:1}" ;;
-      .*)   path="$PCM_SERVICES_HOME/$svc/$path" ;;
+      .*)   path="$PCM_CONTAINERS_HOME/$svc/$path" ;;
     esac
 
     if [[ -z "$path" ]]; then
@@ -508,7 +508,7 @@ check_volumes() {
       v_error "$svc" "$where: '$src' must not contain '..'"
     elif under "$path" "$PCM_VOLUMES_HOME/$svc"; then
       :
-    elif [[ "$ro" == "true" ]] && under "$path" "$PCM_SERVICES_HOME/$svc"; then
+    elif [[ "$ro" == "true" ]] && under "$path" "$PCM_CONTAINERS_HOME/$svc"; then
       :
     elif [[ "$ro" == "true" ]]; then
       v_error "$svc" "$where: read-only mount '$src' must come from the service directory"
@@ -638,7 +638,7 @@ cmd_validate() {
   fi
 
   if [[ ${#services[@]} -eq 0 ]]; then
-    echo "No services found in $PCM_SERVICES_HOME" >&2
+    echo "No services found in $PCM_CONTAINERS_HOME" >&2
     return 1
   fi
 

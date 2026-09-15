@@ -19,7 +19,7 @@ post_install() {
   local pcm_data="${XDG_DATA_HOME:-$HOME/.local/share}/pcm"
 
   # Create PCM config directory
-  mkdir -p "$pcm_config/services"
+  mkdir -p "$pcm_config/containers"
 
   # Create PCM data directory
   mkdir -p "$pcm_data/volumes"

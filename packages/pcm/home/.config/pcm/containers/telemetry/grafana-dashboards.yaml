@@ -1,0 +1,16 @@
+# Generic dashboard provider: loads any dashboard JSON found under the mounted
+# content directory. The stack itself ships ZERO dashboards -- the mounted dir
+# (see GRAFANA_DASHBOARDS_DIR in .env.schema) is the coupling seam. By default it
+# is an empty dir under the pcm volumes; project-specific dashboards are mounted
+# in from elsewhere.
+apiVersion: 1
+
+providers:
+  - name: dashboards
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: true

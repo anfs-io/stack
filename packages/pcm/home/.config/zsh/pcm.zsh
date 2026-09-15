@@ -2,7 +2,7 @@
 # Sets PCM-specific env vars and delegates to the ppm engine
 
 export PCM_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/pcm"
-export PCM_SERVICES_HOME="$PCM_CONFIG_HOME/services"
+export PCM_CONTAINERS_HOME="$PCM_CONFIG_HOME/containers"
 
 export PCM_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/pcm"
 export PCM_VOLUMES_HOME="$PCM_DATA_HOME/volumes"
@@ -10,7 +10,7 @@ export PCM_VOLUMES_HOME="$PCM_DATA_HOME/volumes"
 export PCM_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}/pcm"
 
 cconf() {
-  local dir=$PCM_SERVICES_HOME file="../registry.yml" ext="compose.yml"
+  local dir=$PCM_CONTAINERS_HOME file="../registry.yml" ext="compose.yml"
   load_conf "$@"
 }
 
@@ -19,7 +19,7 @@ pcm() {
   if [[ "${1:-}" == "cd" ]]; then
     shift
     if [[ $# -eq 0 ]]; then
-      builtin cd "$PCM_SERVICES_HOME"
+      builtin cd "$PCM_CONTAINERS_HOME"
     else
       local service_path
       service_path=$(command pcm path "$@") || return $?

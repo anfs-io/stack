@@ -1,0 +1,47 @@
+# n8n — workflow automation (https://n8n.io).
+#
+# pcm service: uses the shared pcm postgres. Start with `pcm up n8n`, which starts
+# postgres if needed, creates the `n8n` database and injects PCM_POSTGRES_*.
+# Every variable, with its default, lives in .env.schema.
+# Adapted from n8n-io/n8n-hosting docker-compose/withPostgres: the bundled postgres
+# and its init-data.sh are replaced by the shared pcm postgres.
+name: n8n
+
+x-pcm:
+  depends_on:
+    postgres:
+      database: n8n
+
+services:
+  n8n:
+    image: ${N8N_IMAGE}:${N8N_TAG}
+    restart: unless-stopped
+    ports:
+      - "${N8N_PORT}:5678"
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: ${PCM_POSTGRES_HOST}
+      DB_POSTGRESDB_PORT: ${PCM_POSTGRES_PORT}
+      DB_POSTGRESDB_DATABASE: ${PCM_POSTGRES_DATABASE}
+      DB_POSTGRESDB_USER: ${PCM_POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${PCM_POSTGRES_PASSWORD}
+      N8N_RUNNERS_MODE: external
+      N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
+      N8N_RUNNERS_BROKER_LISTEN_ADDRESS: 0.0.0.0
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL}
+      GENERIC_TIMEZONE: ${N8N_TIMEZONE}
+      TZ: ${N8N_TIMEZONE}
+    volumes:
+      # n8n's generated encryption key lives here (config) — losing it makes stored
+      # credentials unreadable. :U chowns to the image's non-root `node` user.
+      - ${PCM_VOLUMES_HOME}/n8n/data:/home/node/.n8n:U
+
+  # External task runner for Code nodes (JS/Python); connects to n8n's broker on :5679.
+  n8n-runner:
+    image: ${N8N_RUNNERS_IMAGE}:${N8N_TAG}
+    restart: unless-stopped
+    environment:
+      N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
+      N8N_RUNNERS_TASK_BROKER_URI: http://n8n:5679
+    depends_on:
+      - n8n

@@ -1,0 +1,53 @@
+# authentik — self-hosted identity provider (SSO / OAuth2 / OIDC / SAML) (https://goauthentik.io).
+#
+# pcm service: uses the shared pcm postgres. Start with `pcm up authentik`, which
+# starts postgres if needed, creates the `authentik` database and injects
+# PCM_POSTGRES_*. Every variable, with its default, lives in .env.schema.
+# Secrets ship with an insecure dev-only default — override them for anything shared.
+name: authentik
+
+x-pcm:
+  depends_on:
+    postgres:
+      database: authentik
+
+# Shared env for the server + worker (they run the same image, same config).
+# authentik >= 2025.10 needs no Redis: cache, tasks and websockets use postgres.
+x-authentik-env: &authentik-env
+  AUTHENTIK_POSTGRESQL__HOST: ${PCM_POSTGRES_HOST}
+  AUTHENTIK_POSTGRESQL__PORT: ${PCM_POSTGRES_PORT}
+  AUTHENTIK_POSTGRESQL__NAME: ${PCM_POSTGRES_DATABASE}
+  AUTHENTIK_POSTGRESQL__USER: ${PCM_POSTGRES_USER}
+  AUTHENTIK_POSTGRESQL__PASSWORD: ${PCM_POSTGRES_PASSWORD}
+  AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+
+services:
+  server:
+    image: ${AUTHENTIK_IMAGE}:${AUTHENTIK_TAG}
+    command: server
+    environment:
+      <<: *authentik-env
+    ports:
+      - "${AUTHENTIK_HTTP_PORT}:9000"
+      - "${AUTHENTIK_HTTPS_PORT}:9443"
+    restart: unless-stopped
+    shm_size: 512mb
+    volumes:
+      # :U chowns the host dirs to the image's non-root user (uid 1000, rootless podman)
+      - ${PCM_VOLUMES_HOME}/authentik/data:/data:U
+      - ${PCM_VOLUMES_HOME}/authentik/custom-templates:/templates:U
+
+  worker:
+    image: ${AUTHENTIK_IMAGE}:${AUTHENTIK_TAG}
+    command: worker
+    environment:
+      <<: *authentik-env
+    restart: unless-stopped
+    shm_size: 512mb
+    # Upstream runs the worker as root only so it can use the container socket for
+    # embedded-outpost management. That is off here (see README), so it stays
+    # non-root and shares /data with the server.
+    volumes:
+      - ${PCM_VOLUMES_HOME}/authentik/data:/data:U
+      - ${PCM_VOLUMES_HOME}/authentik/certs:/certs:U
+      - ${PCM_VOLUMES_HOME}/authentik/custom-templates:/templates:U
