@@ -50,6 +50,9 @@ Agents are auto-detected: any installed ppm package whose package.yml declares
 
 Skills that ppm packages stow into $PSM_SKILLS_HOME need no config: they are
 synced as the `builtin` repo, which every command accepts as a config name.
+
+See $PSM_CONFIG_HOME/example.yml for a commented config covering remote repos,
+local skill directories and the `agents:` stanza.
 EOF
 }
 
