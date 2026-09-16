@@ -1,4 +1,0 @@
-sources:
-  - repo: ~/.local/share/ppm/pdt/packages/pcm/skills
-    skills:
-      - pcm-containers
