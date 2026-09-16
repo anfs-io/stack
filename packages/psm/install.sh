@@ -48,6 +48,9 @@ _seed_config() {
 # list; every entry is installed for each AI agent ppm has installed (any
 # package whose package.yml carries an `agent:` key).
 #
+# Skills that ppm packages stow into ~/.local/share/psm/skills need no entry
+# here: psm syncs that directory as the `builtin` repo.
+#
 # sources:
 #   - repo: DietrichGebert/ponytail
 #     skills:

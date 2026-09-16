@@ -4,8 +4,12 @@ set -euo pipefail
 : "${XDG_CONFIG_HOME:=$HOME/.config}"
 : "${XDG_DATA_HOME:=$HOME/.local/share}"
 : "${PSM_CONFIG_HOME:=$XDG_CONFIG_HOME/psm}"
+: "${PSM_SKILLS_HOME:=$XDG_DATA_HOME/psm/skills}"
 : "${PSM_CLI_VERSION:=latest}"
 export PSM_CONFIG_HOME
+
+# Config name reported for the built-in repo; also accepted as a command argument
+PSM_BUILTIN=builtin
 
 # ppm layout, used to detect installed agent packages (mirrors ppm/ppm defaults)
 : "${PPM_DATA_HOME:=$XDG_DATA_HOME/ppm}"
@@ -43,6 +47,9 @@ Config: $PSM_CONFIG_HOME/*.yml, each holding a `sources:` list
 
 Agents are auto-detected: any installed ppm package whose package.yml declares
 `agent: <skills-cli-id>` becomes a target.
+
+Skills that ppm packages stow into $PSM_SKILLS_HOME need no config: they are
+synced as the `builtin` repo, which every command accepts as a config name.
 EOF
 }
 
@@ -114,12 +121,51 @@ _config_files() {
   done
 }
 
+# The built-in repo: skills that ppm packages stow into $PSM_SKILLS_HOME. Named
+# here rather than passed as "*" so each one gets a real installed check, and so
+# prune sees them as declared. ppm stows with --no-folding, so the skill dirs are
+# real and only their files are symlinks — which is all the skills CLI can follow.
+_builtin_source() {
+  local file skills=""
+
+  [[ -d "$PSM_SKILLS_HOME" ]] || return 0
+
+  while IFS= read -r file; do
+    skills+="${skills:+,}$(basename "$(dirname "$file")")"
+  done < <(find "$PSM_SKILLS_HOME" -mindepth 2 -maxdepth 2 -name SKILL.md 2>/dev/null | sort)
+
+  [[ -n "$skills" ]] && echo "$PSM_BUILTIN|$PSM_SKILLS_HOME|$skills|"
+  return 0
+}
+
+# Fail early on unknown config names: inside _config_sources, which feeds a loop
+# through a pipe, die would only exit the subshell
+_validate_names() {
+  local name
+  for name in "$@"; do
+    [[ "$name" == "$PSM_BUILTIN" ]] || _config_files "$name" >/dev/null
+  done
+}
+
 # Declared sources as |-separated rows: <config>|<repo>|<skills csv>|<agents csv>
 # (| rather than tab: read collapses consecutive tabs, losing empty fields)
+# The built-in repo is included unless other configs were named explicitly.
 _config_sources() {
-  local file
+  local file name builtin=false
+  local -a names=()
 
-  _config_files "$@" | while IFS= read -r file; do
+  if [[ $# -eq 0 ]]; then
+    builtin=true
+  else
+    for name in "$@"; do
+      if [[ "$name" == "$PSM_BUILTIN" ]]; then builtin=true; else names+=("$name"); fi
+    done
+  fi
+
+  $builtin && _builtin_source
+  [[ $# -gt 0 && ${#names[@]} -eq 0 ]] && return 0
+
+  _config_files ${names[@]+"${names[@]}"} | while IFS= read -r file; do
     yq -r '.sources[]? | [.repo,
                           ((.skills // ["*"]) | join(",")),
                           ((.agents // []) | join(","))] | join("|")' "$file" 2>/dev/null \
@@ -181,7 +227,7 @@ cmd_sync() {
     shift
   done
 
-  _config_files ${names[@]+"${names[@]}"} >/dev/null
+  _validate_names ${names[@]+"${names[@]}"}
   require_npx
   _load_installed
 
@@ -331,9 +377,15 @@ cmd_completion() {
       cat <<'COMPLETION'
 #compdef psm
 
-_psm_configs() {
+_psm_config_files() {
   local dir=${PSM_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/psm}
   local -a configs=($dir/*.y(a|)ml(N:t:r))
+  compadd -a configs
+}
+
+_psm_configs() {
+  local dir=${PSM_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/psm}
+  local -a configs=($dir/*.y(a|)ml(N:t:r) builtin)
   compadd -a configs
 }
 
@@ -360,7 +412,7 @@ _psm() {
     sync)        compadd -- --local; _psm_configs ;;
     update)      _psm_configs ;;
     prune)       compadd -- -y ;;
-    path|cd)     (( CURRENT == 3 )) && _psm_configs ;;
+    path|cd)     (( CURRENT == 3 )) && _psm_config_files ;;
     completion)  (( CURRENT == 3 )) && compadd zsh ;;
   esac
 }
