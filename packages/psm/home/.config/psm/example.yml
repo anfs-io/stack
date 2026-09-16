@@ -8,6 +8,10 @@
 # Skills that a ppm package stows into ~/.local/share/psm/skills need no entry
 # here at all: psm syncs that directory as the `builtin` repo. Use a config for
 # everything else — remote repos, and local skills you keep outside ppm.
+#
+# For a local directory, `psm repo add` writes the config for you: cd into it
+# and run `psm repo add .`, which names the file after the directory. Remote
+# repos are declared by hand, as below.
 
 # sources:
 #   # A remote repo, by name. `repo` accepts anything the skills CLI does:

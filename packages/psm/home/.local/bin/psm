@@ -27,6 +27,10 @@ Commands:
                           local-path sources so edits take effect
   list, ls                Show each declared skill: ok, partial, missing or * (glob)
   agents                  List agent ids detected from installed ppm packages
+  repo add [path] [name]  Declare a local skill directory (default: .) in a
+                          config of its own, named after the directory
+  repo rm [path]          Remove that config
+  repo ls                 List every declared repo and the config declaring it
   prune [-y]              Show installed skills no config declares; -y removes them
   remove <skill>...       Remove skills globally
   path [config]           Output path to the config dir or a config file
@@ -124,18 +128,23 @@ _config_files() {
   done
 }
 
+# Skill names in a directory, one per line: every <name>/SKILL.md directly under
+# it. Not -type f: ppm stows SKILL.md as a symlink.
+_dir_skills() {
+  local file
+  find "$1" -mindepth 2 -maxdepth 2 -name SKILL.md 2>/dev/null | sort \
+    | while IFS= read -r file; do basename "$(dirname "$file")"; done
+}
+
 # The built-in repo: skills that ppm packages stow into $PSM_SKILLS_HOME. Named
 # here rather than passed as "*" so each one gets a real installed check, and so
 # prune sees them as declared. ppm stows with --no-folding, so the skill dirs are
 # real and only their files are symlinks — which is all the skills CLI can follow.
 _builtin_source() {
-  local file skills=""
+  local skills
 
   [[ -d "$PSM_SKILLS_HOME" ]] || return 0
-
-  while IFS= read -r file; do
-    skills+="${skills:+,}$(basename "$(dirname "$file")")"
-  done < <(find "$PSM_SKILLS_HOME" -mindepth 2 -maxdepth 2 -name SKILL.md 2>/dev/null | sort)
+  skills=$(_dir_skills "$PSM_SKILLS_HOME" | paste -sd, -)
 
   [[ -n "$skills" ]] && echo "$PSM_BUILTIN|$PSM_SKILLS_HOME|$skills|"
   return 0
@@ -185,6 +194,15 @@ _expand_home() {
   esac
 }
 
+# Inverse of _expand_home: configs record ~/src/skills, not /Users/x/src/skills
+_abbreviate() {
+  case "$1" in
+    "$HOME")   echo "~" ;;
+    "$HOME"/*) echo "~/${1#"$HOME"/}" ;;
+    *)         echo "$1" ;;
+  esac
+}
+
 _is_local() {
   [[ "$1" == /* || "$1" == ./* || "$1" == ../* ]]
 }
@@ -211,6 +229,126 @@ _has_skill() {
     display=$(_agent_display "$agent") || return 1
     [[ ",$have," == *",$display,"* ]] || return 1
   done
+}
+
+# --- repo ---
+
+# Name of the config declaring <abs path>, if any. The built-in repo is skipped:
+# it has no config file to add to or remove.
+_repo_config() {
+  local config repo skills agents match=""
+
+  # Drains the stream rather than returning on the first hit: leaving early
+  # would close the pipe under _config_sources, whose yq would then fail and
+  # report the config as unparseable
+  while IFS='|' read -r config repo skills agents; do
+    [[ "$config" == "$PSM_BUILTIN" ]] && continue
+    repo=$(_expand_home "$repo")
+    if [[ -z "$match" && "${repo%/}" == "$1" ]]; then match="$config"; fi
+  done < <(_config_sources)
+
+  [[ -n "$match" ]] || return 1
+  echo "$match"
+}
+
+# Resolve an argument to an absolute path with no symlinks
+_repo_path() {
+  local path
+  path=$(cd -P "${1:-.}" 2>/dev/null && pwd -P) || return 1
+  echo "$path"
+}
+
+_repo_add() {
+  [[ $# -le 2 ]] || die "Usage: psm repo add [path] [name]"
+
+  local path name config file
+  local -a found=()
+
+  path=$(_repo_path "${1:-.}") || die "not a directory: ${1:-.}"
+
+  if config=$(_repo_config "$path"); then
+    echo "Already declared in $config: $(_abbreviate "$path")"
+    return 0
+  fi
+
+  while IFS= read -r name; do found+=("$name"); done < <(_dir_skills "$path")
+  [[ ${#found[@]} -gt 0 ]] \
+    || die "no <skill>/SKILL.md directly under $(_abbreviate "$path")"
+
+  name="${2:-}"
+  if [[ -z "$name" ]]; then
+    name=$(basename "$path")
+    # ~/spaces/cnfs-io/skills is better named for its parent than for "skills"
+    [[ "$name" == skills ]] && name=$(basename "$(dirname "$path")")
+  fi
+
+  file="$PSM_CONFIG_HOME/$name.yml"
+  [[ -e "$file" ]] && die "$file exists — pass a name: psm repo add ${1:-.} <name>"
+
+  mkdir -p "$PSM_CONFIG_HOME"
+  # "*" rather than the names found: it is your directory, and skills you add to
+  # it later should sync without re-declaring the repo
+  cat > "$file" <<EOF
+sources:
+  - repo: $(_abbreviate "$path")
+    skills: ["*"]
+EOF
+
+  echo "Added $(_abbreviate "$path") as $name"
+  printf '  %s\n' "${found[@]}"
+  echo "Run: psm sync $name"
+}
+
+_repo_rm() {
+  [[ $# -le 1 ]] || die "Usage: psm repo rm [path]"
+
+  local path config file count
+
+  # A repo whose directory is gone must still be removable, so an unresolvable
+  # argument falls back to the path as written
+  path=$(_repo_path "${1:-.}") || { path=$(_expand_home "${1:-.}"); path="${path%/}"; }
+
+  config=$(_repo_config "$path") || die "not declared: $(_abbreviate "$path")"
+  file=$(_config_files "$config")
+
+  # A stowed config belongs to the ppm package that ships it; removing the
+  # symlink here would leave ppm's tracker claiming it is still installed
+  [[ -L "$file" ]] \
+    && die "$config is stowed by a ppm package — remove the package instead: $file"
+
+  # Only remove a config this command could have written; anything hand-authored
+  # is left alone rather than rewritten, which would drop its comments
+  count=$(yq -r '.sources | length' "$file" 2>/dev/null) || count=0
+  [[ "$count" == 1 ]] \
+    || die "$config declares $count sources — remove the entry by hand: $file"
+
+  rm -f "$file"
+  echo "Removed $(_abbreviate "$path") ($config)"
+  echo "Run: psm prune   # its skills are still installed"
+}
+
+_repo_ls() {
+  local config repo skills agents path
+
+  while IFS='|' read -r config repo skills agents; do
+    [[ -n "$repo" ]] || continue
+    path=$(_expand_home "$repo")
+    if _is_local "$path" && [[ ! -d "$path" ]]; then
+      printf '%-12s %s (missing)\n' "$config" "$repo"
+    else
+      printf '%-12s %s\n' "$config" "$repo"
+    fi
+  done < <(_config_sources)
+}
+
+cmd_repo() {
+  case "${1:-}" in
+    add)       shift; _repo_add "$@" ;;
+    rm|remove) shift; _repo_rm "$@" ;;
+    list|ls)   shift; _repo_ls ;;
+    "")        die "Usage: psm repo <add|rm|ls>" ;;
+    *)         die "unknown repo command '$1' (expected: add, rm, ls)" ;;
+  esac
 }
 
 cmd_agents() {
@@ -398,6 +536,7 @@ _psm() {
     'update:Update remote skills and re-copy local sources'
     'list:Show declared skills and their status'
     'agents:List detected agent ids'
+    'repo:Declare, drop or list local skill directories'
     'prune:Show or remove undeclared skills'
     'remove:Remove skills globally'
     'path:Output path to the config dir or a config'
@@ -408,6 +547,15 @@ _psm() {
 
   if (( CURRENT == 2 )); then
     _describe 'command' subcmds
+    return
+  fi
+
+  if [[ "${words[2]}" == repo ]]; then
+    if (( CURRENT == 3 )); then
+      _describe 'repo command' '(add:Declare a local skill directory rm:Remove its config ls:List declared repos)'
+    elif (( CURRENT == 4 )) && [[ "${words[3]}" != ls ]]; then
+      _path_files -/
+    fi
     return
   fi
 
@@ -439,6 +587,7 @@ case "${1:-}" in
   update)      shift; cmd_update "$@" ;;
   list|ls)     shift; cmd_list "$@" ;;
   agents)      shift; cmd_agents ;;
+  repo)        shift; cmd_repo "$@" ;;
   prune)       shift; cmd_prune "$@" ;;
   remove|rm)   shift; cmd_remove "$@" ;;
   path)        shift; cmd_path "$@" ;;
