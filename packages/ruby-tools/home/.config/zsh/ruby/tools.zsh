@@ -16,6 +16,20 @@ ensure_path "$RUBY_LOCAL_GEMS_HOME/bin"
   unset _gem_paths _joined
 }
 
+zcomp local-gems
+
+# Wrapper to handle `local-gems cd` since subshells can't change parent directory
+local-gems() {
+  if [[ "${1:-}" == "cd" ]]; then
+    shift
+    local dir
+    dir=$(command local-gems path "$@") || return $?
+    builtin cd "$dir"
+  else
+    command local-gems "$@"
+  fi
+}
+
 # bu - bundle
 alias bua="bundle add"
 
