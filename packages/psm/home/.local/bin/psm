@@ -25,18 +25,18 @@ Commands:
                           linked to every target agent (all configs if none given)
   update [config...]      Update remote skills (skills update -g) and re-copy
                           local-path sources so edits take effect
-  list, ls                Show each declared skill: ok, partial, missing or * (glob)
-  agents                  List agent ids detected from installed ppm packages
-  repo add [path] [name]  Declare a local skill directory (default: .) in a
-                          config of its own, named after the directory
-  repo rm [path]          Remove that config
-  repo ls                 List every declared repo and the config declaring it
-  prune [-y]              Show installed skills no config declares; -y removes them
-  remove <skill>...       Remove skills globally
-  path [config]           Output path to the config dir or a config file
-  cd [config]             Change to the config dir (requires psm.zsh)
+  repo <ls|add|rm>        List declared repos, declare a local skill directory
+                          in a config of its own, or drop that config
+  skills <ls|rm|prune>    List declared skills and their status, remove them,
+                          or find installed skills no config declares
+  agents <ls>             List agent ids detected from installed ppm packages
+  cd                      Change to the config dir (requires psm.zsh)
   completion <shell>      Output shell completion code (zsh)
   help                    Show this help
+
+Run a noun on its own — psm repo, psm skills, psm agents — for its commands.
+sync and update stay at the top: they are the only commands that span all
+three, reading repos to install skills for agents.
 
 Config: $PSM_CONFIG_HOME/*.yml, each holding a `sources:` list
 
@@ -62,6 +62,9 @@ EOF
 
 die()  { echo "psm: $*" >&2; exit 1; }
 warn() { echo "psm: $*" >&2; }
+
+# Wrong arity for a known command: the usage line reads better unprefixed
+usage_err() { echo "Usage: $*" >&2; exit 1; }
 
 # node comes from mise via the `node` dependency
 require_npx() {
@@ -163,7 +166,7 @@ _validate_names() {
 # (| rather than tab: read collapses consecutive tabs, losing empty fields)
 # The built-in repo is included unless other configs were named explicitly.
 _config_sources() {
-  local file name builtin=false
+  local file name rows builtin=false
   local -a names=()
 
   if [[ $# -eq 0 ]]; then
@@ -177,12 +180,19 @@ _config_sources() {
   $builtin && _builtin_source
   [[ $# -gt 0 && ${#names[@]} -eq 0 ]] && return 0
 
+  # yq is checked on its own rather than through the pipeline: under pipefail a
+  # consumer that stops reading (psm skills | head) would otherwise surface as
+  # an unparseable config
   _config_files ${names[@]+"${names[@]}"} | while IFS= read -r file; do
-    yq -r '.sources[]? | [.repo,
-                          ((.skills // ["*"]) | join(",")),
-                          ((.agents // []) | join(","))] | join("|")' "$file" 2>/dev/null \
-      | awk -v c="$(basename "${file%.*}")" 'NF { print c "|" $0 }' \
-      || warn "can't parse $file"
+    if ! rows=$(yq -r '.sources[]? | [.repo,
+                                      ((.skills // ["*"]) | join(",")),
+                                      ((.agents // []) | join(","))] | join("|")' "$file" 2>/dev/null); then
+      warn "can't parse $file"
+      continue
+    fi
+
+    [[ -n "$rows" ]] || continue
+    awk -v c="$(basename "${file%.*}")" 'NF { print c "|" $0 }' <<< "$rows"
   done
 }
 
@@ -259,12 +269,12 @@ _repo_path() {
 }
 
 _repo_add() {
-  [[ $# -le 2 ]] || die "Usage: psm repo add [path] [name]"
+  [[ $# -ge 1 && $# -le 2 ]] || usage_err "psm repo add <path> [name]"
 
   local path name config file
   local -a found=()
 
-  path=$(_repo_path "${1:-.}") || die "not a directory: ${1:-.}"
+  path=$(_repo_path "$1") || die "not a directory: $1"
 
   if config=$(_repo_config "$path"); then
     echo "Already declared in $config: $(_abbreviate "$path")"
@@ -283,7 +293,7 @@ _repo_add() {
   fi
 
   file="$PSM_CONFIG_HOME/$name.yml"
-  [[ -e "$file" ]] && die "$file exists — pass a name: psm repo add ${1:-.} <name>"
+  [[ -e "$file" ]] && die "$file exists — pass a name: psm repo add $1 <name>"
 
   mkdir -p "$PSM_CONFIG_HOME"
   # "*" rather than the names found: it is your directory, and skills you add to
@@ -300,13 +310,13 @@ EOF
 }
 
 _repo_rm() {
-  [[ $# -le 1 ]] || die "Usage: psm repo rm [path]"
+  [[ $# -eq 1 ]] || usage_err "psm repo rm <path>"
 
   local path config file count
 
   # A repo whose directory is gone must still be removable, so an unresolvable
   # argument falls back to the path as written
-  path=$(_repo_path "${1:-.}") || { path=$(_expand_home "${1:-.}"); path="${path%/}"; }
+  path=$(_repo_path "$1") || { path=$(_expand_home "$1"); path="${path%/}"; }
 
   config=$(_repo_config "$path") || die "not declared: $(_abbreviate "$path")"
   file=$(_config_files "$config")
@@ -324,7 +334,7 @@ _repo_rm() {
 
   rm -f "$file"
   echo "Removed $(_abbreviate "$path") ($config)"
-  echo "Run: psm prune   # its skills are still installed"
+  echo "Run: psm skills prune   # its skills are still installed"
 }
 
 _repo_ls() {
@@ -341,17 +351,66 @@ _repo_ls() {
   done < <(_config_sources)
 }
 
+# Each noun prints its own usage when run bare, mirroring `psm` with no command
+
+_repo_usage() {
+  cat <<'EOF'
+Usage: psm repo <command> [args]
+
+  ls                      List every declared repo and the config declaring it
+  add <path> [name]       Declare a local skill directory in a config of its
+                          own, named after the directory unless <name> is given
+  rm <path>               Remove that config
+EOF
+}
+
 cmd_repo() {
   case "${1:-}" in
+    list|ls)   _repo_ls ;;
     add)       shift; _repo_add "$@" ;;
     rm|remove) shift; _repo_rm "$@" ;;
-    list|ls)   shift; _repo_ls ;;
-    "")        die "Usage: psm repo <add|rm|ls>" ;;
-    *)         die "unknown repo command '$1' (expected: add, rm, ls)" ;;
+    "")        _repo_usage ;;
+    *)         echo "psm: unknown repo command '$1'" >&2; _repo_usage >&2; exit 1 ;;
   esac
 }
 
+_skills_usage() {
+  cat <<'EOF'
+Usage: psm skills <command> [args]
+
+  ls                      Show each declared skill: ok, partial, missing or *
+  rm <skill>...           Remove skills globally
+  prune [-y]              Show installed skills no config declares; -y removes
+EOF
+}
+
+cmd_skills() {
+  case "${1:-}" in
+    list|ls)   _skills_ls ;;
+    rm|remove) shift; _skills_rm "$@" ;;
+    prune)     shift; _skills_prune "$@" ;;
+    "")        _skills_usage ;;
+    *)         echo "psm: unknown skills command '$1'" >&2; _skills_usage >&2; exit 1 ;;
+  esac
+}
+
+_agents_usage() {
+  cat <<'EOF'
+Usage: psm agents <command>
+
+  ls                      List agent ids detected from installed ppm packages
+EOF
+}
+
 cmd_agents() {
+  case "${1:-}" in
+    list|ls)   _agents_ls ;;
+    "")        _agents_usage ;;
+    *)         echo "psm: unknown agents command '$1'" >&2; _agents_usage >&2; exit 1 ;;
+  esac
+}
+
+_agents_ls() {
   _installed_agents | tr ',' '\n'
 }
 
@@ -432,7 +491,7 @@ cmd_update() {
   cmd_sync --local "$@"
 }
 
-cmd_list() {
+_skills_ls() {
   require_npx
   _load_installed
 
@@ -461,7 +520,7 @@ cmd_list() {
   done < <(_config_sources)
 }
 
-cmd_prune() {
+_skills_prune() {
   local yes=false
   [[ "${1:-}" == "-y" ]] && yes=true
 
@@ -498,8 +557,8 @@ cmd_prune() {
   fi
 }
 
-cmd_remove() {
-  [[ $# -gt 0 ]] || die "Usage: psm remove <skill>..."
+_skills_rm() {
+  [[ $# -gt 0 ]] || usage_err "psm skills rm <skill>..."
   require_npx
   skills_cli remove -g -y "$@"
 }
@@ -518,12 +577,7 @@ cmd_completion() {
       cat <<'COMPLETION'
 #compdef psm
 
-_psm_config_files() {
-  local dir=${PSM_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/psm}
-  local -a configs=($dir/*.y(a|)ml(N:t:r))
-  compadd -a configs
-}
-
+# Config names accepted by sync and update, the built-in repo included
 _psm_configs() {
   local dir=${PSM_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/psm}
   local -a configs=($dir/*.y(a|)ml(N:t:r) builtin)
@@ -534,12 +588,9 @@ _psm() {
   local -a subcmds=(
     'sync:Install missing skills for every target agent'
     'update:Update remote skills and re-copy local sources'
-    'list:Show declared skills and their status'
+    'repo:List, declare or drop skill repos'
+    'skills:List, remove or prune skills'
     'agents:List detected agent ids'
-    'repo:Declare, drop or list local skill directories'
-    'prune:Show or remove undeclared skills'
-    'remove:Remove skills globally'
-    'path:Output path to the config dir or a config'
     'cd:Change to the config dir'
     'completion:Output shell completion code'
     'help:Show usage'
@@ -550,20 +601,39 @@ _psm() {
     return
   fi
 
-  if [[ "${words[2]}" == repo ]]; then
-    if (( CURRENT == 3 )); then
-      _describe 'repo command' '(add:Declare a local skill directory rm:Remove its config ls:List declared repos)'
-    elif (( CURRENT == 4 )) && [[ "${words[3]}" != ls ]]; then
-      _path_files -/
-    fi
-    return
-  fi
+  local -a verbs
 
   case "${words[2]}" in
+    repo)
+      verbs=(
+        'ls:List every declared repo and the config declaring it'
+        'add:Declare a local skill directory in a config of its own'
+        'rm:Remove that config'
+      )
+      if (( CURRENT == 3 )); then
+        _describe 'repo command' verbs
+      elif (( CURRENT == 4 )) && [[ "${words[3]}" == (add|rm) ]]; then
+        _path_files -/
+      fi
+      ;;
+    skills)
+      verbs=(
+        'ls:Show each declared skill and its status'
+        'rm:Remove skills globally'
+        'prune:Show or remove skills no config declares'
+      )
+      if (( CURRENT == 3 )); then
+        _describe 'skills command' verbs
+      elif [[ "${words[3]}" == prune ]]; then
+        compadd -- -y
+      fi
+      ;;
+    agents)
+      verbs=('ls:List detected agent ids')
+      (( CURRENT == 3 )) && _describe 'agents command' verbs
+      ;;
     sync)        compadd -- --local; _psm_configs ;;
     update)      _psm_configs ;;
-    prune)       compadd -- -y ;;
-    path|cd)     (( CURRENT == 3 )) && _psm_config_files ;;
     completion)  (( CURRENT == 3 )) && compadd zsh ;;
   esac
 }
@@ -585,11 +655,10 @@ COMPLETION
 case "${1:-}" in
   sync)        shift; cmd_sync "$@" ;;
   update)      shift; cmd_update "$@" ;;
-  list|ls)     shift; cmd_list "$@" ;;
-  agents)      shift; cmd_agents ;;
   repo)        shift; cmd_repo "$@" ;;
-  prune)       shift; cmd_prune "$@" ;;
-  remove|rm)   shift; cmd_remove "$@" ;;
+  skills)      shift; cmd_skills "$@" ;;
+  agents)      shift; cmd_agents "$@" ;;
+  # Plumbing for the `psm cd` shell function, not part of the public surface
   path)        shift; cmd_path "$@" ;;
   cd)          echo "psm cd requires the psm shell function (source psm.zsh)" >&2; exit 1 ;;
   completion)  shift; cmd_completion "$@" ;;

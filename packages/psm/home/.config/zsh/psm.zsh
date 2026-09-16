@@ -5,7 +5,7 @@ export PSM_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}/psm"
 zcomp psm
 
 sconf() {
-  local dir=$PSM_CONFIG_HOME file="chorus.yml" ext="yml"
+  local dir=$PSM_CONFIG_HOME file="example.yml" ext="yml"
   load_conf "$@"
 }
 

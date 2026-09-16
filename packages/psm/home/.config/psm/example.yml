@@ -33,7 +33,7 @@
 #       - ledger-reconcile
 #
 #   # `agents:` overrides auto-detection, so a source installs only where it
-#   # makes sense. Ids come from `psm agents`: claude-code, opencode, pi,
+#   # makes sense. Ids come from `psm agents ls`: claude-code, opencode, pi,
 #   # hermes-agent, antigravity, antigravity-cli.
 #   - repo: ~/spaces/cnfs-io/skills
 #     skills: ["*"]
