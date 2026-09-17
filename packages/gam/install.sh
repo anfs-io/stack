@@ -8,7 +8,7 @@ GAM7_WORK_DIR="$XDG_DATA_HOME/gam7"
 
 post_install() {
   source <(mise activate bash)
-  mise install pipx:gam7
+  mise install pipx:gam7   # installed here rather than by ppm: mise_fix_gam7 runs right after
   mise_fix_gam7
 
   # Refresh PATH so the newly-installed gam binary is found

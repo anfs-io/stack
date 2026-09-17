@@ -1,2 +1,6 @@
 version: 0.1.0
 author: rjayroach
+brew: [bat, fzf, htop, tree]
+# zsh itself comes from the distro so the login shell is a path listed in /etc/shells
+system:
+  linux: [zsh]

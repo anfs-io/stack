@@ -1,9 +1,5 @@
 # ssh
 
-install_linux() {
-  install_dep sshfs
-}
-
 # macFUSE (formerly OSXFUSE) is a framework that allows mounting user-space filesystems on macOS
 # It provides the kernel-level hooks needed for non-native filesystems.
 # install_macos() {

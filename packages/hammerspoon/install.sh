@@ -1,13 +1,11 @@
 # hammerspoon
 # https://www.hammerspoon.org/go/#helloworld
 
-install_macos() {
-  install_dep hammerspoon
-
-  spoon_dir=$HOME/.hammerspoon/Spoons
+post_install() {
+  local spoon_dir=$HOME/.hammerspoon/Spoons spoon
   mkdir -p $spoon_dir
 
-  spoons=("AClock" "BingDaily")
+  local spoons=("AClock" "BingDaily")
   for spoon in "${spoons[@]}"; do
     if [[ ! -d "$spoon_dir/$spoon.spoon" ]]; then
       user_message "Installing spoon: $spoon"
