@@ -4,3 +4,5 @@ brew: [bat, fzf, htop, tree]
 # zsh itself comes from the distro so the login shell is a path listed in /etc/shells
 system:
   linux: [zsh]
+  # minimal Fedora images lack hostname, which p10k.zsh's custom_context segment runs
+  fedora: [zsh, hostname]

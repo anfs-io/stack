@@ -17,3 +17,17 @@ system:
     - libxslt1-dev
     - libcurl4-openssl-dev
     - libffi-dev
+  fedora:
+    - gcc
+    - gcc-c++
+    - make
+    - zlib-devel
+    - openssl-devel
+    - readline-devel
+    - libyaml-devel
+    - sqlite-devel
+    - sqlite
+    - libxml2-devel
+    - libxslt-devel
+    - libcurl-devel
+    - libffi-devel
