@@ -1,42 +1,9 @@
 # aliases.zsh
 # echo ${0:a:h} # The dir of this script
 
-# XDG directories
-export XDG_CACHE_HOME=$HOME/.cache
-export XDG_CONFIG_HOME=$HOME/.config
-export XDG_DATA_HOME=$HOME/.local/share
-export XDG_STATE_HOME=~/.local/state
-
-# non XDG directories
-export BIN_DIR=$HOME/.local/bin
-export LIB_DIR=$HOME/.local/lib
-
-# Homebrew on PATH, wherever it is installed. This file loads first, so every other .zsh file
-# can use brew tools; it runs before $BIN_DIR is added so ~/.local/bin stays first on PATH
-if [[ -z $HOMEBREW_PREFIX ]]; then
-  for _brew_prefix in /opt/homebrew /home/linuxbrew/.linuxbrew; do
-    if [[ -x $_brew_prefix/bin/brew ]]; then
-      eval "$($_brew_prefix/bin/brew shellenv zsh)"
-      break
-    fi
-  done
-  unset _brew_prefix
-fi
-
-ensure_path() {
-  local target="$1"
-  # Strip target from start, middle, and end of PATH
-  local clean_path=":$PATH:"
-  clean_path="${clean_path//:$target:/:}"
-  clean_path="${clean_path#:}"
-  clean_path="${clean_path%:}"
-
-  export PATH="$target${clean_path:+:$clean_path}"
-}
-
-
-# Add $BIN_DIR to the search path
-ensure_path "$BIN_DIR"
+# The XDG/BIN_DIR exports, Homebrew on PATH and ensure_path all moved to .zshrc, which runs
+# them before it sources any snippet: the portable ~/.config/sh/*.sh tier is sourced first and
+# guards on `command -v <tool>`, so PATH has to be complete before the first snippet loads.
 
 export PPM_FPATH=$XDG_DATA_HOME/omz/custom/completions
 
@@ -124,9 +91,9 @@ zsrc() {
   done
   shift $((OPTIND - 1)) # Remove the parsed flag, leaving extra arguments in $@
 
-  # Original logic to source the files
+  # Original logic to source the files. Same two tiers, in the same order, as .zshrc.
   setopt local_options nullglob extended_glob
-  for file in $ZSH_CONFIG/**/*.zsh(N); do
+  for file in ${SH_CONFIG:-$HOME/.config/sh}/**/*.sh(N) $ZSH_CONFIG/**/*.zsh(N); do
     source "$file" # No need to check if files exist since nullglob only returns existing files
   done
 

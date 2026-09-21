@@ -1,7 +1,5 @@
 version: 0.1.0
 author: rjayroach
-depends:
-  - mise
 # macOS: the CLI ships as a cask next to the desktop app, for app integration and biometric unlock.
 # Linux: the CLI comes from mise (linux/.config/mise) — hosts there use service account tokens,
 # which never touch the desktop app. Desktop-app integration on Linux would need op in

@@ -14,6 +14,48 @@ fi
 # Path to your Oh My Zsh installation.
 export ZSH="$HOME/.local/share/omz"
 export ZSH_CONFIG="$HOME/.config/zsh"
+# Portable snippets shared with bash (see the shell-integration tiers in ppm's CLAUDE.md)
+export SH_CONFIG="$HOME/.config/sh"
+
+# XDG directories
+export XDG_CACHE_HOME=$HOME/.cache
+export XDG_CONFIG_HOME=$HOME/.config
+export XDG_DATA_HOME=$HOME/.local/share
+export XDG_STATE_HOME=$HOME/.local/state
+
+# non XDG directories
+export BIN_DIR=$HOME/.local/bin
+export LIB_DIR=$HOME/.local/lib
+
+# The base environment lives here, not in a snippet, because the snippet loop at the bottom
+# sources the portable ~/.config/sh/*.sh tier first and those files guard on `command -v <tool>`:
+# PATH must already be complete when the first snippet loads. pde/bash's .bashrc does the same.
+
+# Homebrew on PATH, wherever it is installed, before $BIN_DIR is added so ~/.local/bin stays first
+if [[ -z $HOMEBREW_PREFIX ]]; then
+  for _brew_prefix in /opt/homebrew /home/linuxbrew/.linuxbrew; do
+    if [[ -x $_brew_prefix/bin/brew ]]; then
+      eval "$($_brew_prefix/bin/brew shellenv zsh)"
+      break
+    fi
+  done
+  unset _brew_prefix
+fi
+
+# Put $target first on PATH, removing any existing occurrence so repeats can't duplicate it.
+# Packages call this from their own .zsh files (pde/ruby-tools, pdt/solana).
+ensure_path() {
+  local target="$1"
+  # Strip target from start, middle, and end of PATH
+  local clean_path=":$PATH:"
+  clean_path="${clean_path//:$target:/:}"
+  clean_path="${clean_path#:}"
+  clean_path="${clean_path%:}"
+
+  export PATH="$target${clean_path:+:$clean_path}"
+}
+
+ensure_path "$BIN_DIR"
 
 # Set name of the theme to load --- if set to "random", it will
 # load a random theme each time Oh My Zsh is loaded, in which case,
@@ -116,8 +158,10 @@ source $ZSH/oh-my-zsh.sh
 # alias ohmyzsh="mate ~/.oh-my-zsh"
 #
 # echo $PATH | tr ':' '\n' > ~/path.txt
+# Portable tier first, then the zsh-specific one: a $SH_CONFIG file must not rely on a helper
+# defined under $ZSH_CONFIG at source time (calling one at runtime is fine).
 setopt extended_glob
-for file in $ZSH_CONFIG/**/*.zsh(N); do
+for file in $SH_CONFIG/**/*.sh(N) $ZSH_CONFIG/**/*.zsh(N); do
   source "$file"
 done
 # echo "\n\n" >> ~/path.txt

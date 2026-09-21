@@ -1,0 +1,5 @@
+version: 0.1.0
+author: rjayroach
+# No brew/system entries on purpose: bash ships with every supported Linux, and on macOS
+# install.sh brews bash 5 as an untracked bootstrap formula (macOS ships 3.2). Declaring it
+# here would let `ppm remove bash` uninstall the bash ppm's own scripts run on.
