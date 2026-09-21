@@ -1,0 +1,4 @@
+version: 0.1.0
+author: rjayroach
+platforms: [macos]
+# omlx needs its own tap and a build option, so install.sh keeps the brew commands

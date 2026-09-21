@@ -3,3 +3,5 @@ author: rjayroach
 agent: pi
 depends:
   - mise
+# pi is declared in .config/mise and installed by ppm.
+# Optional extras, if wanted later: pi install npm:pi-vim; mise install npm:openclaw npm:prpm npm:ralph-tui

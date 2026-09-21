@@ -3,3 +3,5 @@ author: rjayroach
 agent:
   - antigravity
   - antigravity-cli
+platforms: [macos]
+cask: [antigravity, antigravity-cli]

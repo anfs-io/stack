@@ -8,10 +8,7 @@ REPOS=(
   "git@github.com:anfs-io/marketplace.git"
 )
 
-post_install() {
-  source <(mise activate bash)
-  mise install claude
-}
+# claude itself is declared in .config/mise and installed by ppm
 
 x_install() {
   mkdir -p "$PLUGINS_DIR"
