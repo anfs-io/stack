@@ -1,5 +1,3 @@
 version: 0.1.0
 author: rjayroach
 agent: claude-code
-depends:
-  - mise
