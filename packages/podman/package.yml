@@ -1,2 +1,7 @@
 version: 0.1.0
 author: rjayroach
+# Linux takes podman from the distro: rootless setup and the systemd socket are wired up there
+brew:
+  macos: [podman, podman-compose]
+system:
+  linux: [podman, podman-compose]

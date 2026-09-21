@@ -1,14 +1,6 @@
 # phoenix
 # Phoenix Framework with Ash Framework for Elixir
 
-# Linux dependencies for Phoenix (inotify for live reload)
-install_linux() {
-  install_dep inotify-tools
-}
-
-# macOS uses fsevents natively, no extra deps needed
-# install_macos()
-
 post_install() {
   source <(mise activate bash)
   

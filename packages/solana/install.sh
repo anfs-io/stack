@@ -6,7 +6,7 @@ xinstall_linux() {
     return
   fi
   # See: https://github.com/anza-xyz/agave
-  install_dep pkg-config librust-libudev-dev libclang-19-dev
+  # Build dependencies are declared in package.yml (system.debian)
   cd /tmp
   git clone https://github.com/anza-xyz/agave.git
   cd agave

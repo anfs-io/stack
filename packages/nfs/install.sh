@@ -6,8 +6,6 @@
 NFS_CONFIG_DIR="${HOME}/.config/nfs"
 
 install_linux() {
-  install_dep nfs-kernel-server
-
   # Apply exports if host-specific config exists
   if [[ -f "${NFS_CONFIG_DIR}/exports.local" ]]; then
     echo "Applying NFS exports from ${NFS_CONFIG_DIR}/exports.local"

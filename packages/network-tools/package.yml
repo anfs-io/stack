@@ -1,4 +1,3 @@
 version: 0.1.0
-os:
-  - linux
-  - macos
+author: rjayroach
+brew: [iperf3, nmap]

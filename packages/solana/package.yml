@@ -3,3 +3,6 @@ author: rjayroach
 depends:
   - rust
   - node
+# Build dependencies for compiling agave from source (the x-prefixed hooks in install.sh)
+system:
+  debian: [pkg-config, librust-libudev-dev, libclang-19-dev]

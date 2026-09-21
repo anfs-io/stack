@@ -2,3 +2,6 @@ version: 0.1.0
 author: rjayroach
 depends:
   - elixir
+# inotify-tools drives live reload on Linux; macOS uses fsevents natively
+system:
+  debian: [inotify-tools]

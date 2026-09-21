@@ -1,8 +1,6 @@
 # podman
 
 install_linux() {
-  install_dep podman podman-compose
-
   # Podman API socket for docker-compatible clients (dockge, dev containers, testcontainers)
   if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
     systemctl --user enable --now podman.socket
@@ -12,8 +10,6 @@ install_linux() {
 }
 
 install_macos() {
-  install_dep podman podman-compose
-
   # The podman API socket runs inside the podman machine VM; nothing to enable here.
   # Clients running in containers get its VM-side path from:
   #   podman info --format '{{.Host.RemoteSocket.Path}}'

@@ -2,3 +2,9 @@ version: 0.1.0
 author: rjayroach
 depends:
   - gems
+brew:
+  macos: [qemu, socat, libarchive]
+system:
+  debian: [qemu-system]
+# NOTE: xz-utils fdisk parted dosfstools expect exfat-fuse were here from when we were going to
+# unpack an ISO; probably not needed. TODO: remove after testing pim on a Linux bare metal host
