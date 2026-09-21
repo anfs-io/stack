@@ -1,7 +1,5 @@
 version: 0.1.0
 author: rjayroach
-depends:
-  - mise
 # mise compiles Erlang from source on Linux; macOS uses precompiled binaries
 brew:
   macos: [openssl]
