@@ -16,11 +16,29 @@ export XDG_STATE_HOME=$HOME/.local/state
 export BIN_DIR=$HOME/.local/bin
 export LIB_DIR=$HOME/.local/lib
 
+# Put $target first on PATH, removing any existing occurrence so repeated sourcing can't
+# duplicate it. pde/zsh's .zshrc defines the same helper, so a portable ~/.config/sh/*.sh
+# snippet can call it in either shell (pde/ruby-tools and pdt/solana already do from .zsh).
+# Written for bash 3.2: ${v//pat/rep} and ${v:+...} are all it needs.
+ensure_path() {
+  local target="$1"
+  # Strip target from start, middle, and end of PATH
+  local clean_path=":$PATH:"
+  clean_path="${clean_path//:$target:/:}"
+  clean_path="${clean_path#:}"
+  clean_path="${clean_path%:}"
+
+  export PATH="$target${clean_path:+:$clean_path}"
+}
+
 # Homebrew on PATH, wherever it is installed, before $BIN_DIR is prepended so ~/.local/bin
 # stays first. The base env lives here rather than in a ~/.config/bash/*.bash snippet because
 # the snippet loop below needs ppm and mise to already be findable, and because shipping
 # ~/.bash_profile stops bash login shells from reading the distro's ~/.profile (which is what
 # puts ~/.local/bin on PATH on Debian).
+#
+# `brew shellenv` forks, and everything it exports but PATH survives being inherited
+# ($HOMEBREW_*, INFOPATH), so it stays behind this guard and runs once per session.
 if [ -z "${HOMEBREW_PREFIX:-}" ]; then
   for _brew_prefix in /opt/homebrew /home/linuxbrew/.linuxbrew; do
     if [ -x "$_brew_prefix/bin/brew" ]; then
@@ -31,13 +49,19 @@ if [ -z "${HOMEBREW_PREFIX:-}" ]; then
   unset _brew_prefix
 fi
 
-# Put $BIN_DIR first, removing any existing occurrence so repeated sourcing can't duplicate it
-_ppm_clean_path=":$PATH:"
-_ppm_clean_path="${_ppm_clean_path//:$BIN_DIR:/:}"
-_ppm_clean_path="${_ppm_clean_path#:}"
-_ppm_clean_path="${_ppm_clean_path%:}"
-export PATH="$BIN_DIR${_ppm_clean_path:+:$_ppm_clean_path}"
-unset _ppm_clean_path
+# PATH is the one thing shellenv sets that does NOT survive, so re-assert it on every run, guard
+# or no guard: macOS runs /usr/libexec/path_helper from /etc/profile in EVERY login shell,
+# including nested ones (tmux starts one by default, as do `bash -l`, ssh to self, and an
+# editor's or agent's shell), and it rebuilds PATH with the /etc/paths entries in front. A nested
+# login shell inherits $HOMEBREW_PREFIX, so the guard above skips shellenv and path_helper's
+# demotion would stand, leaving /bin/bash (3.2.57) ahead of the brew bash 5 this rc exists to
+# bootstrap into. sbin is prepended first so bin lands ahead of it, the order shellenv produces.
+if [ -n "${HOMEBREW_PREFIX:-}" ]; then
+  [ -d "$HOMEBREW_PREFIX/sbin" ] && ensure_path "$HOMEBREW_PREFIX/sbin"
+  [ -d "$HOMEBREW_PREFIX/bin" ] && ensure_path "$HOMEBREW_PREFIX/bin"
+fi
+
+ensure_path "$BIN_DIR"
 
 # Two levels of nesting are globbed explicitly rather than with `shopt -s globstar`: macOS
 # ships bash 3.2, which has no globstar. Two levels is what packages actually use

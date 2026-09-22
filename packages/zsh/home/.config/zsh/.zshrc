@@ -31,19 +31,10 @@ export LIB_DIR=$HOME/.local/lib
 # sources the portable ~/.config/sh/*.sh tier first and those files guard on `command -v <tool>`:
 # PATH must already be complete when the first snippet loads. pde/bash's .bashrc does the same.
 
-# Homebrew on PATH, wherever it is installed, before $BIN_DIR is added so ~/.local/bin stays first
-if [[ -z $HOMEBREW_PREFIX ]]; then
-  for _brew_prefix in /opt/homebrew /home/linuxbrew/.linuxbrew; do
-    if [[ -x $_brew_prefix/bin/brew ]]; then
-      eval "$($_brew_prefix/bin/brew shellenv zsh)"
-      break
-    fi
-  done
-  unset _brew_prefix
-fi
-
 # Put $target first on PATH, removing any existing occurrence so repeats can't duplicate it.
-# Packages call this from their own .zsh files (pde/ruby-tools, pdt/solana).
+# Packages call this from their own .zsh files (pde/ruby-tools, pdt/solana), and pde/bash's
+# .bashrc defines the same helper, so a portable ~/.config/sh/*.sh snippet can call it in either
+# shell. Defined before the Homebrew block because that block calls it too.
 ensure_path() {
   local target="$1"
   # Strip target from start, middle, and end of PATH
@@ -54,6 +45,32 @@ ensure_path() {
 
   export PATH="$target${clean_path:+:$clean_path}"
 }
+
+# Find Homebrew, wherever it is installed. `brew shellenv` forks, and everything it exports but
+# PATH survives being inherited ($HOMEBREW_*, FPATH, INFOPATH), so it stays behind this guard
+# and runs once per session rather than once per nested shell.
+if [[ -z $HOMEBREW_PREFIX ]]; then
+  for _brew_prefix in /opt/homebrew /home/linuxbrew/.linuxbrew; do
+    if [[ -x $_brew_prefix/bin/brew ]]; then
+      eval "$($_brew_prefix/bin/brew shellenv zsh)"
+      break
+    fi
+  done
+  unset _brew_prefix
+fi
+
+# PATH is the one thing shellenv sets that does NOT survive, so re-assert it on every run, guard
+# or no guard: macOS runs /usr/libexec/path_helper from /etc/zprofile in EVERY login shell,
+# including nested ones (tmux starts one by default, as do `zsh -l`, ssh to self, and an editor's
+# or agent's shell), and it rebuilds PATH with the /etc/paths entries in front. A nested login
+# shell inherits $HOMEBREW_PREFIX, so the guard above skips shellenv and path_helper's demotion
+# would stand: /opt/homebrew/bin below /bin, i.e. `bash` resolving to Apple's 3.2.57 instead of
+# brew's 5.x. sbin is prepended first so bin lands ahead of it, the order `brew shellenv`
+# produces, and $BIN_DIR goes on last so ~/.local/bin stays first overall.
+if [[ -n $HOMEBREW_PREFIX ]]; then
+  [[ -d $HOMEBREW_PREFIX/sbin ]] && ensure_path "$HOMEBREW_PREFIX/sbin"
+  [[ -d $HOMEBREW_PREFIX/bin ]] && ensure_path "$HOMEBREW_PREFIX/bin"
+fi
 
 ensure_path "$BIN_DIR"
 
