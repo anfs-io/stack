@@ -6,5 +6,19 @@
 command -v bat >/dev/null || alias bat=batcat
 
 ip_addr() {
-  ip route get 8.8.8.8 | awk '{print $7}' | head -1
+  local iface line ip_cidr
+
+  # Get active network interface name via route lookup
+  iface=$(ip -4 route show default 2>/dev/null | awk '/default/ {print $5; exit}')
+  [[ -z "$iface" ]] && return 1
+
+  # Extract "IP/CIDR" directly from ip address output
+  ip_cidr=$(ip -4 -br addr show dev "$iface" 2>/dev/null | awk '{print $3; exit}')
+  [[ -z "$ip_cidr" ]] && return 1
+
+  if [[ -n "$1" ]]; then
+    echo "$ip_cidr"
+  else
+    echo "${ip_cidr%%/*}"
+  fi
 }
