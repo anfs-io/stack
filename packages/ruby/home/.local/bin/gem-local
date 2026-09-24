@@ -8,7 +8,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: local-gems <command> [args]
+Usage: gem-local <command> [args]
 
 Commands:
   build                   Link every gem found in the configured repos into
@@ -19,7 +19,7 @@ Commands:
   src rm <path>           Remove a repo path from the config
   path [gem]              Output path to the gems dir, or a gem's repo dir
   cd [gem]                Change to the gems dir, or a gem's repo dir
-                          (requires the local-gems function in ruby/tools.zsh)
+                          (requires the gem-local function in ruby/tools.zsh)
   completion <shell>      Output shell completion code (zsh)
   help                    Show this help
 
@@ -40,8 +40,8 @@ $RUBYLIB when the shell starts, so open a new shell after a build.
 EOF
 }
 
-die()  { echo "local-gems: $*" >&2; exit 1; }
-warn() { echo "local-gems: $*" >&2; }
+die()  { echo "gem-local $*" >&2; exit 1; }
+warn() { echo "gem-local $*" >&2; }
 
 _expand() {
   echo "${1/#\~/$HOME}"
@@ -161,7 +161,7 @@ cmd_list() {
     printf '%-16s %s\n' "$(basename "$link")" "$target"
   done
 
-  $found || echo "No gems linked; run: local-gems build" >&2
+  $found || echo "No gems linked; run: gem-local build" >&2
 }
 
 cmd_path() {
@@ -171,7 +171,7 @@ cmd_path() {
   fi
 
   local link="$RUBY_LOCAL_GEMS_HOME/$1"
-  [[ -L "$link" ]] || die "gem '$1' is not linked (see: local-gems ls)"
+  [[ -L "$link" ]] || die "gem '$1' is not linked (see: gem-local ls)"
   [[ -d "$link" ]] || die "gem '$1' links to missing $(readlink "$link")"
   (cd -P "$link" && pwd -P)
 }
@@ -184,11 +184,11 @@ _src_list() {
     [[ -d "$(_expand "$entry")" ]] && echo "$entry" || echo "$entry (missing)"
   done < <(_config_entries)
 
-  $found || echo "No repos configured; add one with: local-gems src add <path>" >&2
+  $found || echo "No repos configured; add one with: gem-local src add <path>" >&2
 }
 
 _src_add() {
-  [[ $# -eq 1 ]] || die "Usage: local-gems src add <path>"
+  [[ $# -eq 1 ]] || die "Usage: gem-local src add <path>"
 
   local path entry existing
   path="$(cd -P "$1" 2>/dev/null && pwd -P)" || die "not a directory: $1"
@@ -208,11 +208,11 @@ _src_add() {
   echo "Added $entry to $RUBY_LOCAL_GEMS_CONFIG"
 
   [[ -n "$(find -L "$path" -name "*.gemspec" -print -quit)" ]] || warn "no *.gemspec found under $entry"
-  echo "Run: local-gems build"
+  echo "Run: gem-local build"
 }
 
 _src_rm() {
-  [[ $# -eq 1 ]] || die "Usage: local-gems src rm <path>"
+  [[ $# -eq 1 ]] || die "Usage: gem-local src rm <path>"
   [[ -f "$RUBY_LOCAL_GEMS_CONFIG" ]] || die "config file $RUBY_LOCAL_GEMS_CONFIG not found"
 
   # Unlike add, a repo whose dir is gone must still be removable, so an
@@ -244,7 +244,7 @@ _src_rm() {
   cat "$tmp" > "$RUBY_LOCAL_GEMS_CONFIG"
   rm -f "$tmp"
   echo "Removed $entry from $RUBY_LOCAL_GEMS_CONFIG"
-  echo "Run: local-gems build"
+  echo "Run: gem-local build"
 }
 
 cmd_src() {
@@ -252,7 +252,7 @@ cmd_src() {
     list|ls)   shift; _src_list ;;
     add)       shift; _src_add "$@" ;;
     rm|remove) shift; _src_rm "$@" ;;
-    "")        die "Usage: local-gems src <list|add|rm>" ;;
+    "")        die "Usage: gem-local src <list|add|rm>" ;;
     *)         die "unknown src command '$1' (expected: list, add, rm)" ;;
   esac
 }
@@ -261,7 +261,7 @@ cmd_completion() {
   case "${1:-}" in
     zsh)
       cat <<'COMPLETION'
-#compdef local-gems
+#compdef gem-local
 
 _local_gems_names() {
   local dir=${RUBY_LOCAL_GEMS_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/gems}
@@ -310,12 +310,12 @@ _local-gems() {
 if [[ "${funcstack[1]}" == "_local-gems" ]]; then
   _local-gems "$@"
 else
-  compdef _local-gems local-gems
+  compdef _local-gems gem-local
 fi
 COMPLETION
       ;;
     *)
-      echo "Usage: local-gems completion <zsh>" >&2
+      echo "Usage: gem-local completion <zsh>" >&2
       return 1
       ;;
   esac
@@ -326,9 +326,9 @@ case "${1:-}" in
   list|ls)     shift; cmd_list ;;
   src)         shift; cmd_src "$@" ;;
   path)        shift; cmd_path "$@" ;;
-  cd)          echo "local-gems cd requires the local-gems shell function (source ruby/tools.zsh)" >&2; exit 1 ;;
+  cd)          echo "gem-local cd requires the gem-local shell function (source ruby.zsh)" >&2; exit 1 ;;
   completion)  shift; cmd_completion "$@" ;;
   help|--help) usage ;;
   "")          usage ;;
-  *)           echo "local-gems: unknown command '$1'" >&2; usage >&2; exit 1 ;;
+  *)           echo "gem-local unknown command '$1'" >&2; usage >&2; exit 1 ;;
 esac
