@@ -3,6 +3,16 @@
 alias gmv="git mv"
 alias gpl="git pull"
 
+gh() {
+  local config_file="$XDG_CONFIG_HOME/fnox/gh.toml"  # Path to your target fnox.toml
+
+  if [[ -z "$GH_AUTH_TOKEN" ]] && [[ -f "$config_file" ]]; then
+    # Evaluates fnox secrets and exports them into current shell context
+    eval "$(fnox export --config "$config_file")"
+  fi
+  command gh "$@"
+}
+
 # git add, commit, push
 gacp() {
   local message=""

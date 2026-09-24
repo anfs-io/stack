@@ -1,3 +1,40 @@
+# fnox — global configuration (every machine, every directory).
+#
+# Secrets declared here apply everywhere. Secrets belonging to one project or
+# space belong in a fnox.toml in that directory instead: fnox loads both and the
+# directory file wins on a key collision (`fnox config-files` shows what applies).
+#
+# Deliberately NOT declared here: OP_SERVICE_ACCOUNT_TOKEN. The ssh hook in
+# pde/op forwards whatever token the current directory resolves, so a global
+# declaration would forward it from everywhere — including to third-party hosts
+# like github.com. Declare it per directory, with `op-provision link`.
+
+# default_provider = "onepass"
+
+# The 1Password provider shells out to the `op` CLI, so it authenticates the same
+# way `op` does: the desktop app (Touch ID) on a workstation, and
+# OP_SERVICE_ACCOUNT_TOKEN from the environment on a remote host. The same config
+# therefore works on both ends of an ssh connection.
+# [providers.onepass]
+# type = "1password"
+
 [daemon]
 enabled = true
 idle_timeout = "4h"
+
+# [secrets]
+# Cross-cutting secrets go here, and are re-resolved on remote hosts rather than
+# forwarded — only the service account token ever crosses an ssh connection.
+#
+# Two things are load-bearing in a line like this:
+#
+#   provider = "onepass"   a bare `{ value = "..." }` is stored verbatim and
+#                          never reaches a provider, even with default_provider
+#                          set, so the op:// reference would not resolve.
+#   env      = "exec"      the value is materialised only inside `fnox exec`.
+#                          With the default (true) fnox's precmd/chpwd hook
+#                          resolves it on every `cd`, which is a 1Password round
+#                          trip and a Touch ID prompt on shell startup.
+#
+# Uncomment once the shared vault and its items exist (see packages/op/README.md).
+# GH_TOKEN = { provider = "onepass", value = "op://shared/github/token", env = "exec" }

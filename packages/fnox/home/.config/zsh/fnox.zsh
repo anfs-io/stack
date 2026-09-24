@@ -5,3 +5,8 @@ if command -v fnox >/dev/null 2>&1; then
   zcomp fnox
 fi
 
+fconf() {
+  local dir=$XDG_CONFIG_HOME/fnox file="config.toml" ext="toml"
+  load_conf "$@"
+}
+
