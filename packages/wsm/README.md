@@ -96,6 +96,26 @@ wsm:
 `wsm prepare` inside it — which clones whatever the space's own `.wsm/resources` declares. Commit
 `.wsm/id` in the space repo and the workspace keeps the same identity on every machine.
 
+**`repo_url` is optional.** Leave it out and the package is expected to have put the workspace
+there itself, by stowing it:
+
+```
+pde-ppm/packages/rjayroach/
+  package.yml                                 wsm: [{path: spaces/rjayroach}]
+  home/spaces/rjayroach/.wsm/id               a UUID you generate once
+  home/spaces/rjayroach/.wsm/resources        the repo list
+```
+
+The resource phase runs after stow, so by the time the handler looks, `~/spaces/rjayroach/.wsm/`
+is there and it goes straight to registering and preparing. This is usually the lighter
+arrangement: the id and the resource list are version-controlled in the package itself, instead of
+in a repo that exists only to carry a `.wsm` directory. (ppm always stows with `--no-folding`, so
+`.wsm/` is a real directory with symlinked files in it and `wsm prepare` can create `repos/`
+alongside.)
+
+Declaring neither a `repo_url` nor stowing anything is an error that says so — it is almost always
+a package that forgot to ship its `home/<path>/.wsm/`.
+
 Note the two bases for `path`. In `package.yml` it is relative to `$HOME`, because that entry
 decides *where a space lives*. In `.wsm/resources` it is relative to the workspace root, because
 that file describes *what is inside one*.

@@ -372,8 +372,18 @@ Installing it clones each repo, records the path in ppm's install tracker under 
 runs `wsm init` (idempotent, and a committed `.wsm/id` is kept, so identity survives the move to
 another machine), then `wsm prepare`.
 
+`repo_url` is optional. Without it the workspace must already exist at `$HOME/<path>`, which is
+the case when the package stows `home/<path>/.wsm/` itself: the resource phase runs after stow.
+The handler then skips straight to `wsm init` and `wsm prepare`. A path with neither a `repo_url`
+nor anything stowed is an error naming the omission.
+
 `path` is `$HOME`-relative here and workspace-relative in `.wsm/resources`. The first decides
 where a space lives; the second describes what is inside one.
+
+Both this handler and `prepare` read their entries one field per line
+(`yq -r '... | [a, b] | .[]'`) rather than `@tsv`. Tab is IFS whitespace, so `IFS=$'\t' read`
+collapses adjacent tabs and strips leading ones — an entry with a field left out would slide the
+remaining values along by one, silently.
 
 Removal never deletes a space. `ppm remove` reports the paths; `ppm remove -f` deletes only what
 is recoverable — every git repo under the space is checked for uncommitted changes, untracked

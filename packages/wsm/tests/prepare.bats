@@ -182,6 +182,24 @@ YML
   [ -f "$HOME/space/repos/alpha/README" ]
 }
 
+@test "resources are read field by field, so a missing url does not shift the path" {
+  local a
+  a=$(mkbare alpha)
+  resources space <<YML
+resources:
+  - type: link
+    path: bases/thing
+  - url: $a
+    path: repos/alpha
+YML
+  cd "$HOME/space"
+  run wsm prepare
+  [ "$status" -eq 0 ]
+  # The link entry has no url; the repo after it must still land at its own path
+  [ -f "$HOME/space/repos/alpha/README" ]
+  [ ! -e "$HOME/space/bases" ]
+}
+
 @test "prepare takes an explicit directory" {
   local a
   a=$(mkbare alpha)

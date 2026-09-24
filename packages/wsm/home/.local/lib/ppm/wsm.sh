@@ -13,6 +13,14 @@
 # — and installing it clones that repo to ~/spaces/rws, registers it as a workspace, and runs
 # `wsm prepare` inside, which clones whatever the space's own .wsm/resources declares.
 #
+# repo_url is optional. Without it the package is expected to have stowed the workspace itself:
+#
+#   wsm:
+#     - path: spaces/rjayroach      # home/spaces/rjayroach/.wsm/{id,resources} is stowed
+#
+# which is the lighter arrangement — the id and the resource list are version-controlled in the
+# package rather than in a repo that exists only to carry a .wsm directory.
+#
 # Note the two different bases for `path`. Here it is relative to $HOME, because this entry
 # decides *where a space lives*. Inside .wsm/resources it is relative to the workspace root,
 # because that file describes *what is inside one*.
@@ -35,10 +43,12 @@ ppm_resource_wsm() {
   command -v git >/dev/null 2>&1 || { ppm_fail "git is not installed"; return 1; }
   command -v yq >/dev/null 2>&1 || { ppm_fail "yq is not installed"; return 1; }
 
-  while IFS="$(printf '\t')" read -r url path; do
+  # One field per line rather than @tsv: tab is IFS whitespace, so `IFS=$'\t' read` collapses
+  # adjacent tabs and an entry with no repo_url would slide its path into the wrong variable.
+  while IFS= read -r url && IFS= read -r path; do
     [[ -n "$url$path" ]] || continue
-    if [[ -z "$url" || -z "$path" ]]; then
-      ppm_fail "a wsm entry needs both repo_url and path (got url='$url' path='$path')" || true
+    if [[ -z "$path" ]]; then
+      ppm_fail "a wsm entry needs a path (repo_url='$url')" || true
       rc=1
       continue
     fi
@@ -51,28 +61,41 @@ ppm_resource_wsm() {
     esac
 
     target="$HOME/$path"
-    if [[ -d "$target/.git" ]]; then
-      debug "wsm: ~/$path is already a git repo, leaving it alone"
-    elif [[ -e "$target" || -L "$target" ]]; then
-      ppm_fail "wsm: ~/$path is in the way and is not a git repo" || true
-      rc=1
-      continue
+    if [[ -n "$url" ]]; then
+      # Declared with a repo: ppm owns getting it there
+      if [[ -d "$target/.git" ]]; then
+        debug "wsm: ~/$path is already a git repo, leaving it alone"
+      elif [[ -e "$target" || -L "$target" ]]; then
+        ppm_fail "wsm: ~/$path is in the way and is not a git repo" || true
+        rc=1
+        continue
+      else
+        echo "  Cloning $url -> ~/$path"
+        mkdir -p "$(dirname "$target")"
+        if ! git clone -- "$url" "$target"; then
+          # Leave nothing half-cloned behind for the next run to trip over
+          rm -rf "$target"
+          ppm_fail "wsm: could not clone $url" || true
+          rc=1
+          continue
+        fi
+      fi
     else
-      echo "  Cloning $url -> ~/$path"
-      mkdir -p "$(dirname "$target")"
-      if ! git clone -- "$url" "$target"; then
-        # Leave nothing half-cloned behind for the next run to trip over
-        rm -rf "$target"
-        ppm_fail "wsm: could not clone $url" || true
+      # No repo: the package put the workspace there itself, by stowing home/<path>/.wsm/. The
+      # resource phase runs after stow, so it is already in place — saving a repo that exists only
+      # to carry a .wsm directory. Nothing there means the package forgot to ship it.
+      if [[ ! -d "$target" ]]; then
+        ppm_fail "wsm: ~/$path has no repo_url and nothing is there; does the package stow $path/.wsm/?" || true
         rc=1
         continue
       fi
+      debug "wsm: ~/$path has no repo_url; taking it as already in place"
     fi
 
-    # Recorded before prepare runs: if prepare fails the clone still exists and remove must know
+    # Recorded before prepare runs: if prepare fails the workspace still exists and remove must know
     meta_add_resource "$repo" "$pkg" wsm "$path"
     _wsm_space_prepare "$target" "$path" || rc=1
-  done < <(yq -r '.wsm[]? | [(.repo_url // ""), (.path // "")] | @tsv' "$dir/package.yml")
+  done < <(yq -r '.wsm[]? | [(.repo_url // ""), (.path // "")] | .[]' "$dir/package.yml")
 
   return $rc
 }

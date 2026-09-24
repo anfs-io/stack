@@ -864,8 +864,10 @@ cmd_prepare() {
     fail "$EX_UNAVAIL" "prepare needs yq (https://github.com/mikefarah/yq) to read $file"
   command -v git >/dev/null 2>&1 || fail "$EX_UNAVAIL" "prepare needs git"
 
+  # One field per line rather than @tsv: tab is IFS whitespace, so `IFS=$TAB read` collapses
+  # adjacent tabs and an entry with a field left out would slide the rest along by one.
   local type url path ref target cloned=0 present=0 skipped=0 failed=0
-  while IFS="$TAB" read -r type url path ref; do
+  while IFS= read -r type && IFS= read -r url && IFS= read -r path && IFS= read -r ref; do
     [[ -n "$type$url$path" ]] || continue
 
     if [[ "$type" != repo ]]; then
@@ -913,7 +915,7 @@ cmd_prepare() {
     fi
     echo "cloned $path"
     cloned=$((cloned + 1))
-  done < <(yq -r '.resources[]? | [(.type // "repo"), (.url // ""), (.path // ""), (.ref // "")] | @tsv' "$file")
+  done < <(yq -r '.resources[]? | [(.type // "repo"), (.url // ""), (.path // ""), (.ref // "")] | .[]' "$file")
 
   printf '%d cloned, %d present, %d skipped, %d failed\n' "$cloned" "$present" "$skipped" "$failed"
   [[ $failed -eq 0 ]]
