@@ -21,9 +21,23 @@ gacp() {
   else
     vared -p "Git commit message: " message
   fi
-  git add .
-  git commit -m "${message}"
-  git push
+  _gacp_run git add . || return
+  _gacp_run git commit -m "${message}" || return
+  _gacp_run git push || return
+}
+
+# Run a git command; on failure, echo its output and exit status to stderr
+_gacp_run() {
+  local output rc
+  output=$("$@" 2>&1)
+  rc=$?
+  if (( rc != 0 )); then
+    print -u2 "gacp: '$*' failed (exit ${rc}):"
+    [[ -n "$output" ]] && print -u2 -- "$output"
+    return $rc
+  fi
+  [[ -n "$output" ]] && print -- "$output"
+  return 0
 }
 
 git-status() {
