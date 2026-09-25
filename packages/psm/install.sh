@@ -45,10 +45,58 @@ EOF
   echo -e "${cyan}Personal Skills Manager${nc}"
 }
 
+# The sync happens in psm_ppm_changed at the end of this same run (psm is in its package list),
+# so installing psm alongside agents syncs once, after all of them are in place
 post_install() {
-  psm sync || ppm_fail "psm sync reported failures — fix and re-run: psm sync" || true
+  ppm_register_callback psm_ppm_changed
 }
 
 post_remove() {
   user_message "Installed skills were left in place — list them with: npx skills list -g"
+}
+
+# ppm calls this after every install/remove run (see ppm_register_callback)
+# Usage: psm_ppm_changed <install|remove> <repo/pkg>...
+psm_ppm_changed() {
+  local event="$1" qualified sync=false ids="" id kept
+  shift
+
+  case "$event" in
+    install)
+      for qualified in "$@"; do
+        if [[ "$qualified" == "$PPM_CURRENT_PACKAGE" ]] || [[ -n "$(_psm_package_agents "$qualified")" ]]; then
+          sync=true
+        fi
+      done
+      $sync || return 0
+      psm sync || ppm_fail "psm sync reported failures — fix and re-run: psm sync" || true
+      ;;
+    remove)
+      for qualified in "$@"; do
+        if [[ ! -f "$(_psm_package_meta "$qualified")" ]]; then
+          user_message "$qualified is gone, so its agent is unknown; unlink its skills with: psm agents rm <agent>"
+          continue
+        fi
+        ids="$ids $(_psm_package_agents "$qualified")"
+      done
+      # An id another installed package still declares keeps its skills
+      kept=$(psm agents ls 2>/dev/null || true)
+      for id in $ids; do
+        grep -qxF -- "$id" <<< "$kept" && continue
+        psm agents rm "$id" || ppm_fail "psm agents rm $id failed — re-run it by hand" || true
+      done
+      ;;
+  esac
+}
+
+_psm_package_meta() {
+  echo "$PPM_DATA_HOME/${1%%/*}/packages/${1#*/}/package.yml"
+}
+
+# Agent ids a package declares under meta.agent, one per line
+_psm_package_agents() {
+  local meta
+  meta=$(_psm_package_meta "$1")
+  [[ -f "$meta" ]] || return 0
+  yq -r '[.meta.agent] | flatten | .[] | select(. != null)' "$meta" 2>/dev/null || true
 }

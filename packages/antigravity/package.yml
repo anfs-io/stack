@@ -1,7 +1,8 @@
-version: 0.1.0
+version: 0.1.1
 author: rjayroach
-agent:
-  - antigravity
-  - antigravity-cli
+meta:
+  agent:
+    - antigravity
+    - antigravity-cli
 platforms: [macos]
 cask: [antigravity, antigravity-cli]

@@ -1,5 +1,6 @@
-version: 0.1.0
+version: 0.1.1
 author: rjayroach
-agent: pi
+meta:
+  agent: pi
 # pi is declared in .config/mise and installed by ppm.
 # Optional extras, if wanted later: pi install npm:pi-vim; mise install npm:openclaw npm:prpm npm:ralph-tui

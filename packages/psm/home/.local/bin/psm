@@ -29,7 +29,8 @@ Commands:
                           in a config of its own, or drop that config
   skills <ls|rm|prune>    List declared skills and their status, remove them,
                           or find installed skills no config declares
-  agents <ls>             List agent ids detected from installed ppm packages
+  agents <ls|rm>          List agent ids detected from installed ppm packages,
+                          or unlink every skill from an agent
   cd                      Change to the config dir (requires psm.zsh)
   completion <shell>      Output shell completion code (zsh)
   help                    Show this help
@@ -50,7 +51,8 @@ Config: $PSM_CONFIG_HOME/*.yml, each holding a `sources:` list
       skills: ["*"]
 
 Agents are auto-detected: any installed ppm package whose package.yml declares
-`agent: <skills-cli-id>` becomes a target.
+`meta: {agent: <skills-cli-id>}` becomes a target. ppm tells psm when one is
+installed (psm sync) or removed (psm agents rm <id>).
 
 Skills that ppm packages stow into $PSM_SKILLS_HOME need no config: they are
 synced as the `builtin` repo, which every command accepts as a config name.
@@ -79,19 +81,26 @@ skills_cli() {
   npx --yes "skills@$PSM_CLI_VERSION" "$@" </dev/null
 }
 
-# Skills-CLI agent ids for every installed ppm package that declares `agent:`.
+# Skills-CLI agent ids a ppm package declares under `meta.agent` (one or a list),
+# one per line; nothing when the package or its package.yml is gone
+# Usage: _package_agents <repo/pkg>
+_package_agents() {
+  local meta="$PPM_DATA_HOME/${1%%/*}/$PPM_ASSET_DIR/${1#*/}/$PPM_ASSET_META"
+  [[ -f "$meta" ]] || return 0
+  yq -r '[.meta.agent] | flatten | .[] | select(. != null)' "$meta" 2>/dev/null || true
+}
+
+# Skills-CLI agent ids for every installed ppm package that declares `meta.agent`.
 # The package dir is derived from the tracker path so that a package overridden
 # by a higher-priority repo resolves to the one actually installed.
 _installed_agents() {
-  local tracker repo pkg meta
+  local tracker repo pkg
 
   for tracker in "$PPM_DATA_HOME"/.installed/*/*.yml; do
     [[ -f "$tracker" ]] || continue
     repo=$(basename "$(dirname "$tracker")")
     pkg=$(basename "$tracker" .yml)
-    meta="$PPM_DATA_HOME/$repo/$PPM_ASSET_DIR/$pkg/$PPM_ASSET_META"
-    [[ -f "$meta" ]] || continue
-    yq -r '[.agent] | flatten | .[] | select(. != null)' "$meta" 2>/dev/null || true
+    _package_agents "$repo/$pkg"
   done | sort -u | paste -sd, -
 }
 
@@ -399,12 +408,15 @@ _agents_usage() {
 Usage: psm agents <command>
 
   ls                      List agent ids detected from installed ppm packages
+  rm <agent>...           Unlink every installed skill from these agents,
+                          leaving it in place for the others
 EOF
 }
 
 cmd_agents() {
   case "${1:-}" in
     list|ls)   _agents_ls ;;
+    rm)        shift; _agents_rm "$@" ;;
     "")        _agents_usage ;;
     *)         echo "psm: unknown agents command '$1'" >&2; _agents_usage >&2; exit 1 ;;
   esac
@@ -412,6 +424,41 @@ cmd_agents() {
 
 _agents_ls() {
   _installed_agents | tr ',' '\n'
+}
+
+# Skill names go before -a: the CLI's -a takes every argument after it as an agent
+_agents_rm() {
+  [[ $# -gt 0 ]] || usage_err "psm agents rm <agent>..."
+  require_npx
+  _load_installed
+
+  local id display name agents source failed=0
+  local -a names
+  for id in "$@"; do
+    display=$(_agent_display "$id") || { warn "unknown agent '$id'"; failed=$((failed + 1)); continue; }
+    names=()
+    while IFS='|' read -r name agents source; do
+      [[ -n "$name" && ",$agents," == *",$display,"* ]] && names+=("$name")
+    done <<< "$INSTALLED"
+
+    if [[ ${#names[@]} -eq 0 ]]; then
+      echo "ok     $id: no skills linked"
+      continue
+    fi
+    echo "unlink $id: ${names[*]}"
+    skills_cli remove "${names[@]}" -g -y -a "$id" || { warn "skills remove for $id failed"; failed=$((failed + 1)); }
+  done
+
+  # Universal agents read ~/.agents/skills itself: there is no link of theirs to remove, and the
+  # CLI rightly keeps the shared copy, so they still list every skill
+  _load_installed
+  for id in "$@"; do
+    display=$(_agent_display "$id") || continue
+    if awk -F'|' -v d="$display" '{ n = split($2, a, ","); for (i = 1; i <= n; i++) if (a[i] == d) f = 1 } END { exit !f }' <<< "$INSTALLED"; then
+      echo "note   $id reads the shared ~/.agents/skills directly; its skills stay with the other agents'"
+    fi
+  done
+  [[ $failed -eq 0 ]]
 }
 
 cmd_sync() {
@@ -590,7 +637,7 @@ _psm() {
     'update:Update remote skills and re-copy local sources'
     'repo:List, declare or drop skill repos'
     'skills:List, remove or prune skills'
-    'agents:List detected agent ids'
+    'agents:List detected agent ids, or unlink skills from one'
     'cd:Change to the config dir'
     'completion:Output shell completion code'
     'help:Show usage'
@@ -629,8 +676,15 @@ _psm() {
       fi
       ;;
     agents)
-      verbs=('ls:List detected agent ids')
-      (( CURRENT == 3 )) && _describe 'agents command' verbs
+      verbs=(
+        'ls:List detected agent ids'
+        'rm:Unlink every skill from agents'
+      )
+      if (( CURRENT == 3 )); then
+        _describe 'agents command' verbs
+      elif [[ "${words[3]}" == rm ]]; then
+        compadd -- ${(f)"$(command psm agents ls 2>/dev/null)"}
+      fi
       ;;
     sync)        compadd -- --local; _psm_configs ;;
     update)      _psm_configs ;;

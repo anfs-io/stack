@@ -33,6 +33,24 @@ documented upstream. Re-check it if the CLI changes.
   id on the command line (`claude-code`). `_agent_display` maps between them and
   returns 1 for ids it doesn't know, so an unmapped agent gets re-added rather
   than wrongly skipped.
+- **`remove -a <id>` unlinks from that agent only** and leaves the skill for the
+  others (checked 2026-09-25). `-a` is variadic: it takes every argument after
+  it as an agent, so skill names go first — `remove hello -g -y -a claude-code`,
+  never `remove -g -y -a claude-code hello` ("Invalid agents: hello").
+- **Universal agents (OpenCode, and whatever else `add` reports as
+  `universal:`) have nothing to unlink.** They read `~/.agents/skills`, the
+  canonical copy, directly. `remove -a opencode` reports success and keeps the
+  copy, so they go on listing every skill. `psm agents rm` notes it rather
+  than treating it as a failure.
+
+## Reacting to agent packages
+
+`post_install` registers `psm_ppm_changed` with ppm (`ppm_register_callback`),
+which ppm calls after every install/remove run with the packages involved:
+
+- install: `psm sync` when psm itself or any `meta.agent` package is in the run.
+- remove: `psm agents rm <id>` for each removed package's `meta.agent` ids,
+  unless another installed package still declares the id.
 
 ## Command surface
 
