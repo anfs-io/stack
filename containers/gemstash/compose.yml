@@ -1,0 +1,34 @@
+# Gemstash — RubyGems caching mirror and private gem server (https://github.com/rubygems/gemstash).
+#
+# pcm service: `pcm up gemstash`. The image is built locally from ./Containerfile
+# on first `up`. Every variable, with its default, lives in .env.schema.
+name: gemstash
+
+services:
+  gemstash:
+    image: localhost/pcm-gemstash:${GEMSTASH_VERSION}
+    build:
+      context: .
+      dockerfile: Containerfile
+      args:
+        GEMSTASH_VERSION: ${GEMSTASH_VERSION}
+    restart: unless-stopped
+    ports:
+      - "${GEMSTASH_PORT}:9292"
+    environment:
+      # Also picked up by `gemstash authorize` run via podman exec
+      GEMSTASH_CONFIG: /etc/gemstash/config.yml.erb
+      GEMSTASH_RUBYGEMS_URL: ${GEMSTASH_RUBYGEMS_URL}
+      GEMSTASH_PROTECTED_FETCH: ${GEMSTASH_PROTECTED_FETCH}
+      GEMSTASH_FETCH_TIMEOUT: ${GEMSTASH_FETCH_TIMEOUT}
+    volumes:
+      - ./config.yml.erb:/etc/gemstash/config.yml.erb:ro
+      # Cached + private gems and the sqlite db. :U chowns to the image's uid 1000
+      - ${PCM_VOLUMES_HOME}/gemstash:/var/gemstash:U
+    healthcheck:
+      # /health checks storage + db read/write; the slim image has no curl
+      test: ["CMD", "ruby", "-rnet/http", "-e", "exit Net::HTTP.get_response(URI('http://localhost:9292/health')).is_a?(Net::HTTPSuccess)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s

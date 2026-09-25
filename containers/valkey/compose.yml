@@ -1,0 +1,33 @@
+# Valkey — shared pcm key-value store (Redis-compatible, https://valkey.io).
+#
+# pcm service: dependents declare it in x-pcm.depends_on and get their own
+# logical database from ./provision, injected as PCM_VALKEY_URL — the same model
+# as the shared postgres. Every variable, with its default, lives in .env.schema.
+name: valkey
+
+services:
+  valkey:
+    image: ${VALKEY_IMAGE}:${VALKEY_TAG}
+    restart: unless-stopped
+    # Server-wide settings apply to every dependent:
+    # - noeviction: queues (BullMQ, celery) lose jobs under any eviction policy
+    # - databases: one logical db per dependent, db 0 reserved for pcm bookkeeping
+    # - appendonly: queued jobs survive a restart
+    command:
+      - valkey-server
+      - --databases
+      - "${VALKEY_DATABASES}"
+      - --maxmemory-policy
+      - noeviction
+      - --appendonly
+      - "yes"
+    ports:
+      - "${VALKEY_PORT}:6379"
+    volumes:
+      # Mount the image's declared VOLUME so podman doesn't add an anonymous one
+      - ${PCM_VOLUMES_HOME}/valkey:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

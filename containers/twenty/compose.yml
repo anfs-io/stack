@@ -1,0 +1,57 @@
+# Twenty — open-source CRM (https://twenty.com).
+#
+# pcm service: uses the shared pcm postgres and valkey. Start with `pcm up twenty`,
+# which starts them if needed, creates the `twenty` database, allocates a valkey
+# db and injects PCM_POSTGRES_URL and PCM_VALKEY_URL.
+# Every variable, with its default, lives in .env.schema.
+# Secrets ship with an insecure dev-only default — override them for anything shared.
+name: twenty
+
+x-pcm:
+  depends_on:
+    postgres:
+      database: twenty
+    valkey: {}
+
+x-twenty-env: &twenty-env
+  PG_DATABASE_URL: ${PCM_POSTGRES_URL}
+  REDIS_URL: ${PCM_VALKEY_URL}
+  SERVER_URL: ${TWENTY_SERVER_URL}
+  APP_SECRET: ${TWENTY_APP_SECRET}
+  ENCRYPTION_KEY: ${TWENTY_ENCRYPTION_KEY}
+  STORAGE_TYPE: local
+
+services:
+  server:
+    image: ${TWENTY_IMAGE}:${TWENTY_TAG}
+    restart: unless-stopped
+    ports:
+      - "${TWENTY_PORT}:3000"
+    environment:
+      <<: *twenty-env
+      NODE_PORT: 3000
+    volumes:
+      # :U chowns the host dir to the image's non-root user (uid 1000, rootless podman)
+      - ${PCM_VOLUMES_HOME}/twenty/storage:/app/packages/twenty-server/.local-storage:U
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:3000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      # First boot runs database:init + upgrade before the server listens
+      start_period: 180s
+
+  worker:
+    image: ${TWENTY_IMAGE}:${TWENTY_TAG}
+    restart: unless-stopped
+    command: ["yarn", "worker:prod"]
+    depends_on:
+      server:
+        condition: service_healthy
+    environment:
+      <<: *twenty-env
+      # The server's entrypoint owns migrations and cron registration
+      DISABLE_DB_MIGRATIONS: "true"
+      DISABLE_CRON_JOBS_REGISTRATION: "true"
+    volumes:
+      - ${PCM_VOLUMES_HOME}/twenty/storage:/app/packages/twenty-server/.local-storage:U

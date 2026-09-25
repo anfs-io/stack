@@ -1,0 +1,17 @@
+# Gemstash image for pcm — upstream publishes no official one.
+ARG RUBY_TAG=3.4-slim
+FROM docker.io/library/ruby:${RUBY_TAG}
+
+ARG GEMSTASH_VERSION
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends build-essential \
+ && gem install gemstash --no-document -v "${GEMSTASH_VERSION}" \
+ && apt-get purge -y --auto-remove build-essential \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --create-home --uid 1000 gemstash \
+ && mkdir -p /var/gemstash \
+ && chown gemstash:gemstash /var/gemstash
+
+USER gemstash
+EXPOSE 9292
+CMD ["gemstash", "start"]

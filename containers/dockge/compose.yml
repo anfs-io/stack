@@ -1,0 +1,27 @@
+# Dockge — web UI for managing compose stacks (https://dockge.kuma.pet).
+#
+# pcm service: `pcm up dockge`. Dockge manages its own stacks in
+# ${PCM_VOLUMES_HOME}/dockge/stacks; those are not pcm services.
+# Every variable, with its default, lives in .env.schema.
+name: dockge
+
+x-pcm:
+  allow_mounts:
+    # Podman API, so Dockge can run compose against the host's podman
+    - ${PCM_PODMAN_SOCKET}
+
+services:
+  dockge:
+    image: ${DOCKGE_IMAGE}:${DOCKGE_TAG}
+    restart: unless-stopped
+    ports:
+      - "${DOCKGE_BIND}:${DOCKGE_PORT}:5001"
+    volumes:
+      - ${PCM_PODMAN_SOCKET}:/var/run/docker.sock
+      - ${PCM_VOLUMES_HOME}/dockge/data:/app/data
+      # Stacks dir MUST be mounted at the same path it has on the host: Dockge runs
+      # compose inside this container, which turns relative paths in stack files
+      # (e.g. ./data) into absolute paths that podman then resolves on the host
+      - ${PCM_VOLUMES_HOME}/dockge/stacks:${PCM_VOLUMES_HOME}/dockge/stacks
+    environment:
+      DOCKGE_STACKS_DIR: ${PCM_VOLUMES_HOME}/dockge/stacks
