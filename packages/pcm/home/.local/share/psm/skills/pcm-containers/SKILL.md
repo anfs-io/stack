@@ -1,26 +1,40 @@
 ---
 name: pcm-containers
-description: Create or edit pcm (Personal Container Manager) container definitions — the compose.yml, .env.schema, optional provision hook and README in ~/.config/pcm/containers/<name>/. Use when the user wants to add a new container/service to pcm, wire one service to another (x-pcm.depends_on, e.g. "give it a postgres database"), write or fix an .env.schema, or make `pcm validate` pass.
+description: Create or edit pcm (Personal Container Manager) container definitions — the compose.yml, .env.schema, optional provision hook and README in a pcm source (a git repo's containers/<name>/, or ~/.config/pcm/containers/<name>/). Use when the user wants to add a new container/service to pcm, wire one service to another (x-pcm.depends_on, e.g. "give it a postgres database"), write or fix an .env.schema, or make `pcm validate` pass.
 ---
 
 # pcm container definitions
 
 pcm runs podman compose projects on a dev machine. Each **container definition** is one
 directory; pcm's CLI calls it a *service* (`pcm up <service>`). One definition can hold
-several compose services (glitchtip runs `web` and `valkey`).
+several compose services (twenty runs `server` and `worker`).
 
 ## Where definitions live
 
-- Runtime: `$PCM_CONTAINERS_HOME/<name>/` = `~/.config/pcm/containers/<name>/`
-- Source of truth: `~/.local/share/ppm/pdt/packages/pcm/home/.config/pcm/containers/<name>/`.
-  Files there are stowed into `~/.config` by ppm. Create new definitions in the package, then
-  run `ppm install pcm` so the new directory is linked. Commit them in the pdt repo.
-- Data: `$PCM_VOLUMES_HOME/<name>/` = `~/.local/share/pcm/volumes/<name>/`
+pcm reads definitions from **sources**, in priority order; a plain name resolves to the first
+source that has it, and `source/name` picks one explicitly (`pcm list` shows shadowed ones):
+
+1. `local` — `$PCM_CONTAINERS_HOME/<name>/` = `~/.config/pcm/containers/<name>/`, not in git
+2. `user.list` entries — `pcm src add <git-url> [alias]`
+3. `system.list` entries — shipped by pdt/pcm; `core` = the `core-pcm` repo
+
+A git source is cloned to `~/.local/share/pcm/sources/<alias>/` and holds its definitions under
+`containers/<name>/`. pcm runs them straight from the clone: `pcm cd <name>` lands in the repo,
+edits are committed there, and `pcm src list` shows each clone clean or dirty.
+
+- New definition for a repo: create `containers/<name>/` in its clone (`pcm path <other>` then
+  `..` finds it) and commit there. Scratch or machine-only: create it in the local source.
+- Data: `$PCM_VOLUMES_HOME/<name>/` = `~/.local/share/pcm/volumes/<name>/`, keyed by name only:
+  one service of a name runs at a time, whichever source it came from
+- Runtime: pcm runs each definition as compose project `<name>` and labels its containers
+  `io.pcm.id` (`source/name`), `io.pcm.name` and `io.pcm.source`. Don't set a top-level `name:`
+  (it is ignored, and `validate` warns when it differs); don't set `container_name:`.
+- Local overrides: `~/.config/pcm/env/<name>.env`
 - Shared settings: `~/.config/pcm/registry.yml` (`shared_network`, `network_attached_services`)
 
 Before writing a new one, read an existing definition as a model:
-`postgres` (a dependency with a provision hook), `glitchtip` (depends on postgres, several
-compose services), `dockge` (extra allowed mount).
+`postgres` and `valkey` (shared dependencies with provision hooks), `twenty` (depends on
+both, several compose services), `dockge` (extra allowed mount).
 
 ## Files
 
@@ -29,9 +43,11 @@ compose services), `dockge` (extra allowed mount).
 | `compose.yml` | yes | The compose project, plus the `x-pcm` block |
 | `.env.schema` | if `compose.yml` uses any `${VAR}` | Declares every variable, with type and default |
 | `provision` | no, executable | Hook other definitions call when they depend on this one |
+| `deprovision` | with `provision`, if it creates anything | Undoes `provision` when a dependent is removed |
 | `README.md` | recommended | What it is, how to start it, anything non-obvious |
 
-Never ship a `.env`: the user stows their own next to the schema to override defaults.
+Never ship a `.env`: the user overrides defaults in `~/.config/pcm/env/<name>.env`, which
+pcm exports before varlock runs (a `.env` in a clone would dirty it).
 
 ## compose.yml
 
@@ -39,10 +55,9 @@ Never ship a `.env`: the user stows their own next to the schema to override def
 # <Name> — one line on what it is (link).
 #
 # pcm service: `pcm up <name>`. Every variable, with its default, lives in .env.schema.
-name: <name>                       # compose project name; defaults to the dir name
 
 x-pcm:                             # optional
-  depends_on:                      # other pcm definitions this one needs
+  depends_on:                      # other pcm definitions this one needs (name or source/name)
     postgres:                      # map form: settings passed to postgres's provision hook
       database: <name>
   # depends_on: [postgres]         # list form: no settings
@@ -168,19 +183,33 @@ passed back, like a database and its connection URL. Model it on `postgres/provi
 - **Output:** `KEY=VALUE` lines on stdout (upper-case keys) and nothing else. Send logs and
   progress to stderr. Document the keys in the header comment.
 
+## deprovision hook
+
+The mirror of `provision`: `pcm remove <dependent>` runs it after the dependent is down, while
+this definition is running, with the same `key=value` args and env. It undoes what `provision`
+created for that dependent (postgres drops the dependent's database). Model it on
+`postgres/deprovision`.
+
+- Never destroy anything shared: when the settings point at a default/shared resource (postgres's
+  admin database), log to stderr and exit 0.
+- Idempotent (`--if-exists`), output to stderr only. A non-zero exit is reported and the rest of
+  the remove still happens.
+- If this definition isn't running, pcm skips the hook and says what was left in place.
+
 ## Secrets
 
 If `fnox` is installed and a `fnox.toml` is in the definition directory or
-`$PCM_CONTAINERS_HOME`, pcm wraps each call in `fnox exec` so secrets are in the environment
+`$PCM_CONFIG_HOME` (or `$PCM_CONTAINERS_HOME`), pcm wraps each call in `fnox exec` so secrets are in the environment
 before varlock resolves.
 
 ## Workflow
 
-1. Create `<name>/` with `compose.yml` and `.env.schema`, plus `provision` and `README.md` if needed.
+1. Create `<name>/` with `compose.yml` and `.env.schema`, plus `provision`/`deprovision` and
+   `README.md` if needed.
 2. `cd <name> && varlock load --path .` to check the schema on its own.
 3. `pcm validate <name>`. Fix every error. Treat warnings (image VOLUMEs, host-port clashes with
    other definitions) as bugs unless there's a reason.
-4. `ppm install pcm` if the definition was created in the package, then `pcm up <name>`.
+4. `pcm list` shows it (and whether it shadows or is shadowed), then `pcm up <name>`. Commit it in its source repo.
 5. Check it: `pcm ps`, `podman compose --pcm logs -f <name>`, then `pcm down <name>`.
 
 Only report the definition as working after `pcm validate` passes and `pcm up` starts it

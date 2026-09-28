@@ -1,0 +1,5 @@
+# pcm system source list — shipped and managed by the pdt/pcm package.
+# Do NOT edit: it is a stow symlink into the pdt repo. Add your own container repos with
+# `pcm src add <git-url> [alias]` (they go in user.list and take priority).
+# Format per line: <git-url> [alias]. Each repo holds containers/<name>/compose.yml.
+git@github.com:maxcole/core-pcm.git  core

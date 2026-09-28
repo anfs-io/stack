@@ -8,6 +8,7 @@ export PCM_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/pcm"
 export PCM_VOLUMES_HOME="$PCM_DATA_HOME/volumes"
 
 export PCM_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}/pcm"
+export PCM_SOURCES_HOME="$PCM_DATA_HOME/sources"
 
 zcomp pcm
 

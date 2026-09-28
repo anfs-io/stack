@@ -22,7 +22,12 @@ post_install() {
   mkdir -p "$pcm_config/containers"
 
   # Create PCM data directory
-  mkdir -p "$pcm_data/volumes"
+  mkdir -p "$pcm_data/volumes" "$pcm_data/sources"
+
+  # Clone the container sources (system.list, plus any user.list entries)
+  if ! "$HOME/.local/bin/pcm" src update; then
+    user_message "Some container sources were not updated; run: pcm src update"
+  fi
 }
 
 # Refuse removal while compose containers are running (override with ppm remove -f)

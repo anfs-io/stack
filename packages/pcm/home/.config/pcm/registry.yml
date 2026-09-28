@@ -3,7 +3,7 @@ shared_network: dev-net
 
 network_attached_services:
   - postgres
-  # - redis
+  - valkey
   # - headroom
 
 autostart_services:
