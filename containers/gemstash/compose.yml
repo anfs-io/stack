@@ -2,7 +2,6 @@
 #
 # pcm service: `pcm up gemstash`. The image is built locally from ./Containerfile
 # on first `up`. Every variable, with its default, lives in .env.schema.
-name: gemstash
 
 services:
   gemstash:

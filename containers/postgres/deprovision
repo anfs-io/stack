@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# deprovision — pcm dependency hook for postgres
+#
+# Run by pcm (from this directory) during `pcm remove <service>` for each service that
+# declares postgres in x-pcm.depends_on, after that service is down and while postgres
+# is running:
+#
+#   deprovision [database=<name>]
+#
+# Drops the database provision created for it. With no database setting the dependent
+# used the admin database (POSTGRES_DB), which is shared, so nothing is dropped.
+#
+# pcm runs it under varlock, which sets the POSTGRES_* vars from .env.schema
+# (overridden by .env and the environment).
+set -euo pipefail
+
+user="${POSTGRES_USER:?not set; run via pcm (varlock resolves it from .env.schema)}"
+admin_db="${POSTGRES_DB:?not set; run via pcm (varlock resolves it from .env.schema)}"
+database="$admin_db"
+
+for arg in "$@"; do
+  case "$arg" in
+    database=*) database="${arg#*=}" ;;
+    *) echo "deprovision: unknown setting '$arg'" >&2; exit 1 ;;
+  esac
+done
+
+if [[ ! "$database" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+  echo "deprovision: invalid database name '$database'" >&2
+  exit 1
+fi
+
+if [[ "$database" == "$admin_db" || "$database" == postgres || "$database" == template* ]]; then
+  echo "deprovision: not dropping shared database '$database' for ${PCM_DEPENDENT:-unknown}" >&2
+  exit 0
+fi
+
+container=$(podman ps \
+  --filter "label=com.docker.compose.project=${PCM_PROJECT:-postgres}" \
+  --filter "label=com.docker.compose.service=postgres" \
+  --format '{{.Names}}' | head -n1)
+if [[ -z "$container" ]]; then
+  echo "deprovision: postgres container is not running" >&2
+  exit 1
+fi
+
+# --force terminates sessions left over from the dependent's containers
+podman exec "$container" dropdb -U "$user" --if-exists --force "$database" >&2
+echo "deprovision: dropped database '$database' for ${PCM_DEPENDENT:-unknown}" >&2

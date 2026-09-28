@@ -5,7 +5,6 @@
 # Every variable, with its default, lives in .env.schema.
 # Adapted from n8n-io/n8n-hosting docker-compose/withPostgres: the bundled postgres
 # and its init-data.sh are replaced by the shared pcm postgres.
-name: n8n
 
 x-pcm:
   depends_on:

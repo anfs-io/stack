@@ -4,7 +4,6 @@
 #
 # pcm service: `pcm up telemetry`. Every variable, with its default, lives in .env.schema.
 # App-independent: ships no dashboards; GRAFANA_DASHBOARDS_DIR points at a project's.
-name: telemetry
 
 x-pcm:
   allow_mounts:

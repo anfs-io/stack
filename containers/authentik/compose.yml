@@ -4,7 +4,6 @@
 # starts postgres if needed, creates the `authentik` database and injects
 # PCM_POSTGRES_*. Every variable, with its default, lives in .env.schema.
 # Secrets ship with an insecure dev-only default — override them for anything shared.
-name: authentik
 
 x-pcm:
   depends_on:

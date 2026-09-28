@@ -3,7 +3,6 @@
 # pcm service: `pcm up dockge`. Dockge manages its own stacks in
 # ${PCM_VOLUMES_HOME}/dockge/stacks; those are not pcm services.
 # Every variable, with its default, lives in .env.schema.
-name: dockge
 
 x-pcm:
   allow_mounts:

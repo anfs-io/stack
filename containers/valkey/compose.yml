@@ -3,7 +3,6 @@
 # pcm service: dependents declare it in x-pcm.depends_on and get their own
 # logical database from ./provision, injected as PCM_VALKEY_URL — the same model
 # as the shared postgres. Every variable, with its default, lives in .env.schema.
-name: valkey
 
 services:
   valkey:

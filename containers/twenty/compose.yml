@@ -5,7 +5,6 @@
 # db and injects PCM_POSTGRES_URL and PCM_VALKEY_URL.
 # Every variable, with its default, lives in .env.schema.
 # Secrets ship with an insecure dev-only default — override them for anything shared.
-name: twenty
 
 x-pcm:
   depends_on:
