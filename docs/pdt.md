@@ -13,3 +13,5 @@ ppm list pdt
 ppm install pdt/<package>
 pcm install pdt/dnsmasq
 ```
+
+VM images (building, testing, running them) are `pim`, part of anfs: images/ in any source.
