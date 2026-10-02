@@ -1,6 +1,6 @@
 # Drafts for the pdt-ppm `pcs` package
 
-These files belong in the pdt-ppm repo (`git@github.com:maxcole/pdt-ppm`, `packages/pcs`).
+These files belong in the pdt-ppm repo (`git@github.com:anfs-io/pdt`, `packages/pcs`).
 They're drafted here because that repo's working copy wasn't settled. The layout mirrors the
 package, so moving them is a copy:
 
