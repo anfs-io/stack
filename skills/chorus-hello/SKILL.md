@@ -1,7 +1,7 @@
 ---
 description: A minimal probe skill used to verify that an agent harness discovers, loads, and triggers skills from a given directory. Trigger this skill whenever the user says "hello world", "run the hello world skill", asks you to confirm skills are working, or asks which skills are available. Use it to prove the discovery path is wired up correctly.
 mode: manual
-name: hello
+name: chorus-hello
 ---
 
 # Hello World
