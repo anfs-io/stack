@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# The ai/firstmate round trip on a fresh Linux box, with no model calls:
+#
+#   install.sh, then firstmate's dependencies     the baseline $HOME is taken after these
+#   ppm install ai/firstmate                      the package under test
+#   checks                                        pinned repo, doctor, up/agent/down, no stray processes
+#   ppm remove ai/firstmate                       and $HOME compared with the baseline
+#
+# Usage: ai/packages/firstmate/tests/roundtrip [--keep] [debian|fedora]       (default: debian)
+#   --keep  leave the box and its source copy in place afterwards, to poke at
+#
+# Uses the anfs test harness and its `bootstrap` snapshot (built by anfs/packages/anfs/tests/roundtrip
+# on first use). The anfs, ai, pde and pdt sources are copied from $ANFS_SOURCES_HOME (working
+# tree, uncommitted edits included) and mounted read-only. Claude is not authenticated in the
+# box: the first mate is only checked to start and be detected by herdr.
+set -euo pipefail
+
+keep=false
+[[ "${1:-}" == --keep ]] && { keep=true; shift; }
+distro="${1:-debian}"
+SRC="${ANFS_SOURCES_HOME:-$HOME/.local/share/anfs/sources}"
+H="$SRC/anfs/packages/anfs/tests/harness"
+DEPS="ai/herdr ai/claude anfs/node pde/git pdt/python"
+
+# What the dependencies may leave, which is theirs and not firstmate's: tool caches and state (brew,
+# mise, npm, gh), claude's config, herdr's lock, session dir and agent-detection manifests, and the
+# history of the interactive shells herdr opens for panes
+IGNORE_RE='^\./(\.cache|\.local|\.local/share|\.local/state|\.config|\.claude|\.claude\.json|\.bash_history)$|^\./(\.cache/|\.npm|\.claude/|\.claude\.json\.|\.local/share/mise|\.local/state/(mise|herdr|gh)|\.config/herdr/(\.plugins\.lock|sessions))'
+
+podman image exists "localhost/anfs-test:$distro-bootstrap" \
+  || { echo "no $distro-bootstrap image: run anfs/packages/anfs/tests/roundtrip $distro once" >&2; exit 2; }
+
+copy=$(mktemp -d "${TMPDIR:-/tmp}/fm-roundtrip.XXXXXX")
+if $keep; then
+  echo "== --keep: sources copied to $copy; shell in with: $H shell $distro"
+else
+  trap 'podman rm -f "anfs-test-$distro" >/dev/null 2>&1; rm -rf "$copy"' EXIT
+fi
+srcs=()
+for s in anfs ai pde pdt; do
+  cp -R "$SRC/$s" "$copy/"
+  srcs+=(--src "$s=$copy/$s")
+done
+podman rm -f "anfs-test-$distro" >/dev/null 2>&1 || true
+"$H" start "$distro" --from bootstrap "${srcs[@]}" >/dev/null
+
+box() {
+  "$H" exec "$distro" -- bash -c '[ -x /home/linuxbrew/.linuxbrew/bin/brew ] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"; export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"; export PIM_INSTALL=validate; '"$1"
+}
+
+echo "== install.sh"
+box '
+  set -e
+  mkdir -p ~/.local/share/anfs/sources ~/.config/anfs
+  : > ~/.config/anfs/user.list
+  for src in $(ls -d /src/* | grep -vx /src/anfs) /src/anfs; do
+    ln -sfn "$src" ~/.local/share/anfs/sources/"$(basename "$src")"
+    printf "%s  %s\n" "$src" "$(basename "$src")" >> ~/.config/anfs/user.list
+  done
+  bash /src/anfs/install.sh
+' >/dev/null 2>&1 || { echo "!! install.sh failed"; exit 1; }
+
+echo "== dependencies: $DEPS"
+box "ppm install $DEPS" >/dev/null 2>&1 || { echo "!! dependency install failed"; exit 1; }
+
+snapshot_home() { "$H" exec "$distro" -- bash -c 'cd ~ && find . -mindepth 1 | LC_ALL=C sort'; }
+before=$(snapshot_home)
+
+echo "== ppm install ai/firstmate"
+box 'ppm install ai/firstmate' >/dev/null 2>&1 || echo "!! ppm install ai/firstmate failed"
+
+status=0
+check() {
+  local what="$1" cmd="$2" out
+  if out=$(box "$cmd" 2>&1); then
+    echo "  ok    $what"
+  else
+    echo "  FAIL  $what"
+    echo "$out" | tail -n 8 | sed 's/^/          /'
+    status=1
+  fi
+}
+
+ref=$(yq -r '.meta.firstmate.ref' "$SRC/ai/packages/firstmate/package.yml")
+echo "== checks"
+check "repo checked out at meta.firstmate.ref"  "test \"\$(git -C ~/.local/share/firstmate/repo rev-parse HEAD)\" = $ref"
+check "every bootstrap tool on PATH"            'for t in herdr jq treehouse no-mistakes tasks-axi quota-axi gh-axi chrome-devtools-axi gh python3 perl shasum claude; do command -v $t >/dev/null || { echo "missing $t"; exit 1; }; done'
+check "herdr protocol >= 16"                    'herdr status --json | jq -e ".client.protocol >= 16"'
+check "firstmate doctor --no-auth"              'firstmate doctor --no-auth'
+check "firstmate up --headless"                 'firstmate up --headless'
+check "herdr sees the first mate (claude)"      'herdr --session firstmate agent list | jq -e ".result.agents[] | select(.name == \"firstmate\" and .agent == \"claude\")"'
+check "up again is idempotent (one agent)"      'firstmate up --headless && test "$(herdr --session firstmate agent list | jq "[.result.agents[] | select(.name == \"firstmate\")] | length")" = 1'
+check "firstmate down"                          'firstmate down'
+check "no processes reference FM_HOME or the session" '! pgrep -f "[f]irstmate/home|[s]ession firstmate"'
+check "the firstmate session is gone"           '! herdr session list --json | jq -e ".sessions[] | select(.name == \"firstmate\")"'
+
+echo "== ppm remove ai/firstmate"
+box 'ppm remove ai/firstmate' >/dev/null 2>&1 || { echo "!! ppm remove ai/firstmate failed"; status=1; }
+check "firstmate launcher unstowed"             '! command -v firstmate'
+check "repo and FM_HOME removed"                '! test -e ~/.local/share/firstmate'
+
+after=$(snapshot_home)
+added=$(comm -13 <(echo "$before") <(echo "$after") | grep -Ev "$IGNORE_RE" || true)
+removed=$(comm -23 <(echo "$before") <(echo "$after") | grep -Ev "$IGNORE_RE" || true)
+if [[ -n "$added" ]]; then
+  echo "== left behind in \$HOME:"; echo "$added" | sed 's/^/  /'; status=1
+fi
+if [[ -n "$removed" ]]; then
+  echo "== deleted from \$HOME:"; echo "$removed" | sed 's/^/  /'; status=1
+fi
+[[ $status -eq 0 ]] && echo "== PASS: ai/firstmate installed, started, stopped and removed cleanly"
+exit $status

@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# firstmate — run the Firstmate agent distro on a dedicated herdr session.
+#
+# One herdr session ($FM_SESSION, default "firstmate") holds one primary agent named "firstmate"
+# in a "captain" workspace rooted at the Firstmate repo. Firstmate itself does the work; this is
+# only lifecycle and input plumbing over herdr and Firstmate's own bin/ scripts.
+set -euo pipefail
+
+FM_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/firstmate/repo"
+export FM_HOME="${FM_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/firstmate/home}"
+FM_SESSION="${FM_SESSION:-firstmate}"
+CLAUDE_JSON="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"
+
+usage() {
+  cat <<EOF
+Usage: firstmate <command>
+
+  up [--headless]           start the herdr session and the first mate, then attach
+  attach                    attach to the herdr session
+  status                    agents in the session and each task's state
+  prompt <text...>          type a message to the first mate
+  note <file|->             hand the first mate a document (durable inbox note + nudge)
+  project add <path|space>  clone a repo into FM_HOME/projects and register it local-only
+  doctor [--no-auth]        check tools, herdr and Claude auth
+  down                      stop and delete the herdr session (stops every agent in it)
+
+FM_HOME=$FM_HOME  FM_SESSION=$FM_SESSION
+EOF
+}
+
+die() { echo "firstmate: $*" >&2; exit 1; }
+hr() { herdr --session "$FM_SESSION" "$@"; }
+
+session_running() {
+  herdr session list --json 2>/dev/null \
+    | jq -e --arg s "$FM_SESSION" '.sessions[] | select(.name == $s and .running)' >/dev/null
+}
+
+agent_exists() {
+  session_running && hr agent list 2>/dev/null \
+    | jq -e '.result.agents[] | select(.name == "firstmate")' >/dev/null
+}
+
+# Claude Code gates an unseen folder behind a trust dialog that --dangerously-skip-permissions
+# does not skip; record the trust for the repo before the primary launches there.
+trust_root() {
+  [[ -f "$CLAUDE_JSON" ]] || echo '{}' > "$CLAUDE_JSON"
+  jq -e --arg d "$FM_ROOT" '.projects[$d].hasTrustDialogAccepted == true' "$CLAUDE_JSON" >/dev/null && return
+  local tmp; tmp=$(mktemp "$CLAUDE_JSON.XXXXXX")
+  jq --arg d "$FM_ROOT" '.projects[$d].hasTrustDialogAccepted = true' "$CLAUDE_JSON" > "$tmp" && mv "$tmp" "$CLAUDE_JSON"
+}
+
+seed_home() {
+  mkdir -p "$FM_HOME"/{config,data,state,projects}
+  [[ -f "$FM_HOME/config/backend" ]] || echo herdr > "$FM_HOME/config/backend"
+  touch "$FM_HOME/config/fleet-ledger" "$FM_HOME/data/projects.md"
+}
+
+# Panes inherit the herdr server's environment, so start it with an allowlisted one: the caller's
+# PATH (it found herdr and claude) but none of its other variables, e.g. a parent harness's
+# CLAUDE_CODE_*, which would otherwise leak into every agent.
+start_server() {
+  local user="${USER:-$(id -un)}"
+  local keep=(PATH="$PATH" HOME="$HOME" USER="$user" LOGNAME="${LOGNAME:-$user}" SHELL="${SHELL:-/bin/bash}"
+    TERM="${TERM:-xterm-256color}" LANG="${LANG:-en_US.UTF-8}" TMPDIR="${TMPDIR:-/tmp}" FM_HOME="$FM_HOME")
+  local v
+  for v in CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY DISABLE_AUTOUPDATER XDG_DATA_HOME XDG_CONFIG_HOME XDG_STATE_HOME XDG_CACHE_HOME; do
+    [[ -n "${!v:-}" ]] && keep+=("$v=${!v}")
+  done
+  env -i "${keep[@]}" "$(command -v herdr)" --session "$FM_SESSION" server \
+    >"$FM_HOME/state/herdr-server.log" 2>&1 &
+  local i
+  for i in $(seq 30); do session_running && return; sleep 1; done
+  die "herdr session $FM_SESSION did not start (see $FM_HOME/state/herdr-server.log)"
+}
+
+start_agent() {
+  local ws pane i
+  # A restarted session restores its old layout; replace any stale captain workspace
+  for ws in $(hr workspace list | jq -r '.result.workspaces[] | select(.label == "captain") | .workspace_id'); do
+    hr workspace close "$ws" >/dev/null
+  done
+  pane=$(hr workspace create --cwd "$FM_ROOT" --label captain --no-focus --env "FM_HOME=$FM_HOME" \
+    | jq -r '.result.root_pane.pane_id')
+  trust_root
+  # agent start needs the pane's shell at its prompt; a login shell takes a moment. A start that
+  # reports agent_not_ready (e.g. a login screen) still registers the name, so check for the agent.
+  for i in $(seq 30); do
+    hr agent start firstmate --kind claude --pane "$pane" -- --dangerously-skip-permissions >/dev/null 2>&1 || true
+    agent_exists && return
+    sleep 1
+  done
+  die "could not start the first mate in pane $pane"
+}
+
+cmd_up() {
+  [[ -d "$FM_ROOT/.git" ]] || die "Firstmate repo missing at $FM_ROOT (ppm install ai/firstmate)"
+  seed_home
+  session_running || start_server
+  agent_exists || start_agent
+  [[ "${1:-}" == --headless ]] || exec herdr --session "$FM_SESSION"
+}
+
+cmd_status() {
+  session_running || { echo "session $FM_SESSION: stopped"; return; }
+  hr agent list | jq -r '.result.agents[] | "\(.name // "-")\t\(.pane_id)\t\(.agent_status)\t\(.cwd)"'
+  local meta
+  for meta in "$FM_HOME"/state/*.meta; do
+    [[ -f "$meta" ]] || continue
+    "$FM_ROOT/bin/fm-crew-state.sh" "$(basename "$meta" .meta)" 2>/dev/null || true
+  done
+}
+
+cmd_prompt() {
+  [[ $# -gt 0 ]] || die "prompt needs text"
+  agent_exists || die "the first mate is not running (firstmate up)"
+  hr agent prompt firstmate "$*" >/dev/null
+}
+
+cmd_note() {
+  local src="${1:-}" body id
+  [[ -n "$src" ]] || die "note needs a file or -"
+  if [[ "$src" == - ]]; then body=$(cat); else body=$(cat "$src"); fi
+  id=$(printf '%s' "$body" | shasum -a 256 | cut -c1-16)
+  printf '%s\n' "$body" | "$FM_ROOT/bin/fm-inbox.sh" note --request-id "$id" -
+  # An idle primary only drains its inbox on a turn; give it one
+  cmd_prompt "Captain note $id is waiting in your inbox; drain it and act on it."
+}
+
+cmd_project() {
+  [[ "${1:-}" == add && -n "${2:-}" ]] || die "usage: firstmate project add <path|space>"
+  local src="$2" name dest
+  [[ -d "$src" ]] || src=$(wsm path "$src") || die "not a directory or wsm space: $2"
+  name=$(basename "$src")
+  dest="$FM_HOME/projects/$name"
+  seed_home
+  [[ -d "$dest" ]] || git clone --quiet "$src" "$dest"
+  grep -q "^- $name \[" "$FM_HOME/data/projects.md" \
+    || echo "- $name [local-only] - added by firstmate project add (added $(date +%F))" >> "$FM_HOME/data/projects.md"
+  echo "$name -> $dest (local-only)"
+}
+
+cmd_doctor() {
+  local rc=0 line
+  [[ -d "$FM_ROOT/.git" ]] && echo "ok    repo $(git -C "$FM_ROOT" rev-parse --short HEAD)" \
+    || { echo "FAIL  repo missing at $FM_ROOT"; rc=1; }
+  if herdr status --json 2>/dev/null | jq -e '.client.protocol >= 16' >/dev/null; then
+    echo "ok    herdr $(herdr --version 2>/dev/null)"
+  else
+    echo "FAIL  herdr missing or protocol < 16"; rc=1
+  fi
+  seed_home
+  while IFS= read -r line; do
+    case "$line" in
+      MISSING:*|MISSING_MANUAL:*|BACKEND_INVALID:*) echo "FAIL  $line"; rc=1 ;;
+      "") ;;
+      *) echo "info  $line" ;;
+    esac
+  done < <("$FM_ROOT/bin/fm-bootstrap.sh" 2>&1 || true)
+  if [[ "${1:-}" != --no-auth ]]; then
+    if [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}${ANTHROPIC_API_KEY:-}" ]] || claude auth status >/dev/null 2>&1; then
+      echo "ok    claude auth"
+    else
+      echo "FAIL  claude auth (set CLAUDE_CODE_OAUTH_TOKEN, or claude auth login)"; rc=1
+    fi
+  fi
+  return $rc
+}
+
+cmd_down() {
+  session_running && herdr session stop "$FM_SESSION" >/dev/null
+  herdr session delete "$FM_SESSION" >/dev/null 2>&1 || true
+  if pgrep -f "$FM_HOME" >/dev/null; then
+    echo "firstmate: processes still reference $FM_HOME:" >&2
+    pgrep -fl "$FM_HOME" >&2
+    return 1
+  fi
+}
+
+case "${1:-}" in
+  up)      shift; cmd_up "$@" ;;
+  attach)  exec herdr --session "$FM_SESSION" ;;
+  status)  cmd_status ;;
+  prompt)  shift; cmd_prompt "$@" ;;
+  note)    shift; cmd_note "$@" ;;
+  project) shift; cmd_project "$@" ;;
+  doctor)  shift; cmd_doctor "$@" ;;
+  down)    cmd_down ;;
+  -h|--help|help|"") usage ;;
+  *) usage >&2; exit 1 ;;
+esac
