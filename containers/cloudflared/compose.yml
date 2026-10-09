@@ -1,0 +1,26 @@
+# cloudflared — Cloudflare Tunnel connector (https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/).
+#
+# pcm service: run by the cloudflare-tunnel edge (x-pcm.provides: edge). A service
+# whose ingress hosts are under a domain edges.yml maps to cloudflare-tunnel
+# depends on it implicitly. Before it starts, the edge creates this machine's
+# tunnel and writes its token to $PCM_ENV_HOME/cloudflared.env (TUNNEL_TOKEN).
+# The tunnel sends every hostname to the proxy (http://traefik:80 on the shared
+# network), which routes by Host. Nothing is published on the host.
+# Every variable, with its default, lives in .env.schema.
+
+x-pcm:
+  provides: edge
+
+services:
+  cloudflared:
+    image: ${CLOUDFLARED_IMAGE}:${CLOUDFLARED_TAG}
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "--metrics", "0.0.0.0:20241", "run"]
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "localhost:20241", "ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s

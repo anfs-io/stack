@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# provision — pcm proxy hook for traefik
+#
+# Run by pcm once traefik is healthy, for each service with x-pcm.ingress, with
+# the same key=value args as `labels`. Prints the URL of the service's first
+# host; pcm exports it to the service as PCM_INGRESS_URL.
+#
+# pcm runs it under varlock, which sets PROXY_HTTP_PORT from .env.schema.
+set -euo pipefail
+
+port="${PROXY_HTTP_PORT:?not set; run via pcm (varlock resolves it from .env.schema)}"
+hosts=""
+for arg in "$@"; do
+  [[ "$arg" == hosts=* ]] && hosts="${arg#*=}"
+done
+: "${hosts:?no hosts= argument}"
+
+suffix=":$port"
+[[ "$port" == 80 ]] && suffix=""
+echo "URL=http://${hosts%%,*}$suffix"

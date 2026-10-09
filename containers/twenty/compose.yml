@@ -2,7 +2,9 @@
 #
 # pcm service: uses the shared pcm postgres and valkey. Start with `pcm up twenty`,
 # which starts them if needed, creates the `twenty` database, allocates a valkey
-# db and injects PCM_POSTGRES_URL and PCM_VALKEY_URL.
+# db and injects PCM_POSTGRES_URL and PCM_VALKEY_URL. It is routed by the pcm
+# proxy (x-pcm.ingress) at http://twenty.localhost:8088 by default; the proxy
+# injects that URL as PCM_INGRESS_URL, which TWENTY_SERVER_URL defaults to.
 # Every variable, with its default, lives in .env.schema.
 # Secrets ship with an insecure dev-only default — override them for anything shared.
 
@@ -11,6 +13,11 @@ x-pcm:
     postgres:
       database: twenty
     valkey: {}
+  ingress:
+    service: server
+    port: 3000
+    healthcheck: /healthz
+    hosts: ${TWENTY_HOSTS}
 
 x-twenty-env: &twenty-env
   PG_DATABASE_URL: ${PCM_POSTGRES_URL}

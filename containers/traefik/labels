@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# labels — pcm proxy hook for traefik
+#
+# Run by pcm (from this directory) while it writes the compose override of a
+# service with x-pcm.ingress:
+#
+#   labels name=<service> service=<compose service> port=<port>
+#          healthcheck=<path> hosts=<host,...> network=<network>
+#
+# Prints label=value lines; pcm sets them on the ingress compose service, and
+# Traefik's docker provider builds the route from them.
+set -euo pipefail
+
+for arg in "$@"; do
+  case "$arg" in
+    name=*) name="${arg#*=}" ;;
+    port=*) port="${arg#*=}" ;;
+    healthcheck=*) healthcheck="${arg#*=}" ;;
+    hosts=*) hosts="${arg#*=}" ;;
+    network=*) network="${arg#*=}" ;;
+    *=*) ;;
+    *) echo "labels: unexpected argument '$arg'" >&2; exit 1 ;;
+  esac
+done
+: "${name:?} ${port:?} ${hosts:?} ${network:?}"
+
+rule=""
+IFS=',' read -ra list <<< "$hosts"
+for host in "${list[@]}"; do
+  rule+="${rule:+ || }Host(\`$host\`)"
+done
+
+r="pcm-$name"
+cat <<LABELS
+traefik.enable=true
+traefik.docker.network=$network
+traefik.http.routers.$r.rule=$rule
+traefik.http.routers.$r.entrypoints=web
+traefik.http.routers.$r.service=$r
+traefik.http.services.$r.loadbalancer.server.port=$port
+traefik.http.services.$r.loadbalancer.healthcheck.path=${healthcheck:-/up}
+LABELS
