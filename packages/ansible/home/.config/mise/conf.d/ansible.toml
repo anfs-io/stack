@@ -1,0 +1,6 @@
+# ansible.toml
+
+[tools."pipx:ansible"]
+version = "12.3.0"
+uvx = true
+pipx_args = "--include-deps"
