@@ -10,12 +10,16 @@ export PPM_FPATH=$XDG_DATA_HOME/omz/custom/completions
 xt() { export TERM=xterm-256color; }
 
 # Write a completion file for <cmd> to $PPM_FPATH if <cmd> is installed and the file is missing
+# or older than the command: a completion written by last month's version of a tool completes
+# last month's commands (wsm's kept reading a registry that no longer existed). An anfs tool
+# whose completion lives in its library (~/.local/lib/<cmd>/completion.sh) is checked there too.
 # Packages call this from their own .zsh file; `zsrc -c <cmd>` forces a refresh
 # Usage: zcomp <cmd> [generator args...]   (default args: completion zsh)
 zcomp() {
-  local cmd=$1 file=$PPM_FPATH/_$1
+  local cmd=$1 file=$PPM_FPATH/_$1 lib=$HOME/.local/lib/$1/completion.sh
   shift
-  (( $+commands[$cmd] )) && [[ -n $PPM_FPATH && ! -s $file ]] || return 0
+  (( $+commands[$cmd] )) && [[ -n $PPM_FPATH ]] || return 0
+  [[ ! -s $file || $commands[$cmd] -nt $file || ( -e $lib && $lib -nt $file ) ]] || return 0
   (( $# )) || set -- completion zsh
   mkdir -p $PPM_FPATH
   if command $cmd "$@" > $file.tmp 2>/dev/null && [[ -s $file.tmp ]]; then
