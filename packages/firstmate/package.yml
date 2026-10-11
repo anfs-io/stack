@@ -1,6 +1,7 @@
 version: 0.1.0
 author: rjayroach
-depends: [ai/herdr, ai/claude, anfs/node, pde/git, pdt/python]
+categories: [ai]
+depends: [herdr, claude, node, git, python]
 brew: [jq]
 system:
   debian: [perl]
@@ -8,4 +9,4 @@ system:
 meta:
   firstmate:
     repo: https://github.com/kunchenguid/firstmate
-    ref: 42dd906d02f672652606057a193a6386b956c3f3   # 2026-10-04, the commit evaluated in anfs/orchestrators-eval.md
+    ref: 42dd906d02f672652606057a193a6386b956c3f3   # 2026-10-04, the commit evaluated in core/chorus/orchestrators-eval.md

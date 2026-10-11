@@ -1,5 +1,6 @@
 version: 0.2.0
 author: rjayroach
+categories: [utils]
 
 # macOS and Linux. Disk operations live in ~/.local/lib/rpi-imager/<os>.sh.
 #

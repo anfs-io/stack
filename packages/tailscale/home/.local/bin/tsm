@@ -96,7 +96,7 @@ load_libs() {
     dir="$candidate"
     break
   done
-  [[ -n "$dir" ]] || die "libraries not found (looked for common.sh in ~/.local/lib/tsm)\n  run: ppm install -f utils/tailscale"
+  [[ -n "$dir" ]] || die "libraries not found (looked for common.sh in ~/.local/lib/tsm)\n  run: ppm install -f stack/tailscale"
 
   for lib in common prereqs; do
     # shellcheck source=/dev/null
@@ -111,7 +111,7 @@ load_libs() {
 # fnox: secrets for every later step
 # ---------------------------------------------------------------------------
 
-# Same predicate and file names as utils/rpi-imager and pdt/pcm.
+# Same predicate and file names as stack/rpi-imager and stack/pcm.
 uses_fnox() {
   local d n
   for d in "$TSM_CONFIG_HOME" "$PWD"; do

@@ -1,4 +1,4 @@
-# ~/.bashrc — bash config assembled from package-contributed snippets (pde/bash)
+# ~/.bashrc — bash config assembled from package-contributed snippets (stack/bash)
 #
 # Two tiers, sourced in this order:
 #   ~/.config/sh/*.sh        portable, shared with zsh
@@ -8,7 +8,7 @@
 
 case $- in *i*) ;; *) return ;; esac   # interactive shells only
 
-# XDG and ppm directories, matching pde/zsh's aliases.zsh
+# XDG and ppm directories, matching stack/zsh's aliases.zsh
 export XDG_CACHE_HOME=$HOME/.cache
 export XDG_CONFIG_HOME=$HOME/.config
 export XDG_DATA_HOME=$HOME/.local/share
@@ -17,8 +17,8 @@ export BIN_DIR=$HOME/.local/bin
 export LIB_DIR=$HOME/.local/lib
 
 # Put $target first on PATH, removing any existing occurrence so repeated sourcing can't
-# duplicate it. pde/zsh's .zshrc defines the same helper, so a portable ~/.config/sh/*.sh
-# snippet can call it in either shell (pde/ruby-tools and pdt/solana already do from .zsh).
+# duplicate it. stack/zsh's .zshrc defines the same helper, so a portable ~/.config/sh/*.sh
+# snippet can call it in either shell (stack/ruby-tools and stack/solana already do from .zsh).
 # Written for bash 3.2: ${v//pat/rep} and ${v:+...} are all it needs.
 ensure_path() {
   local target="$1"
@@ -65,7 +65,7 @@ ensure_path "$BIN_DIR"
 
 # bash-completion, before the snippet loop: generated completion scripts (cobra-style, e.g.
 # varlock's) call its _get_comp_words_by_ref, so a snippet that registers one checks for it.
-# The distro's own ~/.bashrc used to load it, and pde/bash moves that file aside. Both
+# The distro's own ~/.bashrc used to load it, and stack/bash moves that file aside. Both
 # profile.d scripts return early when already loaded (BASH_COMPLETION_VERSINFO), which keeps a
 # reload cheap, and when bash is older than 4.2 — /bin/bash 3.2 on macOS simply goes without.
 # brew's copy also loads $HOMEBREW_PREFIX/etc/bash_completion.d, where formulas put theirs.

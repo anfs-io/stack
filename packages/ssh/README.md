@@ -20,7 +20,7 @@ time a hook file runs.
 
 ```zsh
 # ~/.config/zsh/ssh/example.zsh
-(( $+functions[ssh_register] )) || return 0   # degrade quietly if pde/ssh is absent
+(( $+functions[ssh_register] )) || return 0   # degrade quietly if stack/ssh is absent
 
 _example_ssh_hook() {
   ssh_opts+=(-o SendEnv=EXAMPLE)
@@ -75,8 +75,8 @@ The capture is guarded against re-sourcing, and `ssh_register` is idempotent, so
 
 | Package | Hook |
 |---|---|
-| pde/op | forwards `OP_SERVICE_ACCOUNT_TOKEN` to the remote |
-| pde/ghostty | per-host background colour and tab title |
+| stack/op | forwards `OP_SERVICE_ACCOUNT_TOKEN` to the remote |
+| stack/ghostty | per-host background colour and tab title |
 
 ## Other contents
 

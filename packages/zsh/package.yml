@@ -1,6 +1,7 @@
 version: 0.1.4
 author: rjayroach
-# The command-line tools (bat, fzf, ...) and their config come from pde/cli, shared with pde/bash
+categories: [pde]
+# The command-line tools (bat, fzf, ...) and their config come from stack/cli, shared with stack/bash
 depends: [cli]
 # zsh itself comes from the distro so the login shell is a path listed in /etc/shells
 system:

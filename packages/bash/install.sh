@@ -26,7 +26,7 @@ pre_install() {
 # brew's 5.x — /bin/bash is 3.2.57 and Apple will never move off it (GPLv3). On Linux the distro
 # bash is already 5.2+ and stays the login shell: brew's Linux prefix is under /home, which may
 # not be mounted when login runs (autofs, NFS); SELinux labels binaries there user_home_t rather
-# than shell_exec_t; and brew may link its own glibc. pde/zsh's package.yml makes the same call
+# than shell_exec_t; and brew may link its own glibc. stack/zsh's package.yml makes the same call
 # for the same reason, taking zsh from the distro so the login shell is a path in /etc/shells.
 post_install() {
   [[ "$(os)" == "macos" ]] || return 0
@@ -91,7 +91,7 @@ _bash_login_shell() {
   fi
 }
 
-# Put back the most recent backup if this package's link is gone, so removing pde/bash leaves a
+# Put back the most recent backup if this package's link is gone, so removing stack/bash leaves a
 # working shell on a machine whose distro rc we moved aside.
 #
 # The login shell is deliberately left as it is. ppm remove does not uninstall brew's bash

@@ -1,5 +1,6 @@
 version: 0.1.1
 author: rjayroach
+categories: [utils]
 
 # macOS: the cask is the GUI app. It has no `binary` stanza, so nothing lands on PATH —
 # the CLI is inside the bundle at /Applications/Tailscale.app/Contents/MacOS/Tailscale.

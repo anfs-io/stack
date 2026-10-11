@@ -1,4 +1,4 @@
-# pde/chorus
+# stack/chorus
  
 chorus_init() {
   if [[ -z "$1" || -z "$2" ]]; then

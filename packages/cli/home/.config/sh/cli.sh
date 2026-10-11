@@ -1,4 +1,4 @@
-# cli.sh — portable config for pde/cli's tools, sourced by both the bash and the zsh rc.
+# cli.sh — portable config for stack/cli's tools, sourced by both the bash and the zsh rc.
 # fzf's key bindings are shell-specific: see .config/zsh/cli.zsh and .config/bash/cli.bash.
 
 # Debian's apt package installs the binary as batcat; Homebrew's is bat

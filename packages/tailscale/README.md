@@ -41,7 +41,7 @@ OAuth secret can only ever create a *tagged* node, so the config must declare `t
 `tsm` refuses the combination rather than letting Tailscale return an opaque error.
 
 The secret lives in 1Password and is resolved by `fnox`. On a remote host that works
-because `pde/op` forwards a 1Password service account token over the SSH connection; see
+because `stack/op` forwards a 1Password service account token over the SSH connection; see
 that package's README. `tsm` re-execs itself under `fnox exec` when a `fnox.toml` sits
 beside the config, so the key is present without ever being exported into your shell.
 

@@ -94,7 +94,7 @@ start_agent() {
 }
 
 cmd_up() {
-  [[ -d "$FM_ROOT/.git" ]] || die "Firstmate repo missing at $FM_ROOT (ppm install ai/firstmate)"
+  [[ -d "$FM_ROOT/.git" ]] || die "Firstmate repo missing at $FM_ROOT (ppm install stack/firstmate)"
   seed_home
   session_running || start_server
   agent_exists || start_agent

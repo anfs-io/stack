@@ -1,4 +1,4 @@
-# pde/gam
+# stack/gam
 #
 # Google Workspace administration via GAM7
 # Uses mise pipx backend (with uv) to manage the gam7 Python package

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# The ssh dispatcher (pde/ssh) and this package's token-forwarding hook.
+# The ssh dispatcher (stack/ssh) and this package's token-forwarding hook.
 # Everything is stubbed: no network, no 1Password, no real ssh.
 # Run: bats packages/op/tests/ssh-hook.bats
 

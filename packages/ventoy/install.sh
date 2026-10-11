@@ -1,4 +1,4 @@
-# pdt/ventoy - Ventoy USB boot manager (wrapper: ~/.local/bin/ventoy)
+# stack/ventoy - Ventoy USB boot manager (wrapper: ~/.local/bin/ventoy)
 #
 # Ventoy2Disk.sh only runs on Linux, so the release is only fetched there.
 # On macOS the wrapper can still copy ISOs to an already-prepared stick.

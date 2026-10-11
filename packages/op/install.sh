@@ -6,7 +6,7 @@
 # does — a host missing this looks exactly like "no secrets configured" — so the matching
 # AcceptEnv is written here.
 #
-# /etc/ssh is root-owned, so this cannot be stowed. Same shape as pde/bash registering brew's
+# /etc/ssh is root-owned, so this cannot be stowed. Same shape as stack/bash registering brew's
 # bash in /etc/shells, and handled the same way: grep first so a settled host never prompts,
 # _system_sudo to prime the credential cache, then `sudo -n` so an unattended install cannot block.
 #
@@ -50,7 +50,7 @@ _op_sshd_accept_env() {
     return 0
   fi
 
-  printf '# ppm pde/op: accept the service account token forwarded by the ssh hook\n%s\n' "$_OP_ACCEPT_ENV" \
+  printf '# ppm stack/op: accept the service account token forwarded by the ssh hook\n%s\n' "$_OP_ACCEPT_ENV" \
     | sudo -n tee "$_OP_SSHD_DROPIN" >/dev/null || { user_message "Could not write $_OP_SSHD_DROPIN"; return 0; }
   sudo -n chmod 0644 "$_OP_SSHD_DROPIN" 2>/dev/null
 
@@ -69,7 +69,7 @@ _op_sshd_accept_env() {
 }
 
 # Root-owned and machine-wide, so it is left in place and explained rather than removed silently —
-# the same call pde/bash makes about its /etc/shells line.
+# the same call stack/bash makes about its /etc/shells line.
 post_remove() {
   [[ -f "$_OP_SSHD_DROPIN" ]] || return 0
   user_message "Left $_OP_SSHD_DROPIN in place.\nTo remove it: sudo rm $_OP_SSHD_DROPIN && sudo systemctl reload ssh"

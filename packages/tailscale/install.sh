@@ -1,4 +1,4 @@
-# utils/tailscale — Tailscale client plus `tsm`, the tailnet join manager
+# stack/tailscale — Tailscale client plus `tsm`, the tailnet join manager
 #
 # Linux keeps the vendor installer: it adds Tailscale's own repo and signing key and sets
 # up the tailscaled systemd service, none of which ppm's brew/cask/system vocabulary can

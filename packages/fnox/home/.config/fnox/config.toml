@@ -5,7 +5,7 @@
 # directory file wins on a key collision (`fnox config-files` shows what applies).
 #
 # Deliberately NOT declared here: OP_SERVICE_ACCOUNT_TOKEN. The ssh hook in
-# pde/op forwards whatever token the current directory resolves, so a global
+# stack/op forwards whatever token the current directory resolves, so a global
 # declaration would forward it from everywhere — including to third-party hosts
 # like github.com. Declare it per directory, with `op-provision link`.
 

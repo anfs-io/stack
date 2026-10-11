@@ -1,4 +1,4 @@
-# utils/rpi-imager — write a Raspberry Pi card from a declarative cloud-init profile
+# stack/rpi-imager — write a Raspberry Pi card from a declarative cloud-init profile
 #
 # ppm installs the cask before hooks run, so this hook verifies the result rather than
 # acting on it. A hand-installed app in /Applications makes the cask install fail, which

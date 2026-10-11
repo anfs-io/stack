@@ -29,10 +29,10 @@ export LIB_DIR=$HOME/.local/lib
 
 # The base environment lives here, not in a snippet, because the snippet loop at the bottom
 # sources the portable ~/.config/sh/*.sh tier first and those files guard on `command -v <tool>`:
-# PATH must already be complete when the first snippet loads. pde/bash's .bashrc does the same.
+# PATH must already be complete when the first snippet loads. stack/bash's .bashrc does the same.
 
 # Put $target first on PATH, removing any existing occurrence so repeats can't duplicate it.
-# Packages call this from their own .zsh files (pde/ruby-tools, pdt/solana), and pde/bash's
+# Packages call this from their own .zsh files (stack/ruby-tools, stack/solana), and stack/bash's
 # .bashrc defines the same helper, so a portable ~/.config/sh/*.sh snippet can call it in either
 # shell. Defined before the Homebrew block because that block calls it too.
 ensure_path() {

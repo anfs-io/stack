@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# The ai/firstmate round trip on a fresh Linux box, with no model calls:
+# The stack/firstmate round trip on a fresh Linux box, with no model calls:
 #
 #   install.sh, then firstmate's dependencies     the baseline $HOME is taken after these
-#   ppm install ai/firstmate                      the package under test
+#   ppm install stack/firstmate                   the package under test
 #   checks                                        pinned repo, doctor, up/agent/down, no stray processes
-#   ppm remove ai/firstmate                       and $HOME compared with the baseline
+#   ppm remove stack/firstmate                    and $HOME compared with the baseline
 #
-# Usage: ai/packages/firstmate/tests/roundtrip [--keep] [debian|fedora]       (default: debian)
+# Usage: stack/packages/firstmate/tests/roundtrip [--keep] [debian|fedora]       (default: debian)
 #   --keep  leave the box and its source copy in place afterwards, to poke at
 #
-# Uses the anfs test harness and its `bootstrap` snapshot (built by anfs/packages/anfs/tests/roundtrip
-# on first use). The anfs, ai, pde and pdt sources are copied from $ANFS_SOURCES_HOME (working
+# Uses the anfs test harness and its `bootstrap` snapshot (built by core/packages/anfs/tests/roundtrip
+# on first use). The core and stack sources are copied from $ANFS_SOURCES_HOME (working
 # tree, uncommitted edits included) and mounted read-only. Claude is not authenticated in the
 # box: the first mate is only checked to start and be detected by herdr.
 set -euo pipefail
@@ -19,8 +19,8 @@ keep=false
 [[ "${1:-}" == --keep ]] && { keep=true; shift; }
 distro="${1:-debian}"
 SRC="${ANFS_SOURCES_HOME:-$HOME/.local/share/anfs/sources}"
-H="$SRC/anfs/packages/anfs/tests/harness"
-DEPS="ai/herdr ai/claude anfs/node pde/git pdt/python"
+H="$SRC/core/packages/anfs/tests/harness"
+DEPS="herdr claude node git python"
 
 # What the dependencies may leave, which is theirs and not firstmate's: tool caches and state (brew,
 # mise, npm, gh), claude's config, herdr's lock, session dir and agent-detection manifests, and the
@@ -28,7 +28,7 @@ DEPS="ai/herdr ai/claude anfs/node pde/git pdt/python"
 IGNORE_RE='^\./(\.cache|\.local|\.local/share|\.local/state|\.config|\.claude|\.claude\.json|\.bash_history)$|^\./(\.cache/|\.npm|\.claude/|\.claude\.json\.|\.local/share/mise|\.local/state/(mise|herdr|gh)|\.config/herdr/(\.plugins\.lock|sessions))'
 
 podman image exists "localhost/anfs-test:$distro-bootstrap" \
-  || { echo "no $distro-bootstrap image: run anfs/packages/anfs/tests/roundtrip $distro once" >&2; exit 2; }
+  || { echo "no $distro-bootstrap image: run core/packages/anfs/tests/roundtrip $distro once" >&2; exit 2; }
 
 copy=$(mktemp -d "${TMPDIR:-/tmp}/fm-roundtrip.XXXXXX")
 if $keep; then
@@ -37,7 +37,7 @@ else
   trap 'podman rm -f "anfs-test-$distro" >/dev/null 2>&1; rm -rf "$copy"' EXIT
 fi
 srcs=()
-for s in anfs ai pde pdt; do
+for s in core stack; do
   cp -R "$SRC/$s" "$copy/"
   srcs+=(--src "$s=$copy/$s")
 done
@@ -53,11 +53,11 @@ box '
   set -e
   mkdir -p ~/.local/share/anfs/sources ~/.config/anfs
   : > ~/.config/anfs/user.list
-  for src in $(ls -d /src/* | grep -vx /src/anfs) /src/anfs; do
+  for src in $(ls -d /src/* | grep -vx /src/core) /src/core; do
     ln -sfn "$src" ~/.local/share/anfs/sources/"$(basename "$src")"
     printf "%s  %s\n" "$src" "$(basename "$src")" >> ~/.config/anfs/user.list
   done
-  bash /src/anfs/install.sh
+  bash /src/core/install.sh
 ' >/dev/null 2>&1 || { echo "!! install.sh failed"; exit 1; }
 
 echo "== dependencies: $DEPS"
@@ -66,8 +66,8 @@ box "ppm install $DEPS" >/dev/null 2>&1 || { echo "!! dependency install failed"
 snapshot_home() { "$H" exec "$distro" -- bash -c 'cd ~ && find . -mindepth 1 | LC_ALL=C sort'; }
 before=$(snapshot_home)
 
-echo "== ppm install ai/firstmate"
-box 'ppm install ai/firstmate' >/dev/null 2>&1 || echo "!! ppm install ai/firstmate failed"
+echo "== ppm install stack/firstmate"
+box 'ppm install stack/firstmate' >/dev/null 2>&1 || echo "!! ppm install stack/firstmate failed"
 
 status=0
 check() {
@@ -94,8 +94,8 @@ check "firstmate down"                          'firstmate down'
 check "no processes reference FM_HOME or the session" '! pgrep -f "[f]irstmate/home|[s]ession firstmate"'
 check "the firstmate session is gone"           '! herdr session list --json | jq -e ".sessions[] | select(.name == \"firstmate\")"'
 
-echo "== ppm remove ai/firstmate"
-box 'ppm remove ai/firstmate' >/dev/null 2>&1 || { echo "!! ppm remove ai/firstmate failed"; status=1; }
+echo "== ppm remove stack/firstmate"
+box 'ppm remove stack/firstmate' >/dev/null 2>&1 || { echo "!! ppm remove stack/firstmate failed"; status=1; }
 check "firstmate launcher unstowed"             '! command -v firstmate'
 check "repo and FM_HOME removed"                '! test -e ~/.local/share/firstmate'
 
@@ -108,5 +108,5 @@ fi
 if [[ -n "$removed" ]]; then
   echo "== deleted from \$HOME:"; echo "$removed" | sed 's/^/  /'; status=1
 fi
-[[ $status -eq 0 ]] && echo "== PASS: ai/firstmate installed, started, stopped and removed cleanly"
+[[ $status -eq 0 ]] && echo "== PASS: stack/firstmate installed, started, stopped and removed cleanly"
 exit $status

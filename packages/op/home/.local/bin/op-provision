@@ -460,7 +460,7 @@ token to remote hosts.")
     printf '# Written by %s on %s.\n#\n' "$PROG" "$(date +%Y-%m-%d)"
     printf '# env = false on the token keeps it out of the environment, so nothing\n'
     printf '# started here (editor, language server, agent) can read it. The ssh hook\n'
-    printf '# in pde/op materialises it for the ssh process alone.\n'
+    printf '# in stack/op materialises it for the ssh process alone.\n'
     if (( ${#HOSTS[@]} )); then printf '#\n# Hosts this scope is used with: %s\n' "${HOSTS[*]}"; fi
     printf '\ndefault_provider = "onepass"\n\n'
     printf '[providers.onepass]\ntype  = "1password"\nvault = "%s"\n\n' "$NAME"

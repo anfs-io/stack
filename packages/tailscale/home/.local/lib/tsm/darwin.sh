@@ -9,7 +9,7 @@
 #
 # macOS differs from Linux in two ways that matter here. The cask installs the GUI app
 # and has no `binary` stanza, so nothing lands on PATH and the CLI has to be found inside
-# the bundle by absolute path — the same problem utils/rpi-imager has with Imager. And
+# the bundle by absolute path — the same problem stack/rpi-imager has with Imager. And
 # the app runs its own daemon under the logged-in user, so no sudo is involved.
 
 find_tailscale_bin() {

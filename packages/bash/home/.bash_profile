@@ -1,2 +1,2 @@
-# Login shells read this, not ~/.bashrc (pde/bash)
+# Login shells read this, not ~/.bashrc (stack/bash)
 [ -r "$HOME/.bashrc" ] && . "$HOME/.bashrc"

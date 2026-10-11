@@ -37,7 +37,7 @@ ${bold}3. Store the secret in 1Password${nc}
      TS_AUTHKEY = { provider = "onepass", value = "op://<vault>/tailscale-oauth/credential", env = "exec" }
 
    ${dim}provider must be named explicitly — a bare value is stored verbatim and never
-   reaches 1Password. See pde/op's README.${nc}
+   reaches 1Password. See stack/op's README.${nc}
 
 $(_prereq_ssh_acl_section "$bold" "$dim" "$nc")
 

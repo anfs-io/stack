@@ -1,8 +1,8 @@
 # pcm-containers
 
-Container definitions for [pcm](https://github.com/maxcole/pdt-ppm/tree/main/packages/pcm), the
-Personal Container Manager. pcm lists this repo in its `system.list` as the source `pcm`, so
-`pcm up postgres` resolves to `pcm/postgres` unless a higher-priority source defines `postgres`.
+Container definitions for [pcm](https://github.com/anfs-io/system/tree/main/packages/pcm), the
+Personal Container Manager, in [stack](../README.md), an anfs default source. `pcm up postgres`
+resolves to `stack/postgres` unless a higher-priority source defines `postgres`.
 
 ## Layout
 
@@ -25,5 +25,5 @@ Don't put a `.env` in the clone (it is ignored, and would hide from `pcm src lis
 
 ```sh
 pcm validate            # every service pcm resolves
-pcm validate pcm/n8n    # one definition from this repo
+pcm validate stack/n8n  # one definition from this repo
 ```

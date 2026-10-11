@@ -1,12 +1,18 @@
-# PDE-PPM
+# stack
 
-PPM package repository for personal development environment setup.
+The anfs-io packages (ppm), containers (pcm) and skills (psm), in one anfs source. The toolkit and
+its conventions are in the `core` source (anfs-io/system): read its CLAUDE.md for how packages,
+layering, hooks and declared software work.
 
 ## Structure
 
-All packages follow the same pattern: `packages/<name>/install.sh` with optional `home/` directory for stow.
-
-```bash
-# Check any package's dependencies
-grep -A2 "dependencies()" packages/*/install.sh
 ```
+packages/<name>/     package.yml (required), optional install.sh and home/ (stowed to $HOME)
+containers/<name>/   pcm
+skills/<name>/       psm
+docs/<category>.md   what each category holds
+```
+
+Packages are flat. A package's groups are `categories: [...]` in its package.yml (ai, pde, pdt,
+utils); a new category needs no directory, only packages that declare it. `depends:` uses bare
+names.

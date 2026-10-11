@@ -3,12 +3,11 @@
 
 ## Usage
 
-An [anfs](https://github.com/anfs-io/system) source (`packages/`), in anfs's default
-`system.list`. wsm, which used to live here, is part of anfs now.
+The `pde` category of [stack](../README.md), an anfs default source: the packages that declare
+`categories: [pde]`. wsm, which used to live here, is part of anfs now.
 
 ```bash
-anfs src add https://github.com/anfs-io/pde pde   # only if it is not already listed
-ppm list pde
+ppm list @pde
 ppm install [PACKAGE]
 ```
 
@@ -21,7 +20,7 @@ ppm install zsh git nvim tmux
 ### Shortcut to install all packages
 
 ```bash
-ppm install pde/
+ppm install @pde
 ```
 
 
@@ -46,7 +45,7 @@ Installs a systemwide .gitignore and a few zsh aliases
 ### Mise
 
 mise is part of anfs's base install (install.sh brews it); packages declare the tools they want
-in `home/.config/mise/conf.d/<tool>.toml`. Node is `anfs/node`.
+in `home/.config/mise/conf.d/<tool>.toml`. Node is `core/node`.
 
 ### Nvim
 

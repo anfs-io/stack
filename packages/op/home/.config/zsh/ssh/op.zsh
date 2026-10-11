@@ -18,7 +18,7 @@
 # The remote sshd needs `AcceptEnv OP_SERVICE_ACCOUNT_TOKEN`, written by this
 # package's install.sh. Without it sshd drops the variable and says nothing.
 
-(( $+functions[ssh_register] )) || return 0   # pde/ssh not installed
+(( $+functions[ssh_register] )) || return 0   # stack/ssh not installed
 
 _op_ssh_hook() {
   (( $+commands[fnox] || $+functions[fnox] )) || return 0

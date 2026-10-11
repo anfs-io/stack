@@ -1,6 +1,6 @@
 # Per-host background colour and tab title on ssh.
 #
-# Registers with the ssh dispatcher in pde/ssh, so plain `ssh` is themed. This
+# Registers with the ssh dispatcher in stack/ssh, so plain `ssh` is themed. This
 # replaces the old sshg() wrapper, whose weakness was that it only worked when
 # you remembered to type sshg instead of ssh.
 #
@@ -8,7 +8,7 @@
 # without touching this code. See sshg-profiles.conf; override the path with
 # $GHOSTTY_SSHG_PROFILES.
 
-(( $+functions[ssh_register] )) || return 0   # pde/ssh not installed
+(( $+functions[ssh_register] )) || return 0   # stack/ssh not installed
 
 _ghostty_ssh_hook() {
   emulate -L zsh

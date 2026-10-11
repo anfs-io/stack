@@ -22,7 +22,7 @@ linux/.config/mise/conf.d/op.toml
 install.sh                       sshd AcceptEnv drop-in
 ```
 
-`home/.config/zsh/ssh/` is a hook directory owned by pde/ssh. Files there load
+`home/.config/zsh/ssh/` is a hook directory owned by stack/ssh. Files there load
 after `ssh.zsh` because `.` (0x2E) sorts before `/` (0x2F) in `.zshrc`'s
 `$ZSH_CONFIG/**/*.zsh(N)` glob, so `ssh_register` always exists in time.
 
