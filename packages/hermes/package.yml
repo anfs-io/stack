@@ -1,6 +1,6 @@
 version: 0.1.1
 author: rjayroach
-categories: [ai]
+categories: [ai-x]
 meta:
   agent: hermes-agent
 brew:
