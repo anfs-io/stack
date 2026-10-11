@@ -1,0 +1,26 @@
+# Which OS image `rpi-imager write --all` writes. Not needed for a config-only write.
+description: Reference profile — copy this directory and edit it
+
+# Pin the image. The catalogue's display names are NOT stable: "Raspberry Pi OS Lite
+# (64-bit)" silently became Trixie, so a name is not a version. Get url + sha256 from
+#   curl -fsSL https://downloads.raspberrypi.org/os_list_imagingutility_v4.json \
+#     | yq -p json -r '[.. | select(tag == "!!map" and has("extract_sha256"))]
+#                      | .[] | [.name, .release_date, .init_format, .url, .extract_sha256] | @tsv'
+#
+# Only cloud-init images work here: init_format must be cloudinit or cloudinit-rpi.
+# A "systemd" entry is a Bookworm/Legacy image and will boot unprovisioned.
+url: https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2026-09-15/2026-09-15-raspios-trixie-arm64-lite.img.xz
+
+# extract_sha256 from the catalogue: the hash of the DECOMPRESSED .img.
+# NOT the .img.xz.sha256 sidecar, which hashes the compressed file.
+sha256: 49fafba626ec00e0f9800349b9edae6caf8cfc223f673b875b72ac2797ed9576
+
+# A local file instead of a download. Relative paths resolve against this directory.
+# path: ~/Downloads/2026-09-15-raspios-trixie-arm64-lite.img.xz
+
+# Optional default target. --disk overrides it, and you still have to retype the
+# device path to confirm. Check it with `rpi-imager disks` — numbering changes.
+# disk: /dev/disk4
+
+# Optional guard: refuse a disk bigger than this, so a slip cannot target a backup drive.
+max_size_gb: 256

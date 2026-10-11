@@ -1,0 +1,72 @@
+# Raspberry Pi OS Trixie provisions from cloud-init. This file is raw cloud-init
+# user-data: anything cloud-init understands works here, unchanged.
+#
+# ${VAR} is resolved from the environment when you run rpi-imager. An unset or empty
+# variable is a hard error, on purpose — a silently blank password hash produces a Pi
+# you cannot log in to, and you find out an hour later.
+#
+# The leading #cloud-config line is optional here; rpi-imager adds or strips it as the
+# path requires. Reference: https://docs.cloud-init.io/en/latest/reference/modules.html
+
+hostname: mypi
+manage_etc_hosts: true
+
+# ---------------------------------------------------------------------------
+# user: is SINGULAR on purpose. Do not change it to the plural users:.
+#
+# Raspberry Pi OS defines its default user in cloud.cfg with the group memberships that
+# make a Pi usable — sudo, adm, gpio, i2c, spi, video, dialout. Singular `user:` extends
+# that default. Plural `users:` REPLACES the list, and unless you remember to put
+# `- default` first you get an account with none of those groups: no sudo, no GPIO, no
+# I2C. See https://github.com/raspberrypi/rpi-imager/issues/1601
+#
+# groups: below are therefore EXTRAS, added to the Pi's defaults.
+# ---------------------------------------------------------------------------
+user:
+  name: pi
+  shell: /bin/bash
+  lock_passwd: false
+
+  # A crypt(3) SHA-512 hash, not a plaintext password. Generate one with:
+  #
+  #   /opt/homebrew/opt/openssl@3/bin/openssl passwd -6
+  #
+  # The absolute path matters: macOS's /usr/bin/openssl is LibreSSL, which has no -6
+  # ("unknown option '-6'"), and it can win on PATH. Homebrew's openssl@3 is the one.
+  passwd: ${PI_PASSWORD_HASH}
+
+  sudo: ALL=(ALL) NOPASSWD:ALL
+  # groups: [docker]
+
+  ssh_authorized_keys:
+    - ${PI_SSH_KEY}
+
+# Key-only login. Set true if you really want password SSH.
+ssh_pwauth: false
+
+timezone: America/New_York
+locale: en_US.UTF-8
+keyboard:
+  layout: us
+
+# Pi-specific module; Trixie and later only.
+rpi:
+  enable_usb_gadget: false
+  interfaces:
+    i2c: false
+    spi: false
+    serial: false
+    onewire: false
+
+# packages:
+#   - vim
+#   - git
+
+runcmd:
+  # ---------------------------------------------------------------------------
+  # MANDATORY for a headless Pi. cloud-init's ssh module writes host keys and
+  # authorized_keys but never STARTS sshd, and Raspberry Pi OS ships it disabled.
+  # Without this line the Pi boots, provisions correctly, and still refuses every
+  # connection — which looks exactly like a broken image.
+  # ---------------------------------------------------------------------------
+  - [systemctl, enable, --now, ssh]

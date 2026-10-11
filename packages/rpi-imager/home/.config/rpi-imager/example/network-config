@@ -1,0 +1,45 @@
+# Raw netplan v2, consumed by cloud-init as network-config. Delete this file for a
+# wired-DHCP Pi — the stock image already does that.
+# Reference: https://netplan.readthedocs.io/en/stable/netplan-yaml/
+
+version: 2
+
+ethernets:
+  eth0:
+    dhcp4: true
+    # optional: true means boot does not wait for this link to come up. Leave it true
+    # on anything that may be unplugged, or boot stalls for ~2 minutes.
+    optional: true
+
+    # Static instead:
+    # dhcp4: false
+    # addresses: [192.168.1.50/24]
+    # routes:
+    #   - to: default
+    #     via: 192.168.1.1
+    # nameservers:
+    #   addresses: [1.1.1.1, 8.8.8.8]
+
+wifis:
+  wlan0:
+    dhcp4: true
+    optional: true
+
+    # Without a regulatory domain the radio falls back to a restrictive default and some
+    # channels are simply invisible — the network "does not exist" rather than failing.
+    regulatory-domain: US
+
+    access-points:
+      "${WIFI_SSID}":
+        # A 64-hex pre-shared key, not the passphrase. macOS has no wpa_passphrase, so
+        # derive it with OpenSSL 3 (this is exactly what wpa_passphrase computes —
+        # PBKDF2-HMAC-SHA1(passphrase, ssid, 4096, 32)):
+        #
+        #   /opt/homebrew/opt/openssl@3/bin/openssl kdf -keylen 32 \
+        #     -kdfopt digest:SHA1 -kdfopt pass:"$PASSPHRASE" \
+        #     -kdfopt salt:"$SSID" -kdfopt iter:4096 PBKDF2 \
+        #     | tr -d ':\n' | tr '[:upper:]' '[:lower:]'
+        #
+        # A plain passphrase also works here, but then it sits in the file in clear.
+        password: "${WIFI_PSK}"
+        # hidden: true

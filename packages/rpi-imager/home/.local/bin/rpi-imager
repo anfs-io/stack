@@ -1,0 +1,1061 @@
+#!/usr/bin/env bash
+# rpi-imager — write a Raspberry Pi card from a declarative cloud-init profile
+#
+# Wraps the upstream Raspberry Pi Imager CLI. A profile is a directory of raw cloud-init
+# files (user-data, network-config) plus a small image.yml, so there is no schema to learn
+# beyond cloud-init's own and nothing to keep in sync as cloud-init grows.
+#
+# `env bash` gives 5.x where ppm has reordered PATH, but 3.2.57 in non-interactive
+# contexts (ssh 'cmd', cron, launchd) that never source the rc files. Re-exec into a
+# bash >= 4 so ${var,,}, mapfile and declare -A are always safe.
+if [[ -z "${RPI_IMAGER_BASH_REEXEC:-}" && "${BASH_VERSINFO[0]:-0}" -lt 4 ]]; then
+  export RPI_IMAGER_BASH_REEXEC=1          # sentinel: a bad candidate can never loop
+  for _b in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+    [[ -x "$_b" ]] || continue
+    # Ask the candidate itself: /usr/local/bin/bash is often a stale Intel build or a 3.2 symlink
+    [[ "$("$_b" -c 'echo ${BASH_VERSINFO[0]}' 2>/dev/null || echo 0)" -ge 4 ]] || continue
+    exec "$_b" "$0" ${1+"$@"}
+  done
+  echo "rpi-imager: needs bash >= 4 (this is ${BASH_VERSION:-unknown}); brew install bash" >&2
+  exit 1
+fi
+unset RPI_IMAGER_BASH_REEXEC
+
+set -euo pipefail
+
+# Captured before any shift, so the re-exec into the profile directory is byte-identical
+ARGV=("$@")
+
+XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+RPI_IMAGER_CONFIG_HOME="${RPI_IMAGER_CONFIG_HOME:-$XDG_CONFIG_HOME/rpi-imager}"
+RPI_IMAGER_CACHE="${RPI_IMAGER_CACHE:-$XDG_CACHE_HOME/rpi-imager}"
+RPI_IMAGER_MIN_VERSION="2.0.3"
+RPI_IMAGER_MOUNT="${RPI_IMAGER_MOUNT:-$RPI_IMAGER_CACHE/mnt}"
+RPI_IMAGER_MOUNTED_BY_US=""
+
+is_macos() { [[ "$(uname -s)" == "Darwin" ]]; }
+is_linux() { [[ "$(uname -s)" == "Linux" ]]; }
+
+# Platform disk operations live in a sourced lib, picked by uname. Searched in the
+# stowed location first, then next to a checkout, so the script runs from the package
+# directory during development.
+load_platform_lib() {
+  local os lib candidate here
+  os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+  here="$(cd "$(dirname "$(resolve_link "$0")")" && pwd)"
+  for candidate in "${RPI_IMAGER_LIB:-}" \
+                   "$HOME/.local/lib/rpi-imager" \
+                   "$here/../lib/rpi-imager" \
+                   "$here/../../lib/rpi-imager"; do
+    [[ -n "$candidate" && -f "$candidate/$os.sh" ]] || continue
+    lib="$candidate/$os.sh"
+    break
+  done
+  [[ -n "${lib:-}" ]] || {
+    echo "rpi-imager: no platform library for '$os' (looked for $os.sh in ~/.local/lib/rpi-imager)" >&2
+    echo "  this release supports macOS and Linux" >&2
+    exit 1
+  }
+  # shellcheck source=/dev/null
+  source "$lib"
+}
+
+# Follow a symlink chain without realpath(1), which macOS lacks by default
+resolve_link() {
+  local p="$1"
+  while [[ -L "$p" ]]; do
+    local target; target="$(readlink "$p")"
+    case "$target" in
+      /*) p="$target" ;;
+      *)  p="$(dirname "$p")/$target" ;;
+    esac
+  done
+  printf '%s\n' "$p"
+}
+
+
+usage() {
+  cat <<'EOF'
+Usage: rpi-imager <command> [args]
+
+Commands:
+  write [profile] [--disk DEV]  Write cloud-init config to an already-imaged card
+      --all                       also write the OS image first (download, verify, dd)
+      -n, --dry-run               show what would happen; touch nothing
+      -y, --yes                   skip the retype-the-device confirmation
+      --no-eject                  leave the card mounted when done
+  show [profile] [--reveal]     Print the cloud-init after ${VAR} expansion (secrets masked)
+  list                          Profiles in ~/.config/rpi-imager
+  verify [profile] [--disk DEV] Check a written disk before rebooting into it:
+                                cloud-init, NoCloud seed, PARTUUID, boot order
+  bootorder [usb|sd|0xNNN] [-y] Show or set the Pi's EEPROM boot order (on the Pi)
+                                  usb = 0xf14, USB first with SD as fallback
+                                  sd  = 0xf41, the firmware default
+  disks                         Candidate target disks
+  info                          Paths, Imager version and origin, fnox status
+  help                          Show this help
+
+  Anything else is passed straight through to the real Raspberry Pi Imager, so
+  `rpi-imager --cli ...` and `rpi-imager --version` still reach the upstream CLI.
+
+A profile is a directory under ~/.config/rpi-imager/ containing:
+  user-data        raw cloud-init, with ${VAR} for secrets     (required)
+  network-config   raw netplan v2                              (optional)
+  image.yml        url/path + sha256, and optional disk hints  (required for --all)
+  fnox.toml        picked up automatically if fnox is installed (optional)
+
+With one profile it is used silently; with several you are asked which. Directories
+named example, or starting with _ or . , are never offered.
+
+Secrets are ${VAR} references resolved from the environment. An unset or empty
+variable is a hard error: a silently blank password hash makes a Pi you cannot log in to.
+
+The image is written with dd, not by the Raspberry Pi Imager CLI: as of Imager
+2.0.11.1 every `--cli` write deadlocks on macOS before transferring a byte. The
+Imager app is still used for its catalogue and GUI. Writing .img.xz needs xz.
+
+Environment:
+  RPI_IMAGER_CONFIG_HOME  Profile directory (default ~/.config/rpi-imager)
+  RPI_IMAGER_CACHE        Download cache (default ~/.cache/rpi-imager)
+  RPI_IMAGER_BIN          Path to the real Raspberry Pi Imager binary
+EOF
+}
+
+die() {
+  # shellcheck disable=SC2059
+  printf "rpi-imager: $1\n" "${@:2}" >&2
+  exit 1
+}
+
+warn() {
+  # shellcheck disable=SC2059
+  printf "rpi-imager: $1\n" "${@:2}" >&2
+}
+
+# Absolute path of this script, used to detect self-recursion and to re-exec
+self_path() {
+  printf '%s/%s\n' "$(cd "$(dirname "$0")" && pwd)" "$(basename "$0")"
+}
+
+# ---------------------------------------------------------------------------
+# The real Raspberry Pi Imager
+# ---------------------------------------------------------------------------
+
+# This wrapper is deliberately named rpi-imager, so the real binary must always be
+# resolved to an absolute path. On macOS it lives in an app bundle that is not on PATH,
+# but on Linux /usr/bin/rpi-imager would be shadowed by this script in ~/.local/bin and
+# calling it by name would re-enter this script forever.
+resolve_imager() {
+  local candidate abs self
+  self="$(self_path)"
+  for candidate in "${RPI_IMAGER_BIN:-}" \
+                   "/Applications/Raspberry Pi Imager.app/Contents/MacOS/rpi-imager" \
+                   /usr/bin/rpi-imager \
+                   /usr/local/bin/rpi-imager \
+                   /opt/homebrew/bin/rpi-imager; do
+    [[ -n "$candidate" && -x "$candidate" ]] || continue
+    abs="$(cd "$(dirname "$candidate")" && pwd)/$(basename "$candidate")"
+    [[ "$abs" == "$self" ]] && continue          # never call ourselves
+    printf '%s\n' "$abs"
+    return 0
+  done
+  return 1
+}
+
+imager_version() {
+  # The two generations disagree on both format and stream:
+  #   2.x  stdout: "Raspberry Pi Imager v2.0.11.1"   (stderr carries startup diagnostics)
+  #   1.x  stderr: "<path>/rpi-imager version 1.8.5" (stdout empty)
+  # So prefer stdout, fall back to the combined streams, and match a dotted number
+  # rather than any surrounding word.
+  local out
+  out="$("$1" --version 2>/dev/null | grep -Eo 'v?[0-9]+(\.[0-9]+)+' | head -1)"
+  [[ -n "$out" ]] || out="$("$1" --version 2>&1 | grep -Eo 'v?[0-9]+(\.[0-9]+)+' | head -1)"
+  printf '%s\n' "${out#v}"
+}
+
+version_ge() {
+  [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n -k4,4n | head -1)" == "$2" ]]
+}
+
+
+# ---------------------------------------------------------------------------
+# Profiles
+# ---------------------------------------------------------------------------
+
+# A profile is a directory holding a user-data. `example` is always skipped so that
+# shipping it can never make it the single profile chosen silently; _ and . prefixes
+# are skipped so packages can stow shared fragments alongside real profiles.
+profile_dirs() {
+  local dir base
+  shopt -s nullglob
+  for dir in "$RPI_IMAGER_CONFIG_HOME"/*/; do
+    dir="${dir%/}"
+    base="$(basename "$dir")"
+    [[ "$base" == example || "$base" == _* || "$base" == .* ]] && continue
+    [[ -f "$dir/user-data" ]] || continue
+    printf '%s\n' "$dir"
+  done
+}
+
+profile_desc() {
+  [[ -f "$1/image.yml" ]] || return 0
+  yq -r '.description // ""' "$1/image.yml" 2>/dev/null || true
+}
+
+# Echoes the resolved profile directory on stdout; the chooser prints to stderr so this
+# stays usable inside a command substitution.
+resolve_profile() {
+  local want="${1:-}" dirs=() i choice
+
+  if [[ -n "${RPI_IMAGER_PROFILE_DIR:-}" ]]; then
+    printf '%s\n' "$RPI_IMAGER_PROFILE_DIR"
+    return 0
+  fi
+
+  if [[ -n "$want" ]]; then
+    if [[ "$want" == */* ]]; then
+      [[ -d "$want" ]] || die "profile directory not found: %s" "$want"
+      printf '%s\n' "$(cd "$want" && pwd)"
+      return 0
+    fi
+    [[ -d "$RPI_IMAGER_CONFIG_HOME/$want" ]] \
+      || die "profile '%s' not found in %s (list them with: rpi-imager list)" "$want" "$RPI_IMAGER_CONFIG_HOME"
+    printf '%s\n' "$RPI_IMAGER_CONFIG_HOME/$want"
+    return 0
+  fi
+
+  mapfile -t dirs < <(profile_dirs)
+
+  case ${#dirs[@]} in
+    0) die "no profiles in %s\n  create one with: cp -r %s/example %s/mypi" \
+           "$RPI_IMAGER_CONFIG_HOME" "$RPI_IMAGER_CONFIG_HOME" "$RPI_IMAGER_CONFIG_HOME" ;;
+    1) printf '%s\n' "${dirs[0]}"; return 0 ;;
+  esac
+
+  [[ -t 0 ]] || die "several profiles found; name one (rpi-imager write <profile>) — stdin is not a terminal"
+
+  echo "Profiles in $RPI_IMAGER_CONFIG_HOME:" >&2
+  for i in "${!dirs[@]}"; do
+    printf '  %d) %-16s %s\n' "$((i + 1))" "$(basename "${dirs[$i]}")" "$(profile_desc "${dirs[$i]}")" >&2
+  done
+  read -r -p "Choose [1-${#dirs[@]}]: " choice
+  [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#dirs[@]} )) || die "aborted"
+  printf '%s\n' "${dirs[$((choice - 1))]}"
+}
+
+# ---------------------------------------------------------------------------
+# fnox and the profile directory
+# ---------------------------------------------------------------------------
+
+# True if a fnox config applies to directory $1 (pcm's predicate, same file names)
+uses_fnox() {
+  local dir name
+  for dir in "$1" "$RPI_IMAGER_CONFIG_HOME"; do
+    for name in fnox.toml .fnox.toml fnox.local.toml; do
+      [[ -f "$dir/$name" ]] && { RPI_IMAGER_FNOX_DIR="$dir"; return 0; }
+    done
+  done
+  return 1
+}
+
+# Re-exec this script from the profile directory, with fnox's secrets in the environment
+# if a fnox.toml applies. Wholesale rather than per-command because every later step
+# needs the secrets, and because relative paths in the profile should resolve against it.
+#
+# The profile is resolved by the OUTER run and passed down, so the interactive chooser
+# runs before `fnox exec`, which may not have a usable tty.
+enter_profile_dir() {
+  [[ -z "${RPI_IMAGER_IN_PROFILE:-}" ]] || { cd "$RPI_IMAGER_PROFILE_DIR"; return 0; }
+
+  local self
+  self="$(self_path)"
+  export RPI_IMAGER_IN_PROFILE=1
+  export RPI_IMAGER_PROFILE_DIR="$PROFILE_DIR"
+
+  cd "$PROFILE_DIR"
+
+  if command -v fnox >/dev/null 2>&1 && uses_fnox "$PROFILE_DIR"; then
+    export RPI_IMAGER_FNOX_DIR
+    exec fnox exec -- "$self" ${ARGV[@]+"${ARGV[@]}"}
+  fi
+  exec "$self" ${ARGV[@]+"${ARGV[@]}"}
+}
+
+fnox_hint() {
+  [[ -n "${RPI_IMAGER_FNOX_DIR:-}" ]] \
+    && printf '\n  a fnox.toml is in %s — check that it defines this key' "$RPI_IMAGER_FNOX_DIR"
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Secrets: ${VAR} expansion that fails loudly
+# ---------------------------------------------------------------------------
+
+# printenv, not ${!name}: only EXPORTED variables count, which is exactly what
+# `fnox exec` and the user's shell provide, and it keeps a stray local from passing.
+require_env() {
+  local value
+  value="$(printenv "$1" 2>/dev/null)" \
+    || die '$%s is not set, and the profile needs it%s' "$1" "$(fnox_hint)"
+  [[ -n "$value" ]] \
+    || die '$%s is empty, and the profile needs a value%s' "$1" "$(fnox_hint)"
+}
+
+# Expand ${VAR} in a string. There is no escape syntax: ${ always starts a reference.
+# envsubst is deliberately not used — it substitutes empty for an unset variable, which
+# is the opposite of what is wanted here.
+expand_env() {
+  local out="" rest="$1" name
+  while [[ "$rest" == *'${'* ]]; do
+    out+="${rest%%\$\{*}"
+    rest="${rest#*\$\{}"
+    [[ "$rest" == *'}'* ]] || die 'unterminated ${ in the profile'
+    name="${rest%%\}*}"
+    rest="${rest#*\}}"
+    [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die 'invalid variable name ${%s}' "$name"
+    require_env "$name"
+    out+="$(printenv "$name")"
+  done
+  printf '%s' "$out$rest"
+}
+
+# Expanded line by line so that a full-line comment can be passed through untouched:
+# ${...} inside a comment is documentation, not a reference, and expanding it would
+# demand an environment variable nobody meant to set.
+expand_file() {
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" =~ ^[[:space:]]*# ]]; then
+      printf '%s\n' "$line"
+    else
+      expand_env "$line"
+      printf '\n'
+    fi
+  done < "$1"
+}
+
+# Every variable the profile references, in file order, deduplicated
+env_refs() {
+  local file
+  for file in user-data network-config image.yml; do
+    [[ -f "$file" ]] || continue
+    # Comment lines are skipped here for the same reason expand_file skips them
+    grep -v '^[[:space:]]*#' "$file" 2>/dev/null \
+      | grep -o '\${[A-Za-z_][A-Za-z0-9_]*}' || true
+  done | tr -d '${}' | awk '!seen[$0]++'
+}
+
+# Check every reference up front, so one run reports all the missing variables instead
+# of failing on the third one after a four-minute download.
+check_env_refs() {
+  local name missing=()
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    if ! printenv "$name" >/dev/null 2>&1 || [[ -z "$(printenv "$name")" ]]; then
+      missing+=("$name")
+    fi
+  done < <(env_refs)
+
+  [[ ${#missing[@]} -eq 0 ]] && return 0
+  die "missing or empty environment variables: %s%s" "${missing[*]}" "$(fnox_hint)"
+}
+
+# ---------------------------------------------------------------------------
+# Rendering
+# ---------------------------------------------------------------------------
+
+# The profile's user-data may or may not carry a #cloud-config line. Normalise by
+# stripping it here and adding it back only where it is needed: rpi-imager prepends its
+# own, so the file handed to --cloudinit-userdata must not have one, while files we copy
+# onto the boot partition ourselves must.
+user_data_body() {
+  expand_file user-data | sed '1{/^#cloud-config[[:space:]]*$/d;}'
+}
+
+network_config_body() {
+  [[ -f network-config ]] || return 0
+  expand_file network-config
+}
+
+# A fresh instance-id is what makes cloud-init run again on an already-provisioned card.
+# Reuse the old one and cloud-init treats the instance as done, skips everything, and the
+# card looks broken for no visible reason.
+meta_data_body() {
+  local host
+  host="$(user_data_body | yq -r '.hostname // ""' 2>/dev/null || true)"
+  printf 'instance-id: rpi-imager-%s-%s\n' "$PROFILE_NAME" "$(date +%s)"
+  [[ -n "$host" ]] && printf 'local-hostname: %s\n' "$host"
+  return 0
+}
+
+# Replace resolved secret values with **** so `show` output is safe to paste into a bug
+# report. The whole document is read first: the loop's stdin is the variable list, so a
+# filter reading stdin inside the loop would consume that instead of the document.
+mask_secrets() {
+  local content name value
+  content="$(cat)"
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    value="$(printenv "$name" 2>/dev/null)" || continue
+    # Substring replacement is blind, so a short value would be rewritten everywhere it
+    # happened to occur and corrupt the document ("user-data" -> "u****SSID****er-data").
+    # Anything this short is not a credential worth hiding; --reveal shows everything.
+    [[ ${#value} -ge 8 ]] || continue
+    content="${content//"$value"/****$name****}"
+  done < <(env_refs)
+  printf '%s\n' "$content"
+}
+
+# ---------------------------------------------------------------------------
+# Disk operations
+#
+# Everything platform-specific lives in ~/.local/lib/rpi-imager/<os>.sh. Nothing
+# below this point may call diskutil, lsblk or any other OS-specific disk tool.
+# ---------------------------------------------------------------------------
+
+human_bytes() {
+  local b="${1:-0}"
+  awk -v b="$b" 'BEGIN {
+    split("B KB MB GB TB", u, " ")
+    i = 1
+    while (b >= 1000 && i < 5) { b /= 1000; i++ }
+    printf (i == 1 ? "%d %s" : "%.1f %s"), b, u[i]
+  }'
+}
+
+# -X on macOS: without it cp writes an AppleDouble ._<name> sidecar for every file's
+# extended attributes, littering the Pi's boot partition (ventoy hit the same thing).
+copy_to_boot() {
+  local dest="${!#}"
+  if is_macos; then
+    cp -X "$@" || die_boot "$dest"
+  else
+    cp "$@" || die_boot "$dest"
+  fi
+}
+
+die_boot() {
+  die "could not write to %s.%s" "$1" "$(boot_hint)"
+}
+
+# ---------------------------------------------------------------------------
+# image.yml
+# ---------------------------------------------------------------------------
+
+image_field() {
+  [[ -f image.yml ]] || return 0
+  EXPR=".$1" yq -r 'eval(strenv(EXPR)) // ""' image.yml 2>/dev/null || true
+}
+
+# ---------------------------------------------------------------------------
+# Image download and write
+#
+# The image is written with dd rather than `rpi-imager --cli`. As of Imager
+# 2.0.11.1 on macOS, DownloadThread::_openAndPrepareDevice() -> PlatformQuirks::
+# unmountDisk() does a dispatch_sync onto a queue that CLI mode never services, so
+# every --cli write deadlocks before it transfers a byte, at any privilege level and
+# whether or not the disk is already unmounted. There is no flag to skip it. The GUI
+# is unaffected (it pumps the main queue), so the app is still worth having.
+# ---------------------------------------------------------------------------
+
+# Echoes a local path to the profile's image, downloading and caching it if needed
+fetch_image() {
+  local url path dest
+  path="$(image_field path)"
+  if [[ -n "$path" ]]; then
+    path="${path/#\~/$HOME}"
+    [[ -f "$path" ]] || die "image.yml path not found: %s" "$path"
+    printf '%s\n' "$path"
+    return
+  fi
+
+  url="$(image_field url)"
+  [[ -n "$url" ]] || die "--all needs 'url:' or 'path:' in %s/image.yml" "$PROFILE_DIR"
+
+  mkdir -p "$RPI_IMAGER_CACHE/images"
+  dest="$RPI_IMAGER_CACHE/images/$(basename "${url%%\?*}")"
+
+  if [[ -f "$dest" ]]; then
+    echo "Cached:   $dest" >&2
+  else
+    echo "Download: $url" >&2
+    # -C - resumes a partial file, so a dropped connection does not restart 500 MB
+    curl -fL --retry 3 -C - -# -o "$dest.part" "$url" >&2 || die "download failed"
+    mv "$dest.part" "$dest"
+  fi
+  printf '%s\n' "$dest"
+}
+
+# sha256sum on Linux, shasum on macOS
+sha256_stdin() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi
+}
+
+# Decompress to stdout, whatever the image is compressed with
+image_stream() {
+  case "$1" in
+    *.xz)  command -v xz   >/dev/null || die "xz is not in the macOS base system — brew install xz"
+           xz -dc "$1" ;;
+    *.zst) command -v zstd >/dev/null || die "zstd not found — brew install zstd"
+           zstd -dc "$1" ;;
+    *.gz)  gzip -dc "$1" ;;
+    *)     cat "$1" ;;
+  esac
+}
+
+# image.yml's sha256 is the catalogue's extract_sha256 — the hash of the DECOMPRESSED
+# .img, not of the .img.xz. Checking before writing costs one extra decompression pass
+# but needs no scratch space and never leaves a corrupt card behind.
+verify_image() {
+  local file="$1" want="$2" got
+  if [[ -z "$want" ]]; then
+    warn "image.yml has no sha256 — writing an unverified image"
+    return 0
+  fi
+  echo "Verify:   checking image checksum..." >&2
+  got="$(image_stream "$file" | sha256_stdin | awk '{ print $1 }')"
+  [[ "$got" == "$want" ]] || die \
+    "image checksum mismatch\n  expected %s\n  got      %s\n  image.yml's sha256 must be the catalogue's extract_sha256 (the DECOMPRESSED .img)" \
+    "$want" "$got"
+}
+
+write_image() {
+  local file="$1" device="$2" raw
+  raw="$(disk_raw "$device")"
+
+  # bs=4M works on both: GNU dd rejects a lowercase suffix, modern BSD dd takes either
+  local -a opts=(bs=4M)
+  dd if=/dev/zero of=/dev/null bs=4M count=1 status=progress >/dev/null 2>&1 \
+    && opts+=(status=progress)
+
+  echo "Writing:  $raw (several minutes)" >&2
+  image_stream "$file" | sudo dd of="$raw" "${opts[@]}" || die "dd failed writing to %s" "$raw"
+  sync
+}
+
+# After dd rewrites the partition table the kernel needs a moment to notice it, so the
+# boot partition is not mountable immediately.
+wait_for_boot() {
+  local device="$1" boot tries=0
+  while (( tries < 15 )); do
+    boot="$(disk_mount_boot "$device")" && { printf '%s\n' "$boot"; return 0; }
+    tries=$((tries + 1))
+    sleep 1
+  done
+  return 1
+}
+
+
+# ---------------------------------------------------------------------------
+# Commands
+# ---------------------------------------------------------------------------
+
+cmd_list() {
+  local dir dirs=()
+  mapfile -t dirs < <(profile_dirs)
+  if [[ ${#dirs[@]} -eq 0 ]]; then
+    echo "No profiles in $RPI_IMAGER_CONFIG_HOME"
+    echo "Create one with: cp -r $RPI_IMAGER_CONFIG_HOME/example $RPI_IMAGER_CONFIG_HOME/mypi"
+    return 0
+  fi
+  printf '%-16s %-9s %s\n' NAME NETWORK DESCRIPTION
+  for dir in "${dirs[@]}"; do
+    printf '%-16s %-9s %s\n' \
+      "$(basename "$dir")" \
+      "$([[ -f "$dir/network-config" ]] && echo yes || echo no)" \
+      "$(profile_desc "$dir")"
+  done
+}
+
+cmd_disks() {
+  local out
+  out="$(disk_list)"
+  if [[ -z "$out" ]]; then
+    echo "No external physical disks found"
+    return 0
+  fi
+  { printf 'DEVICE\tSIZE\tBUS\tEJECTABLE\tNAME\n'; printf '%s\n' "$out"; } \
+    | awk -F'\t' '{ printf "%-14s %-10s %-10s %-10s %s\n", $1, $2, $3, $4, $5 }'
+}
+
+cmd_info() {
+  local bin version
+  echo "Config:      $RPI_IMAGER_CONFIG_HOME"
+  echo "Cache:       $RPI_IMAGER_CACHE"
+  echo "Bash:        $BASH_VERSION ($BASH)"
+
+  if bin="$(resolve_imager)"; then
+    version="$(imager_version "$bin")"
+    printf 'Imager:      %s (%s)\n' "${version:-unknown}" "$bin"
+    version_ge "${version:-0}" "$RPI_IMAGER_MIN_VERSION" \
+      || echo "             TOO OLD — need >= $RPI_IMAGER_MIN_VERSION; it writes no cloud-init"
+    if [[ "$bin" == /Applications/* ]] && ! [[ -d "$(brew --prefix 2>/dev/null)/Caskroom/raspberry-pi-imager" ]]; then
+      echo "             not Homebrew-managed; ppm cannot update it"
+    fi
+  else
+    echo "Imager:      NOT FOUND — brew install --cask raspberry-pi-imager"
+  fi
+
+  if command -v fnox >/dev/null 2>&1; then
+    printf 'fnox:        %s\n' "$(fnox version 2>/dev/null | head -1 || echo installed)"
+  else
+    echo "fnox:        not installed (secrets must be exported by hand)"
+  fi
+
+  printf 'Profiles:    %s\n' "$(profile_dirs | wc -l | tr -d ' ')"
+}
+
+cmd_show() {
+  local want="" reveal=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --reveal) reveal=true ;;
+      -*) die "unknown option for show: %s" "$1" ;;
+      *) want="$1" ;;
+    esac
+    shift
+  done
+
+  PROFILE_DIR="$(resolve_profile "$want")"
+  PROFILE_NAME="$(basename "$PROFILE_DIR")"
+  enter_profile_dir
+  check_env_refs
+
+  render() {
+    echo "===== user-data ====="
+    printf '#cloud-config\n'
+    user_data_body
+    if [[ -f network-config ]]; then
+      echo
+      echo "===== network-config ====="
+      network_config_body
+    fi
+    echo
+    echo "===== meta-data ====="
+    meta_data_body
+  }
+
+  if $reveal; then
+    render
+  else
+    render | mask_secrets
+  fi
+}
+
+cmd_write() {
+  local want="" device="" all=false dry=false yes=false eject=true
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --all)          all=true ;;
+      --disk)         device="${2:?--disk needs a device}"; shift ;;
+      --disk=*)       device="${1#--disk=}" ;;
+      -n|--dry-run)   dry=true ;;
+      -y|--yes)       yes=true ;;
+      --no-eject)     eject=false ;;
+      -*)             die "unknown option for write: %s" "$1" ;;
+      *)              want="$1" ;;
+    esac
+    shift
+  done
+
+  PROFILE_DIR="$(resolve_profile "$want")"
+  PROFILE_NAME="$(basename "$PROFILE_DIR")"
+  enter_profile_dir
+
+  [[ -f user-data ]] || die "%s has no user-data" "$PROFILE_DIR"
+  check_env_refs
+
+  device="${device:-$(image_field disk)}"
+  [[ -n "$device" ]] || die "no target disk — pass --disk /dev/diskN or set 'disk:' in image.yml\n  (list candidates with: rpi-imager disks)"
+
+  # A dry run should be usable with no card plugged in, so the disk check reports rather
+  # than aborts. A real write still hard-fails: the subshell keeps die from exiting here.
+  if $dry; then
+    ( disk_validate "$device" ) || warn "dry run: the check above would stop a real write"
+  else
+    disk_validate "$device"
+  fi
+
+  local image="" sha=""
+  if $all; then
+    image="$(image_field url)"
+    [[ -n "$image" ]] || image="$(image_field path)"
+    [[ -n "$image" ]] || die "--all needs 'url:' or 'path:' in %s/image.yml" "$PROFILE_DIR"
+    sha="$(image_field sha256)"
+  fi
+
+  # Render before touching anything, so a bad profile fails with the card intact.
+  # The image is written with dd and the cloud-init files are copied by us in both
+  # modes, so user-data always carries its own #cloud-config line.
+  WORK="$(mktemp -d "${TMPDIR:-/tmp}/rpi-imager.XXXXXX")"
+  trap 'rm -rf "$WORK"' EXIT
+  ( umask 077
+    { printf '#cloud-config\n'; user_data_body; } > "$WORK/user-data"
+    network_config_body > "$WORK/network-config"
+    meta_data_body > "$WORK/meta-data" )
+
+  echo "Profile:  $PROFILE_NAME ($PROFILE_DIR)"
+  echo "Disk:     $device  $(disk_model "$device")  $(human_bytes "$(disk_size_bytes "$device")")"
+  if $all; then
+    echo "Image:    $image"
+    echo "Mode:     full re-image + cloud-init config"
+  else
+    echo "Mode:     cloud-init config only (add --all to re-image)"
+  fi
+
+  if $dry; then
+    echo
+    echo "--- dry run; nothing was written ---"
+    echo
+    echo "===== user-data ====="; cat "$WORK/user-data"
+    [[ -s "$WORK/network-config" ]] && { echo; echo "===== network-config ====="; cat "$WORK/network-config"; }
+    echo; echo "===== meta-data ====="; cat "$WORK/meta-data"
+    return 0
+  fi
+
+  if ! $yes; then
+    local answer
+    if $all; then
+      read -r -p "ALL DATA on $device will be erased. Type the device path to continue: " answer
+    else
+      read -r -p "Write cloud-init config to $device. Type the device path to continue: " answer
+    fi
+    [[ "$answer" == "$device" ]] || die "aborted"
+  fi
+
+  local boot
+  if $all; then
+    local local_image
+    local_image="$(fetch_image)"
+    verify_image "$local_image" "$sha"
+    # Prime sudo before the long operation: a prompt appearing partway through is easy
+    # to miss and the timestamp expires mid-write.
+    sudo -v || die "sudo is required to write to %s" "$device"
+    disk_unmount "$device"
+    write_image "$local_image" "$device"
+    boot="$(wait_for_boot "$device")" \
+      || die "image written, but the boot partition of %s did not appear — re-run without --all to add the config" "$device"
+  else
+    boot="$(disk_mount_boot "$device")" \
+      || die "could not mount the boot partition of %s — is the card imaged yet? (use --all)" "$device"
+  fi
+
+  copy_to_boot "$WORK/user-data" "$WORK/meta-data" "$boot/"
+  [[ -s "$WORK/network-config" ]] && copy_to_boot "$WORK/network-config" "$boot/"
+
+  # cmdline.txt is a single line carrying the NoCloud datasource and its instance-id.
+  # The token is REPLACED, not merely added: cloud-init's check_instance_id() reads the
+  # id from the kernel cmdline, so leaving a stale i= behind while meta-data has a new
+  # one makes cloud-init decide the instance is unchanged and skip provisioning — the
+  # exact thing bumping the instance-id was meant to force.
+  local iid current
+  iid="$(yq -r '.instance-id' "$WORK/meta-data")"
+  current="$(tr -d '\n' < "$boot/cmdline.txt" | sed 's/[[:space:]]*ds=nocloud[^[:space:]]*//g')"
+  printf '%s ds=nocloud;i=%s\n' "$current" "$iid" > "$boot/cmdline.txt" || die_boot "$boot"
+
+  # macOS's FAT driver writes an AppleDouble ._<name> beside every file it creates —
+  # cp -X does not prevent it. Harmless to Linux, but it clutters the boot partition,
+  # so sweep them. Best-effort: a failure here is not worth aborting a good write.
+  rm -f "$boot"/._* 2>/dev/null || true
+
+  [[ -s "$boot/user-data" ]] || die "%s/user-data is missing or empty" "$boot"
+  head -1 "$boot/user-data" | grep -qx '#cloud-config' \
+    || die "%s/user-data does not start with #cloud-config" "$boot"
+  grep -q 'ds=nocloud' "$boot/cmdline.txt" 2>/dev/null \
+    || warn "cmdline.txt has no ds=nocloud — cloud-init may not find the NoCloud source"
+
+  echo "Wrote:    $boot/user-data"
+  [[ -s "$WORK/network-config" ]] && echo "          $boot/network-config"
+  echo "          $boot/meta-data ($iid)"
+
+  if $eject; then
+    disk_eject "$device"
+    echo "Ejected:  $device"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# bootorder — Raspberry Pi EEPROM boot order
+#
+# Nibbles are tried LOWEST-significant first, i.e. the hex value reads right to left.
+#   0xf41  SD, then USB, then loop   <- firmware default: a bootable SD always wins
+#   0xf14  USB, then SD, then loop   <- boot the USB disk, fall back to SD if it is
+#                                       not bootable
+# Mode digits: 1 SD, 2 network, 4 USB-MSD, 6 NVMe, e stop, f restart from the first.
+# ---------------------------------------------------------------------------
+
+boot_order_explain() {
+  local value="${1#0x}" i digit out=""
+  # right to left: the last digit is tried first
+  for (( i = ${#value} - 1; i >= 0; i-- )); do
+    digit="${value:$i:1}"
+    case "$digit" in
+      0) out="$out SD(detect) ->" ;;
+      1) out="$out SD ->" ;;
+      2) out="$out network ->" ;;
+      3) out="$out RPIBOOT ->" ;;
+      4) out="$out USB ->" ;;
+      5) out="$out USB-2.0 ->" ;;
+      6) out="$out NVMe ->" ;;
+      7) out="$out HTTP ->" ;;
+      e) out="$out STOP" ;;
+      f) out="$out restart from the first" ;;
+      *) out="$out ?($digit) ->" ;;
+    esac
+  done
+  echo "${out# }"
+}
+
+cmd_bootorder() {
+  is_linux || die "bootorder changes the Pi's own EEPROM, so it only runs on the Pi itself"
+  command -v rpi-eeprom-config >/dev/null 2>&1 \
+    || die "rpi-eeprom-config not found — install it with: sudo apt install rpi-eeprom"
+
+  local want="" yes=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -y|--yes) yes=true ;;
+      -*)       die "unknown option for bootorder: %s" "$1" ;;
+      *)        want="$1" ;;
+    esac
+    shift
+  done
+
+  local current
+  current="$(rpi-eeprom-config 2>/dev/null | awk -F= '/^BOOT_ORDER=/ { print $2; exit }' | tr -d ' ')"
+
+  if [[ -z "$want" ]]; then
+    if [[ -n "$current" ]]; then
+      printf 'BOOT_ORDER: %s\n  tries:    %s\n' "$current" "$(boot_order_explain "$current")"
+    else
+      printf 'BOOT_ORDER: (not set — firmware default 0xf41)\n  tries:    %s\n' "$(boot_order_explain f41)"
+    fi
+    printf '\nSet it with:\n  rpi-imager bootorder usb    # 0xf14 — USB first, SD as fallback\n  rpi-imager bootorder sd     # 0xf41 — SD first (the default)\n'
+    return 0
+  fi
+
+  local value
+  case "$want" in
+    usb)   value=0xf14 ;;
+    sd)    value=0xf41 ;;
+    0x*)   value="$want" ;;
+    *)     die "bootorder takes 'usb', 'sd' or an explicit value like 0xf14" ;;
+  esac
+
+  [[ "$value" =~ ^0x[0-9a-fA-F]+$ ]] || die "not a hex boot order: %s" "$value"
+
+  printf 'Current:  %s (%s)\n' "${current:-unset -> 0xf41}" "$(boot_order_explain "${current:-f41}")"
+  printf 'New:      %s (%s)\n' "$value" "$(boot_order_explain "$value")"
+
+  # Refusing to leave the machine with no fallback matters most when nobody is near it
+  case "${value#0x}" in
+    *1*|*0*) ;;
+    *) warn "%s never tries the SD card — if the USB disk will not boot, this Pi has no fallback" "$value" ;;
+  esac
+
+  if ! $yes; then
+    local answer
+    read -r -p "Write this boot order to the EEPROM? [y/N] " answer
+    [[ "$answer" == [yY] ]] || die "aborted"
+  fi
+
+  local conf
+  conf="$(mktemp)"
+  rpi-eeprom-config > "$conf" 2>/dev/null || die "could not read the current EEPROM config"
+  if grep -q '^BOOT_ORDER=' "$conf"; then
+    sed -i "s/^BOOT_ORDER=.*/BOOT_ORDER=$value/" "$conf"
+  else
+    printf 'BOOT_ORDER=%s\n' "$value" >> "$conf"
+  fi
+
+  sudo rpi-eeprom-config --apply "$conf" || { rm -f "$conf"; die "rpi-eeprom-config --apply failed"; }
+  rm -f "$conf"
+
+  echo "Applied. The new boot order takes effect on the NEXT boot."
+  echo "Check it after rebooting with: rpi-imager bootorder"
+}
+
+# ---------------------------------------------------------------------------
+# verify — everything worth checking before rebooting into a freshly written disk
+# ---------------------------------------------------------------------------
+
+V_PASS=0; V_WARN=0; V_FAIL=0
+
+v_ok()   { printf '  \033[32mok\033[0m    %s\n' "$1"; V_PASS=$((V_PASS + 1)); }
+v_warn() { printf '  \033[33mwarn\033[0m  %s\n' "$1"; V_WARN=$((V_WARN + 1)); }
+v_fail() { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; V_FAIL=$((V_FAIL + 1)); }
+
+cmd_verify() {
+  local want="" device=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --disk)   device="${2:?--disk needs a device}"; shift ;;
+      --disk=*) device="${1#--disk=}" ;;
+      -*)       die "unknown option for verify: %s" "$1" ;;
+      *)        want="$1" ;;
+    esac
+    shift
+  done
+
+  PROFILE_DIR="$(resolve_profile "$want")"
+  PROFILE_NAME="$(basename "$PROFILE_DIR")"
+  enter_profile_dir
+
+  device="${device:-$(image_field disk)}"
+  [[ -n "$device" ]] || die "no disk — pass --disk /dev/... or set 'disk:' in image.yml"
+
+  echo "Verifying $device against profile $PROFILE_NAME"
+  echo
+
+  local boot part2
+  boot="$(disk_mount_boot "$device")" || die "could not mount the boot partition of %s" "$device"
+  part2="$(disk_partition "$device" 2)"
+
+  echo "Boot partition ($boot)"
+  [[ -f "$boot/cmdline.txt" ]] && v_ok "cmdline.txt present" || v_fail "no cmdline.txt — is this an imaged card?"
+  [[ -f "$boot/config.txt"  ]] && v_ok "config.txt present"  || v_fail "no config.txt"
+  [[ -b "$part2" ]] && v_ok "root partition $part2 exists" || v_fail "no second partition — the image may be truncated"
+
+  echo
+  echo "cloud-init"
+  if [[ -f "$boot/user-data" ]]; then
+    v_ok "user-data present"
+    [[ "$(head -1 "$boot/user-data")" == "#cloud-config" ]] \
+      && v_ok "starts with #cloud-config" || v_fail "first line is not #cloud-config — cloud-init will ignore it"
+    yq -o json '.' "$boot/user-data" >/dev/null 2>&1 \
+      && v_ok "valid YAML" || v_fail "user-data is not valid YAML"
+    [[ "$(yq -r 'has("users")' "$boot/user-data" 2>/dev/null)" == "false" ]] \
+      && v_ok "uses singular user: (keeps sudo/gpio/i2c groups)" \
+      || v_fail "plural users: found — the account will lose sudo/gpio/i2c/video (rpi-imager #1601)"
+    if yq -r '.runcmd[]? | @json' "$boot/user-data" 2>/dev/null | grep -q 'systemctl.*enable.*ssh'; then
+      v_ok "runcmd enables sshd"
+    else
+      v_fail "no 'systemctl enable --now ssh' in runcmd — a headless Pi will be UNREACHABLE"
+    fi
+    if [[ "$(yq -r '.user.ssh_authorized_keys | length' "$boot/user-data" 2>/dev/null)" -gt 0 ]] 2>/dev/null; then
+      v_ok "an SSH key is authorised"
+    else
+      v_warn "no ssh_authorized_keys — you will need the password over the console"
+    fi
+    grep -qv '^[[:space:]]*#' <(grep '\${' "$boot/user-data" 2>/dev/null) 2>/dev/null \
+      && v_fail "unexpanded \${VAR} on a live line of user-data" || v_ok "no unexpanded variables"
+  else
+    v_fail "no user-data — the Pi will boot unprovisioned"
+  fi
+
+  echo
+  echo "NoCloud datasource"
+  local mid cid
+  mid="$(yq -r '.instance-id // ""' "$boot/meta-data" 2>/dev/null)"
+  cid="$(grep -o 'ds=nocloud[^ ]*' "$boot/cmdline.txt" 2>/dev/null | sed 's/.*i=//')"
+  [[ -n "$mid" ]] && v_ok "meta-data instance-id: $mid" || v_fail "meta-data has no instance-id"
+  if [[ -n "$cid" ]]; then
+    [[ "$cid" == "$mid" ]] && v_ok "cmdline.txt instance-id matches" \
+      || v_fail "cmdline.txt says $cid but meta-data says $mid — cloud-init may skip provisioning"
+  else
+    v_warn "cmdline.txt has no ds=nocloud — cloud-init may not find the seed"
+  fi
+
+  echo
+  echo "Network"
+  if [[ -f "$boot/network-config" ]]; then
+    v_ok "network-config present"
+    yq -o json '.' "$boot/network-config" >/dev/null 2>&1 \
+      && v_ok "valid YAML" || v_fail "network-config is not valid YAML"
+    # Scoped to actual interfaces: a loose recursive search also matches
+    # nameservers.addresses and silently reports a DHCP path that is not there.
+    local n_static n_dhcp
+    n_static="$(yq -r '[.ethernets[]?, .wifis[]?] | map(select(.addresses != null)) | length' "$boot/network-config" 2>/dev/null || echo 0)"
+    n_dhcp="$(yq -r '[.ethernets[]?, .wifis[]?] | map(select(.dhcp4 == true)) | length' "$boot/network-config" 2>/dev/null || echo 0)"
+    if [[ "${n_dhcp:-0}" -gt 0 ]]; then
+      v_ok "$n_dhcp interface(s) use DHCP — there is a second way in if the static subnet is wrong"
+    elif [[ "${n_static:-0}" -gt 0 ]]; then
+      v_warn "static addressing only, no dhcp4 fallback"
+      v_warn "  if this subnet is wrong the Pi boots fine and is UNREACHABLE, and the"
+      v_warn "  bootloader will not fall back because the boot itself succeeded."
+      v_warn "  netplan accepts 'dhcp4: true' alongside 'addresses:' — add it."
+    else
+      v_warn "no addressing configured on any interface"
+    fi
+  else
+    v_warn "no network-config — the image's default (wired DHCP) applies"
+  fi
+
+  # PARTUUID work needs Linux tooling; macOS cannot read a Linux PARTUUID
+  if is_linux; then
+    echo
+    echo "PARTUUID"
+    local want_uuid have_uuid
+    want_uuid="$(grep -o 'root=PARTUUID=[^ ]*' "$boot/cmdline.txt" 2>/dev/null | cut -d= -f3)"
+    have_uuid="$(disk_part_uuid "$part2")"
+    if [[ -n "$want_uuid" && -n "$have_uuid" ]]; then
+      [[ "$want_uuid" == "$have_uuid" ]] \
+        && v_ok "cmdline root=PARTUUID matches $part2 ($have_uuid)" \
+        || v_fail "cmdline wants PARTUUID=$want_uuid but $part2 is $have_uuid — it will not find its root"
+    else
+      v_warn "could not compare root=PARTUUID (cmdline: ${want_uuid:-none}, disk: ${have_uuid:-none})"
+    fi
+
+    # The nasty one: two disks with the same PARTUUID and the kernel picks the wrong root
+    local sysdisk clash=0 other mnt
+    for mnt in / /boot /boot/firmware; do
+      sysdisk="$(disk_of_mount "$mnt")" || continue
+      [[ "$sysdisk" == "$device" ]] && continue
+      while read -r other; do
+        [[ -n "$other" && "$other" == "$have_uuid" ]] && clash=1
+      done < <(lsblk -lno PARTUUID "$sysdisk" 2>/dev/null)
+    done
+    [[ "$clash" == 0 ]] \
+      && v_ok "no PARTUUID collision with the running system's disks" \
+      || v_fail "PARTUUID $have_uuid also exists on the system disk — the kernel may mount the WRONG root"
+
+    echo
+    echo "Boot order"
+    if command -v rpi-eeprom-config >/dev/null 2>&1; then
+      local bo
+      bo="$(rpi-eeprom-config 2>/dev/null | awk -F= '/^BOOT_ORDER=/ { print $2; exit }' | tr -d ' ')"
+      bo="${bo:-0xf41}"
+      case "${bo#0x}" in
+        *4*) if [[ "${bo#0x}" =~ 4[^4]*1|41 ]] && [[ "${bo#0x}" != *14* ]]; then
+               v_warn "BOOT_ORDER=$bo tries SD before USB — set it with: rpi-imager bootorder usb"
+             else
+               v_ok "BOOT_ORDER=$bo ($(boot_order_explain "$bo"))"
+             fi ;;
+        *)   v_fail "BOOT_ORDER=$bo never tries USB — set it with: rpi-imager bootorder usb" ;;
+      esac
+    else
+      v_warn "rpi-eeprom-config not installed; cannot check BOOT_ORDER"
+    fi
+  fi
+
+  echo
+  printf '%d ok, %d warnings, %d failures\n' "$V_PASS" "$V_WARN" "$V_FAIL"
+  if [[ "$V_FAIL" -gt 0 ]]; then
+    echo "Do NOT reboot into this disk until the failures above are fixed."
+    return 1
+  fi
+  [[ "$V_WARN" -gt 0 ]] && echo "Review the warnings before rebooting."
+  return 0
+}
+
+
+load_platform_lib
+
+case "${1:-}" in
+  write) shift; cmd_write "$@" ;;
+  show)  shift; cmd_show "$@" ;;
+  list)  cmd_list ;;
+  disks) cmd_disks ;;
+  verify) shift; cmd_verify "$@" ;;
+  bootorder) shift; cmd_bootorder "$@" ;;
+  info)  cmd_info ;;
+  help|-h|--help|"") usage ;;
+  # Anything else belongs to the real Imager, so `rpi-imager --cli ...` still works
+  *)
+    imager="$(resolve_imager)" || die "unknown command '%s' (and no Raspberry Pi Imager to pass it to)" "$1"
+    exec "$imager" "$@"
+    ;;
+esac

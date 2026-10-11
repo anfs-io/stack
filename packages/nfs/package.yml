@@ -1,0 +1,5 @@
+version: 0.1.0
+author: rjayroach
+# macOS mounts with its built-in autofs (see install.sh); Linux serves with nfs-kernel-server
+system:
+  debian: [nfs-kernel-server]

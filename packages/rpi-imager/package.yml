@@ -1,0 +1,16 @@
+version: 0.2.0
+author: rjayroach
+
+# macOS and Linux. Disk operations live in ~/.local/lib/rpi-imager/<os>.sh.
+#
+# The Raspberry Pi Imager cask is a convenience on macOS (GUI + image catalogue), not a
+# requirement: images are written with dd because Imager's own --cli deadlocks on macOS
+# (PlatformQuirks::unmountDisk dispatch_syncs onto a queue CLI mode never services).
+cask:
+  macos: [raspberry-pi-imager]
+
+# xz-utils: the Raspberry Pi OS images are .img.xz and dd needs them decompressed.
+# util-linux/parted: lsblk, findmnt, partprobe drive the Linux disk layer.
+# rpi-eeprom: `rpi-imager bootorder` reads and writes BOOT_ORDER.
+system:
+  debian: [xz-utils, util-linux, parted, rpi-eeprom]

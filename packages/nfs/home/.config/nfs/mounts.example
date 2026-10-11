@@ -1,0 +1,13 @@
+# autofs NFS mounts - copy to mounts.local and edit for this host
+#
+# Format: /local/mount/point  -nfs,options  server:/remote/path
+#
+# Examples:
+# /mnt/server1/media    -nfs,rw,bg,soft,intr  server1:/srv/nfs/media
+# /mnt/server1/backups  -nfs,rw,bg,soft,intr  server1:/srv/nfs/backups
+#
+# Mount options:
+#   rw     - read-write
+#   bg     - retry in background if server unavailable
+#   soft   - return error on timeout (vs hang indefinitely with 'hard')
+#   intr   - allow interrupt of hung operations
