@@ -1,0 +1,33 @@
+# claude
+
+PLUGINS_DIR="$XDG_CACHE_HOME/claude/plugins"
+
+REPOS=(
+  "git@github.com:rjayroach/marketplace.git"
+  "git@github.com:cnfs-io/marketplace.git"
+  "git@github.com:anfs-io/marketplace.git"
+)
+
+# claude itself is declared in .config/mise and installed by ppm
+
+x_install() {
+  mkdir -p "$PLUGINS_DIR"
+
+  for url in "${REPOS[@]}"; do
+    local owner="${url#*:}"
+    owner="${owner%%/*}"
+    local target="$PLUGINS_DIR/$owner"
+
+    if [[ -d "$target/.git" ]]; then
+      user_message "Pulled $owner into $target"
+      git -C "$target" pull --quiet
+    else
+      user_message "Cloned $owner into $target"
+      git clone --quiet "$url" "$target"
+    fi
+  done
+}
+
+post_remove() {
+  rm -rf "$PLUGINS_DIR"
+}

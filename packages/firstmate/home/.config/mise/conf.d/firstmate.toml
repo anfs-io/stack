@@ -1,0 +1,11 @@
+# firstmate.toml — the tools firstmate's bin/fm-bootstrap.sh checks for.
+# Their `setup hooks` step is deliberately never run: it writes global harness hooks.
+# lavish-axi (optional HTML presentation boards) is left out.
+
+[tools]
+"github:kunchenguid/treehouse" = "3.1.2"
+"github:kunchenguid/no-mistakes" = "1.84.0"
+"npm:tasks-axi" = "0.2.6"
+"npm:quota-axi" = "0.1.59"
+"npm:gh-axi" = "0.1.35"
+"npm:chrome-devtools-axi" = "0.1.39"
