@@ -1,0 +1,23 @@
+---
+config:
+  strict: yes
+templates:
+  ui:
+    gems:
+      phlex-rails:
+        install: :optional
+      lookbook:
+        install: :optional
+      ruby_ui:
+        install: :optional
+  dev:
+    gems:
+      amazing_print:
+        install: :required
+      pry-rails:
+        install: :required
+      okcomputer:
+        install: :skip
+  x_cnfs:
+    features:
+      - Chorus

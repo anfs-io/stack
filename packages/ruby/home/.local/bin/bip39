@@ -1,0 +1,22 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'pathname'
+
+data_dir = Pathname.new(Dir.home).join('.cache/coder/bip39')
+data_dir.mkpath
+data_path = data_dir.join('words.txt')
+
+unless data_path.exist?
+  require 'open-uri'
+  source = 'https://raw.githubusercontent.com/bitcoin/bips/refs/heads/master/bip-0039/english.txt'
+  IO.copy_stream(URI.open(source), data_path)
+end
+
+words = IO.readlines(data_path, chomp: true)
+list = []
+(0..2047).to_a.sample(12).each do |idx|
+  list.append(words[idx])
+end
+
+puts list.join(' ')

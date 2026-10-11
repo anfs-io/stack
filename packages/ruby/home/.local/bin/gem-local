@@ -1,0 +1,397 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${XDG_CONFIG_HOME:=$HOME/.config}"
+: "${XDG_DATA_HOME:=$HOME/.local/share}"
+: "${RUBY_LOCAL_GEMS_HOME:=$XDG_DATA_HOME/gems}"
+: "${RUBY_LOCAL_GEMS_CONFIG:=$XDG_CONFIG_HOME/ruby/local-gems}"
+
+usage() {
+  cat <<'EOF'
+Usage: gem-local <command> [args]
+
+Commands:
+  build                   Link every gem found in the configured repos into
+                          $RUBY_LOCAL_GEMS_HOME and bundle them (rebuilds from scratch)
+  list, ls                Show each linked gem and the repo dir it points to
+  src list, src ls        Show the configured repo paths
+  src add <path>          Add a repo path to the config ('.' adds the current dir)
+  src rm <path>           Remove a repo path from the config
+  path [gem]              Output path to the gems dir, or a gem's repo dir
+  cd [gem]                Change to the gems dir, or a gem's repo dir
+                          (requires the gem-local function in ~/.config/sh/ruby.sh)
+  completion <shell>      Output shell completion code (zsh, bash)
+  help                    Show this help
+
+Config: $RUBY_LOCAL_GEMS_CONFIG (~/.config/ruby/local-gems), one repo path per
+line; blank lines and # comments are ignored, a leading ~ is expanded
+
+  ~/spaces/rjayroach/gems
+  ~/spaces/cnfs-io/gems
+
+`build`:
+  - searches each repo, at any depth, for dirs holding a *.gemspec
+  - symlinks each one as $RUBY_LOCAL_GEMS_HOME/<gemspec name>
+  - writes a Gemfile of path gems, runs bundle install and puts binstubs for
+    gems with an exe/ dir in $RUBY_LOCAL_GEMS_HOME/bin
+
+~/.config/sh/ruby.sh adds $RUBY_LOCAL_GEMS_HOME/bin to $PATH and each gem's lib dir to
+$RUBYLIB when the shell starts, so open a new shell after a build.
+EOF
+}
+
+die()  { echo "gem-local $*" >&2; exit 1; }
+warn() { echo "gem-local $*" >&2; }
+
+_expand() {
+  echo "${1/#\~/$HOME}"
+}
+
+# Absolute path written the way the config prefers: ~ instead of $HOME
+_abbreviate() {
+  case "$1" in
+    "$HOME")   echo "~" ;;
+    "$HOME"/*) echo "~${1#"$HOME"}" ;;
+    *)         echo "$1" ;;
+  esac
+}
+
+# Configured repo paths as written, one per line (comments and blanks stripped)
+_config_entries() {
+  [[ -f "$RUBY_LOCAL_GEMS_CONFIG" ]] || return 0
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "${line// }" ]] && continue
+    echo "$line"
+  done < "$RUBY_LOCAL_GEMS_CONFIG"
+}
+
+# Configured repo dirs that exist, expanded, one per line
+_sources() {
+  local entry src
+  while IFS= read -r entry; do
+    src="$(_expand "$entry")"
+    if [[ -d "$src" ]]; then
+      echo "$src"
+    else
+      warn "configured repo not found, skipping: $entry"
+    fi
+  done < <(_config_entries)
+  return 0
+}
+
+# Link each gem dir as $RUBY_LOCAL_GEMS_HOME/<gemspec name>
+_scan_for_gems() {
+  local src gemdir gemspec name link
+  local -a specs
+
+  while IFS= read -r src; do
+    while IFS= read -r gemdir; do
+      specs=("$gemdir"/*.gemspec)
+      gemspec="${specs[0]}"
+      [[ -f "$gemspec" ]] || continue
+      name="$(basename "$gemspec" .gemspec)"
+      link="$RUBY_LOCAL_GEMS_HOME/$name"
+
+      if [[ -L "$link" ]]; then
+        [[ "$(readlink "$link")" == "$gemdir" ]] || warn "skipping $gemdir: $name is already linked to $(readlink "$link")"
+        continue
+      fi
+
+      ln -s "$gemdir" "$link"
+      echo "Linked $name"
+    done < <(find -L "$src" -name "*.gemspec" -exec dirname {} + | sort -u)
+  done < <(_sources)
+}
+
+_write_gemfile() {
+  local link
+  echo "Generating Gemfile..."
+  {
+    printf 'source "https://rubygems.org"\n\n'
+    for link in "$RUBY_LOCAL_GEMS_HOME"/*; do
+      [[ -L "$link" ]] || continue
+      echo "gem \"$(basename "$link")\", path: \"$link/\""
+    done
+  } > "$RUBY_LOCAL_GEMS_HOME/Gemfile"
+}
+
+_bundle() {
+  echo "Running bundle install..."
+  (
+    cd "$RUBY_LOCAL_GEMS_HOME"
+    bundle install --quiet
+    bundle config set --local bin bin
+    mkdir -p bin
+
+    # Binstubs for gems with executables
+    local link
+    for link in *; do
+      [[ -L "$link" ]] || continue
+      compgen -G "$link/exe/*" >/dev/null || continue
+      bundle binstubs "$link" --force 2>&1 | grep -v "has no executables" || true
+      chmod +x "$link"/exe/*
+    done
+
+    chmod +x bin/* 2>/dev/null || true
+  )
+}
+
+cmd_build() {
+  [[ -f "$RUBY_LOCAL_GEMS_CONFIG" ]] || die "config file $RUBY_LOCAL_GEMS_CONFIG not found"
+  [[ -n "$RUBY_LOCAL_GEMS_HOME" && "$RUBY_LOCAL_GEMS_HOME" != "/" ]] || die "RUBY_LOCAL_GEMS_HOME is not set"
+
+  rm -rf "$RUBY_LOCAL_GEMS_HOME"
+  mkdir -p "$RUBY_LOCAL_GEMS_HOME"
+  _scan_for_gems
+  _write_gemfile
+  _bundle
+}
+
+cmd_list() {
+  local link target found=false
+
+  for link in "$RUBY_LOCAL_GEMS_HOME"/*; do
+    [[ -L "$link" ]] || continue
+    found=true
+    target="$(readlink "$link")"
+    [[ "$target" == "$HOME"/* ]] && target="~${target#"$HOME"}"
+    [[ -e "$link" ]] || target+=" (missing)"
+    printf '%-16s %s\n' "$(basename "$link")" "$target"
+  done
+
+  $found || echo "No gems linked; run: gem-local build" >&2
+}
+
+cmd_path() {
+  if [[ $# -eq 0 ]]; then
+    echo "$RUBY_LOCAL_GEMS_HOME"
+    return 0
+  fi
+
+  local link="$RUBY_LOCAL_GEMS_HOME/$1"
+  [[ -L "$link" ]] || die "gem '$1' is not linked (see: gem-local ls)"
+  [[ -d "$link" ]] || die "gem '$1' links to missing $(readlink "$link")"
+  (cd -P "$link" && pwd -P)
+}
+
+_src_list() {
+  local entry found=false
+
+  while IFS= read -r entry; do
+    found=true
+    [[ -d "$(_expand "$entry")" ]] && echo "$entry" || echo "$entry (missing)"
+  done < <(_config_entries)
+
+  $found || echo "No repos configured; add one with: gem-local src add <path>" >&2
+}
+
+_src_add() {
+  [[ $# -eq 1 ]] || die "Usage: gem-local src add <path>"
+
+  local path entry existing
+  path="$(cd -P "$1" 2>/dev/null && pwd -P)" || die "not a directory: $1"
+  entry="$(_abbreviate "$path")"
+
+  while IFS= read -r existing; do
+    if [[ "$(_expand "$existing")" == "$path" ]]; then
+      echo "Already configured: $existing"
+      return 0
+    fi
+  done < <(_config_entries)
+
+  mkdir -p "$(dirname "$RUBY_LOCAL_GEMS_CONFIG")"
+  # Append on a line of its own even if the file doesn't end in a newline
+  [[ -s "$RUBY_LOCAL_GEMS_CONFIG" && -n "$(tail -c1 "$RUBY_LOCAL_GEMS_CONFIG")" ]] && echo >> "$RUBY_LOCAL_GEMS_CONFIG"
+  echo "$entry" >> "$RUBY_LOCAL_GEMS_CONFIG"
+  echo "Added $entry to $RUBY_LOCAL_GEMS_CONFIG"
+
+  [[ -n "$(find -L "$path" -name "*.gemspec" -print -quit)" ]] || warn "no *.gemspec found under $entry"
+  echo "Run: gem-local build"
+}
+
+_src_rm() {
+  [[ $# -eq 1 ]] || die "Usage: gem-local src rm <path>"
+  [[ -f "$RUBY_LOCAL_GEMS_CONFIG" ]] || die "config file $RUBY_LOCAL_GEMS_CONFIG not found"
+
+  # Unlike add, a repo whose dir is gone must still be removable, so an
+  # unresolvable path falls back to the argument as written
+  local path entry line cmp tmp found=false
+  path="$(cd -P "$1" 2>/dev/null && pwd -P)" || { path="$(_expand "$1")"; path="${path%/}"; }
+  entry="$(_abbreviate "$path")"
+
+  tmp="$RUBY_LOCAL_GEMS_CONFIG.tmp.$$"
+  : > "$tmp"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ ! "$line" =~ ^[[:space:]]*# ]] && [[ -n "${line// }" ]]; then
+      cmp="$(_expand "$line")"
+      if [[ "${cmp%/}" == "$path" || "$line" == "$1" ]]; then
+        found=true
+        continue
+      fi
+    fi
+    printf '%s\n' "$line" >> "$tmp"
+  done < "$RUBY_LOCAL_GEMS_CONFIG"
+
+  if ! $found; then
+    rm -f "$tmp"
+    warn "not configured: $entry"
+    return 0
+  fi
+
+  # Write back through the original file so its mode and ownership survive
+  cat "$tmp" > "$RUBY_LOCAL_GEMS_CONFIG"
+  rm -f "$tmp"
+  echo "Removed $entry from $RUBY_LOCAL_GEMS_CONFIG"
+  echo "Run: gem-local build"
+}
+
+cmd_src() {
+  case "${1:-}" in
+    list|ls)   shift; _src_list ;;
+    add)       shift; _src_add "$@" ;;
+    rm|remove) shift; _src_rm "$@" ;;
+    "")        die "Usage: gem-local src <list|add|rm>" ;;
+    *)         die "unknown src command '$1' (expected: list, add, rm)" ;;
+  esac
+}
+
+cmd_completion() {
+  case "${1:-}" in
+    zsh)
+      cat <<'COMPLETION'
+#compdef gem-local
+
+_local_gems_names() {
+  local dir=${RUBY_LOCAL_GEMS_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/gems}
+  local -a gems=($dir/*(@N:t))
+  compadd -a gems
+}
+
+_local_gems_srcs() {
+  local cfg=${RUBY_LOCAL_GEMS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/ruby/local-gems}
+  local -a srcs=(${(f)"$(grep -vE '^[[:space:]]*(#|$)' $cfg 2>/dev/null)"})
+  compadd -a srcs
+}
+
+_local-gems() {
+  local -a subcmds=(
+    'build:Link and bundle gems from the configured repos'
+    'list:Show linked gems'
+    'src:Show, add or remove configured repo paths'
+    'path:Output path to the gems dir or a gem repo'
+    'cd:Change to the gems dir or a gem repo'
+    'completion:Output shell completion code'
+    'help:Show usage'
+  )
+
+  if (( CURRENT == 2 )); then
+    _describe 'command' subcmds
+    return
+  fi
+
+  case "${words[2]}" in
+    src)
+      if (( CURRENT == 3 )); then
+        compadd list add rm
+      elif (( CURRENT == 4 )); then
+        case "${words[3]}" in
+          add) _files -/ ;;
+          rm)  _local_gems_srcs ;;
+        esac
+      fi
+      ;;
+    path|cd)     (( CURRENT == 3 )) && _local_gems_names ;;
+    completion)  (( CURRENT == 3 )) && compadd zsh bash ;;
+  esac
+}
+
+if [[ "${funcstack[1]}" == "_local-gems" ]]; then
+  _local-gems "$@"
+else
+  compdef _local-gems gem-local
+fi
+COMPLETION
+      ;;
+    bash)
+      cat <<'COMPLETION'
+# bash completion for gem-local. Self-contained: needs neither bash-completion nor bash 4.
+# Candidates are filtered with case rather than compgen -W, which would tilde-expand the
+# ~/ paths in the config and then never match what was typed.
+
+_gem_local_add() {
+  local cur="$1" word
+  shift
+  for word in "$@"; do
+    case "$word" in "$cur"*) COMPREPLY+=("$word") ;; esac
+  done
+}
+
+_gem_local() {
+  local cur="${COMP_WORDS[COMP_CWORD]}" link entry
+  local dir="${RUBY_LOCAL_GEMS_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/gems}"
+  local cfg="${RUBY_LOCAL_GEMS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/ruby/local-gems}"
+  COMPREPLY=()
+
+  if [[ $COMP_CWORD -eq 1 ]]; then
+    _gem_local_add "$cur" build list src path cd completion help
+    return 0
+  fi
+
+  case "${COMP_WORDS[1]}" in
+    src)
+      if [[ $COMP_CWORD -eq 2 ]]; then
+        _gem_local_add "$cur" list add rm
+      elif [[ $COMP_CWORD -eq 3 ]]; then
+        case "${COMP_WORDS[2]}" in
+          add)
+            type compopt >/dev/null 2>&1 && compopt -o filenames
+            local IFS=$'\n'
+            COMPREPLY=($(compgen -d -- "$cur"))
+            ;;
+          rm)
+            [[ -r "$cfg" ]] || return 0
+            while IFS= read -r entry || [[ -n "$entry" ]]; do
+              [[ "$entry" =~ ^[[:space:]]*# ]] && continue
+              [[ -z "${entry// }" ]] && continue
+              _gem_local_add "$cur" "$entry"
+            done < "$cfg"
+            ;;
+        esac
+      fi
+      ;;
+    path|cd)
+      [[ $COMP_CWORD -eq 2 ]] || return 0
+      for link in "$dir"/*; do
+        [[ -L "$link" ]] && _gem_local_add "$cur" "${link##*/}"
+      done
+      ;;
+    completion)
+      [[ $COMP_CWORD -eq 2 ]] && _gem_local_add "$cur" zsh bash
+      ;;
+  esac
+  return 0
+}
+
+complete -F _gem_local gem-local
+COMPLETION
+      ;;
+    *)
+      echo "Usage: gem-local completion <zsh|bash>" >&2
+      return 1
+      ;;
+  esac
+}
+
+case "${1:-}" in
+  build)       shift; cmd_build ;;
+  list|ls)     shift; cmd_list ;;
+  src)         shift; cmd_src "$@" ;;
+  path)        shift; cmd_path "$@" ;;
+  cd)          echo "gem-local cd requires the gem-local shell function (source ~/.config/sh/ruby.sh)" >&2; exit 1 ;;
+  completion)  shift; cmd_completion "$@" ;;
+  help|--help) usage ;;
+  "")          usage ;;
+  *)           echo "gem-local unknown command '$1'" >&2; usage >&2; exit 1 ;;
+esac
