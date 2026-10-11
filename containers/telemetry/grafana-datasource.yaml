@@ -1,0 +1,12 @@
+# Wires the Tempo datasource on first boot so the viewer needs no click-ops.
+apiVersion: 1
+
+datasources:
+  - name: Tempo
+    type: tempo
+    uid: tempo
+    access: proxy
+    url: http://tempo:3200
+    isDefault: true
+    jsonData:
+      httpMethod: GET

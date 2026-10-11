@@ -1,0 +1,4 @@
+# Local overrides belong in ~/.config/pcm/env/<name>.env, not in the clone
+.env
+.env.local
+*.local.*

@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# provision — pcm dependency hook for valkey
+#
+# Run by pcm (from this directory) once valkey is healthy, for each service
+# that declares it in x-pcm.depends_on:
+#
+#   provision
+#
+# Gives each dependent its own logical database, allocated once and recorded in
+# the pcm:databases hash in db 0, so the number is stable across restarts. Prints
+# connection details as KEY=VALUE. pcm exports each to the dependent service's
+# compose as PCM_VALKEY_<KEY>: URL, HOST, PORT, DATABASE.
+#
+# Logical databases separate keyspaces; they are not a security boundary.
+set -euo pipefail
+
+max="${VALKEY_DATABASES:?not set; run via pcm (varlock resolves it from .env.schema)}"
+dependent="${PCM_DEPENDENT:?not set; run via pcm}"
+
+for arg in "$@"; do
+  echo "provision: unknown setting '$arg'" >&2
+  exit 1
+done
+
+container=$(podman ps \
+  --filter "label=com.docker.compose.project=${PCM_PROJECT:-valkey}" \
+  --filter "label=com.docker.compose.service=valkey" \
+  --format '{{.Names}}' | head -n1)
+if [[ -z "$container" ]]; then
+  echo "provision: valkey container is not running" >&2
+  exit 1
+fi
+
+# Atomic get-or-allocate: the next free number after the highest one handed out
+allocate='
+local n = redis.call("HGET", KEYS[1], ARGV[1])
+if n then return tonumber(n) end
+local top = 0
+for _, v in ipairs(redis.call("HVALS", KEYS[1])) do
+  top = math.max(top, tonumber(v))
+end
+if top + 1 >= tonumber(ARGV[2]) then
+  return redis.error_reply("no free database (VALKEY_DATABASES=" .. ARGV[2] .. ")")
+end
+redis.call("HSET", KEYS[1], ARGV[1], top + 1)
+return top + 1'
+
+db=$(podman exec "$container" valkey-cli -n 0 --no-raw EVAL "$allocate" 1 pcm:databases "$dependent" "$max")
+db="${db#(integer) }"
+if [[ ! "$db" =~ ^[0-9]+$ ]]; then
+  echo "provision: allocating a database for $dependent failed: $db" >&2
+  exit 1
+fi
+echo "provision: $dependent uses db $db" >&2
+
+# Container name resolves via DNS on the shared network
+cat <<OUT
+URL=redis://${container}:6379/${db}
+HOST=${container}
+PORT=6379
+DATABASE=${db}
+OUT

@@ -1,0 +1,11 @@
+# Gemstash config, rendered with ERB at start from the container environment
+# (set by compose.yml from .env.schema). See gemstash-configuration(5).
+---
+:base_path: /var/gemstash
+:db_adapter: sqlite3
+:cache_type: memory
+:bind: tcp://0.0.0.0:9292
+:log_file: :stdout
+:rubygems_url: <%= ENV.fetch("GEMSTASH_RUBYGEMS_URL") %>
+:protected_fetch: <%= ENV.fetch("GEMSTASH_PROTECTED_FETCH") %>
+:fetch_timeout: <%= ENV.fetch("GEMSTASH_FETCH_TIMEOUT") %>
