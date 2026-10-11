@@ -30,7 +30,8 @@ after `ssh.zsh` because `.` (0x2E) sorts before `/` (0x2F) in `.zshrc`'s
 
 1. **Exactly one secret crosses ssh:** `OP_SERVICE_ACCOUNT_TOKEN`. Everything
    else is declared at both ends and re-resolved remotely. Do not add a
-   mechanism to forward more; that is ADR-001's rejected Option 4.
+   mechanism to forward more; that is ADR-001's rejected Option 4 (ADR-001 is `adr/op-001-remote-credential-forwarding.md` in
+   anfs-io/docs).
 2. **`env = false` on the token.** `op` reads `OP_SERVICE_ACCOUNT_TOKEN` from the
    environment, so an exported token would override desktop auth for every local
    `op` call and would be readable by anything started in that directory. The

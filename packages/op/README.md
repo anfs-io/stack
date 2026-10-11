@@ -247,5 +247,6 @@ Both run offline in under a second; nothing touches 1Password or the network.
 The shell functions this package used to ship — `_op_env`, lazy `gh`/`aws`
 wrappers, `zssh`, macOS Keychain token caching — are gone. They derived the vault
 name from `$OP_SPACE`/`$CHORUS_SPACE`, which nothing in the shipped system ever
-set, so they could not succeed. See `docs/ADR-001-remote-credential-forwarding.md`
+set, so they could not succeed. See ADR-001 in [anfs-io/docs](https://github.com/anfs-io/docs)
+(`adr/op-001-remote-credential-forwarding.md`)
 for the original decision and the revision that replaced its implementation.
