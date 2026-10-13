@@ -33,6 +33,10 @@ ventoy iso path debian
 ventoy iso prune                      # delete the files no entry names
 ```
 
+`remove` asks before it deletes a file whose entry has no url (one `iso add <file>` copied in):
+nothing can pull it again. `prune` refuses to run while an `isos.yml` cannot be read as a list of
+entries, or when there are no entries at all, since every file would then look unnamed.
+
 An amd64 ISO is listed on an arm64 Mac too: putting it on a stick is what this is for.
 
 `ventoy isos` and `ventoy get` are gone: `ventoy iso list` and `ventoy iso pull` replace them,
