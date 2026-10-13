@@ -21,7 +21,7 @@ tailnet-specific config over anything here without forking it.
 |---|---|---|
 | [tailscale](../packages/tailscale/README.md) | macOS, Linux | Tailscale client plus `tsm`, which joins a host to a tailnet from a declarative config instead of a remembered `tailscale up` incantation. Credentials come from 1Password via fnox. |
 | [rpi-imager](../packages/rpi-imager) | macOS | Writes a Raspberry Pi card from a declarative cloud-init profile — raw `user-data` and `network-config` plus a small `image.yml`, with secrets resolved from the environment. |
-| [ventoy](../packages/ventoy) | Linux (writer), macOS (copy) | Ventoy multiboot USB manager, with a wrapper that downloads ISOs from a declared list. |
+| [ventoy](../packages/ventoy/README.md) | Linux (writer), macOS (copy) | Ventoy multiboot USB manager, with a wrapper that puts ISOs from the shared catalogue on a stick or a disk image. |
 | [pikvm](../packages/pikvm) | macOS, Linux | `pikvm`, maintenance of a PiKVM over ssh: commands inside its read-only root (`run -w`), `copy-id`, and the mass storage drive (`msd connect`, `msd with -- ventoy sync -y`). |
 | [remotefs](../packages/remotefs/README.md) | macOS, Linux | Named mounts of remote directories over ssh (sshfs; FUSE-T on macOS, no kernel extension), at `~/mnt/<label>`. |
 | [nfs](../packages/nfs) | macOS, Linux | Serves NFS exports on Linux (`nfs-kernel-server`) and mounts them on macOS through its built-in autofs. Driven by config in `~/.config/nfs/`. |

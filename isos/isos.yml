@@ -1,5 +1,6 @@
-# The ISO catalogue of this source (lib/anfs/iso.sh): what `ventoy get <id>` downloads and what
-# a pmm machine can name as media. Files land in the store every tool shares (~/.cache/anfs/isos).
+# The ISO catalogue of this source (lib/anfs/iso.sh): what `anfs iso pull <id>` downloads (`pmm iso`
+# and `ventoy iso` are the same commands), what `ventoy copy <id>` puts on a stick and what a pmm
+# machine can name as media. Files land in the store every tool shares (~/.cache/anfs/isos).
 #
 #   id            the name to ask for
 #   name          description
@@ -25,7 +26,7 @@
   filename: ubuntu-26.04.1-live-server-amd64.iso
   architecture: amd64
 
-# Arch keeps this file name for every monthly release: refresh with `ventoy get arch --force`
+# Arch keeps this file name for every monthly release: refresh with `ventoy iso pull -f arch`
 - id: arch
   name: Arch Linux (latest monthly) x86_64
   url: https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso

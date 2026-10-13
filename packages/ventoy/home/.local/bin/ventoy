@@ -47,20 +47,20 @@ ventoy prepare ~/ventoy.img --size 32G. Other options go on to Ventoy2Disk.sh: -
 cli_cmd update "Upgrade Ventoy on a disk or disk image, keeping its ISOs (Linux)" --arg "[disk]"
 cli_cmd status "Show Ventoy info for a disk or disk image (Linux)" --arg "[disk]"
 cli_cmd list "ISOs on a stick and in VENTOY_ISO_DIR: SIZE STATUS ISO" --alias ls --arg "[target]"
-cli_cmd copy "Copy ISOs from VENTOY_ISO_DIR to a stick" --arg "[target]"
+cli_cmd copy "Copy ISOs to a stick: everything in VENTOY_ISO_DIR, or the catalogue ISOs named.
+A named ISO is downloaded into the store when it is not there, and selected (a
+link in VENTOY_ISO_DIR), so sync keeps it on the stick. A newer version replaces
+the one selected before for that id" \
+  --opt "-t --target TARGET: The stick" \
+  --opt "-k --keep: Keep the older version selected" --arg "[iso...]"
 cli_cmd remove "Remove ISOs from a stick (paths as \`ventoy list\` shows them)" --alias rm \
   --opt "-t --target TARGET: The stick" --arg "iso..."
 cli_cmd sync "Make the stick's ISOs match VENTOY_ISO_DIR exactly: copy missing or changed
 ISOs, remove all others (an empty dir removes every ISO)" \
   --opt "-n --dry-run: Show what would change" --opt "-y --yes: Do not ask" --arg "[target]"
-cli_cmd isos "The ISO catalogue: ID STATUS ARCH FILE. selected: in VENTOY_ISO_DIR, so it goes on
-the stick; downloaded: in the store only; missing"
-cli_cmd get "Download ISOs from the catalogue into the store, verify their checksums, and
-select them (a link in VENTOY_ISO_DIR). A newer version replaces the one get selected
-before for that id" \
-  --opt "-a --all: Every ISO in the list" \
-  --opt "-f --force: Download again even if the file is already there" \
-  --opt "-k --keep: Keep the older version selected" --arg "[id...]"
+# The catalogue and the store are anfs's, and so is the group: `ventoy iso list`, `ventoy iso pull`
+# are `anfs iso` and `pmm iso` (lib/anfs/iso.sh)
+anfs_iso_cli
 cli_cmd info "Show paths, Ventoy version and the ISOs that would be copied"
 cli_cmd path "Print VENTOY_DISK, the default disk or disk image: pmm up <machine> --media \"\$(ventoy path)\""
 cli_standard
@@ -79,21 +79,22 @@ Environment:
   VENTOY_DISK     Default disk, e.g. /dev/disk/by-id/usb-... (stable across replugs, unlike /dev/sdX),
                   or a disk image, e.g. /srv/nfs/pikvm/ventoy.img
   VENTOY_IMAGE_SIZE  Size of images created by prepare (default 64G)
-  VENTOY_ISO_DIR  The ISOs that go on the stick (default ~/.cache/ventoy/isos): links `get`
-                  makes into the store, and any file put there by hand. Delete one to drop it.
+  VENTOY_ISO_DIR  The ISOs that go on the stick (default ~/.cache/ventoy/isos): links
+                  `copy <iso>` makes into the store, and any file put there by hand. Delete
+                  one to drop it.
   ANFS_ISO_HOME   The store every tool downloads into (default ~/.cache/anfs/isos)
 
-The catalogue is isos/isos.yml in each anfs source, and ~/.config/anfs/isos.yml for your own
-entries (an id there replaces a source's): id, name, architecture, url, filename, and
-checksum (a sha256) or checksum_url (the publisher's checksum file).
+`ventoy iso` is the catalogue and the store, the same commands as `anfs iso` and `pmm iso`:
+list, show, pull, add, remove, path, prune. The catalogue is isos/isos.yml in each anfs source,
+and ~/.config/anfs/isos.yml for your own entries (`ventoy iso add`; an id there replaces a
+source's): id, name, architecture, url, filename, and checksum (a sha256) or checksum_url (the
+publisher's checksum file).
   VENTOY_HOME     Ventoy release directory (default ~/.local/share/ventoy/current)
 EOF
 }
 
 die()  { anfs_die "$@"; }
 warn() { anfs_warn "$@"; }
-# What a command did, for a person; --json gets anfs_result instead
-say()  { anfs_json_on || anfs_info "$@"; }
 
 is_linux() {
   [[ "$(uname -s)" == "Linux" ]]
@@ -391,14 +392,27 @@ cmd_list() {
 }
 
 cmd_copy() {
-  [[ -d "$VENTOY_ISO_DIR" ]] || die "ISO dir $VENTOY_ISO_DIR not found (mkdir it, or: ln -s ~/.cache/anfs/isos $VENTOY_ISO_DIR)"
-  shopt -s nullglob
-  local isos=("$VENTOY_ISO_DIR"/*.iso)
-  [[ ${#isos[@]} -gt 0 ]] || die "no ISOs in $VENTOY_ISO_DIR"
+  local keep="${CLI_OPT[keep]:-false}" id iso name copied=0 skipped=0
+  local -a isos=()
+  if [[ $# -gt 0 ]]; then
+    require_iso_list
+    # Check every id before downloading anything
+    for id in "$@"; do
+      anfs_iso_known "$id" || die "no ISO '$id' in the catalogue (list them with: ventoy iso list; the stick is --target)"
+    done
+    for id in "$@"; do
+      select_iso "$id" "$keep"
+      isos+=("$VENTOY_ISO_DIR/$SELECTED")
+    done
+  else
+    [[ -d "$VENTOY_ISO_DIR" ]] || die "ISO dir $VENTOY_ISO_DIR not found (select ISOs with: ventoy copy <iso>, or mkdir it and put files there)"
+    shopt -s nullglob
+    isos=("$VENTOY_ISO_DIR"/*.iso)
+    [[ ${#isos[@]} -gt 0 ]] || die "no ISOs in $VENTOY_ISO_DIR"
+  fi
 
-  open_stick "${1:-}" rw
+  open_stick "${CLI_OPT[target]:-}" rw
 
-  local iso name copied=0 skipped=0
   for iso in "${isos[@]}"; do
     name="$(basename "$iso")"
     if ! needs_copy "$iso"; then
@@ -492,27 +506,27 @@ cmd_sync() {
   anfs_info "Done: ${#removes[@]} removed, ${#copies[@]} copied"
 }
 
-# --- isos, get: the catalogue, the store and the downloader are anfs's (lib/anfs/iso.sh) ---
+# --- selecting: the catalogue, the store and the downloader are anfs's (lib/anfs/iso.sh) ---
 # The store ($ANFS_ISO_HOME) is every tool's. What goes on a stick is what VENTOY_ISO_DIR holds:
-# `get` links an ISO from the store into it, and a file put there by hand counts just the same.
+# `copy <iso>` links an ISO from the store into it, and a file put there by hand counts just the
+# same.
 
 require_iso_list() {
   anfs_require yq "https://github.com/mikefarah/yq, which ppm installs"
   yq --version 2>&1 | grep -q mikefarah || anfs_fail "$EX_UNAVAIL" "yq is not mikefarah's (https://github.com/mikefarah/yq), which ppm installs"
-  [[ -n "$(anfs_iso_catalogs)" ]] || die "no ISO catalogue: isos/isos.yml in a source (stack ships one), or $(anfs_display "$ANFS_ISO_LOCAL_CATALOG")"
 }
 
-# Tab-separated "id  file" records of what `get` selected, so a newer version can replace it
-GET_STATE_NAME=".ventoy-get"
+# Tab-separated "id  file" records of what `copy <iso>` selected, so a newer version can replace it
+SELECT_STATE_NAME=".ventoy-get"
 
 state_filename() {
-  local state="$VENTOY_ISO_DIR/$GET_STATE_NAME"
+  local state="$VENTOY_ISO_DIR/$SELECT_STATE_NAME"
   [[ -f "$state" ]] || return 0
   awk -F'\t' -v id="$1" '$1 == id { file = $2 } END { if (file != "") print file }' "$state"
 }
 
 record_state() {
-  local state="$VENTOY_ISO_DIR/$GET_STATE_NAME"
+  local state="$VENTOY_ISO_DIR/$SELECT_STATE_NAME"
   {
     [[ -f "$state" ]] && awk -F'\t' -v id="$1" '$1 != id' "$state"
     printf '%s\t%s\n' "$1" "$2"
@@ -520,72 +534,31 @@ record_state() {
   mv "$state.tmp" "$state"
 }
 
-# Usage: get_one <id> <force: true|false> <keep: true|false>
-get_one() {
-  local id="$1" force="$2" keep="$3" file filename previous
-  local -a args=()
-  ! $force || args+=(--force)
-  file=$(anfs_iso_fetch_id "${args[@]}" "$id") || die "$id: could not be downloaded and verified"
-  filename=$(basename "$file")
+# Select a catalogue ISO for the stick, downloading it when the store does not have it; its name
+# in VENTOY_ISO_DIR is left in SELECTED. Usage: select_iso <id> <keep: true|false>
+select_iso() {
+  local id="$1" keep="$2" file previous
+  file=$(anfs_iso_fetch_id "$id") || die "$id: could not be downloaded and verified"
+  SELECTED=$(basename "$file")
   previous="$(state_filename "$id")"
 
   mkdir -p "$VENTOY_ISO_DIR"
-  if [[ -e "$VENTOY_ISO_DIR/$filename" && ! -L "$VENTOY_ISO_DIR/$filename" ]]; then
-    say "$id: $filename is a file of its own in $(anfs_display "$VENTOY_ISO_DIR"); left as it is"
+  if [[ -e "$VENTOY_ISO_DIR/$SELECTED" && ! -L "$VENTOY_ISO_DIR/$SELECTED" ]]; then
+    anfs_info "$id: $SELECTED is a file of its own in $(anfs_display "$VENTOY_ISO_DIR"); left as it is"
   else
-    ln -sfn "$file" "$VENTOY_ISO_DIR/$filename"
-    say "$id: $filename ($(human_size "$file"))"
+    ln -sfn "$file" "$VENTOY_ISO_DIR/$SELECTED"
   fi
-  record_state "$id" "$filename"
+  record_state "$id" "$SELECTED"
 
-  # Replace the older version `get` selected for this id. Its file stays in the store.
-  if [[ -n "$previous" && "$previous" != "$filename" && -e "$VENTOY_ISO_DIR/$previous" ]]; then
+  # Replace the older version selected for this id. Its file stays in the store.
+  if [[ -n "$previous" && "$previous" != "$SELECTED" && -e "$VENTOY_ISO_DIR/$previous" ]]; then
     if $keep; then
-      say "$id: keeping older $previous (--keep)"
+      anfs_info "$id: keeping older $previous (--keep)"
     else
       rm -f "$VENTOY_ISO_DIR/$previous"
-      say "$id: removed older $previous"
+      anfs_info "$id: removed older $previous"
     fi
   fi
-  anfs_result id "$id" file "$file"
-}
-
-cmd_isos() {
-  require_iso_list
-  local id file status rows=""
-  while IFS= read -r id; do
-    [[ -n "$id" ]] || continue
-    file="$(anfs_iso_file "$id")"
-    if [[ -e "$VENTOY_ISO_DIR/$(basename "$file")" ]]; then status=selected
-    elif [[ -f "$file" ]]; then status=downloaded
-    else status=missing
-    fi
-    rows+="$(anfs_row "$id" "$status" "$(anfs_iso_get "$id" architecture)" "$(basename "$file")")"$'\n'
-  done < <(anfs_iso_ids)
-  printf '%s' "$rows" | anfs_table "ID STATUS ARCH FILE" "id status arch file"
-}
-
-cmd_get() {
-  require_iso_list
-  local force="${CLI_OPT[force]:-false}" keep="${CLI_OPT[keep]:-false}"
-  local ids=("$@") id known
-  local -a failed=()
-
-  known="$(anfs_iso_ids)"
-  if ${CLI_OPT[all]:-false}; then
-    mapfile -t ids < <(printf '%s\n' "$known" | grep .)
-  fi
-  [[ ${#ids[@]} -gt 0 ]] || cli_usage_err "give an id, or --all (list them with: ventoy isos)"
-
-  # Check every id before downloading anything
-  for id in "${ids[@]}"; do
-    grep -qxF -- "$id" <<< "$known" || die "unknown ISO '$id' (list them with: ventoy isos)"
-  done
-
-  for id in "${ids[@]}"; do
-    ( get_one "$id" "$force" "$keep" ) || failed+=("$id")
-  done
-  [[ ${#failed[@]} -eq 0 ]] || die "failed: ${failed[*]}"
 }
 
 cmd_path() {
@@ -629,14 +602,6 @@ cmd_info() {
     echo "ISOs:"
     ls -lhL "${isos[@]}" | awk '{ print "  " $5 "\t" $NF }'
   fi
-}
-
-# What cli.sh asks for on a tab press (complete_<kind>): one candidate per line, quickly. No yq.
-complete_id() {
-  local f
-  for f in "$ANFS_ISO_LOCAL_CATALOG" "$ANFS_SOURCES_HOME"/*/isos/isos.yml; do
-    [[ ! -f "$f" ]] || sed -n 's/^- id: *//p' "$f"
-  done | LC_ALL=C sort -u
 }
 
 cli_dispatch "$@"

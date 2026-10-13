@@ -11,7 +11,7 @@ packages/<name>/     package.yml (required), optional install.sh and home/ (stow
 containers/<name>/   pcm
 machines/profiles.yml   pmm: the standard machine shapes (small, medium, large, xlarge)
 skills/<name>/       psm
-isos/isos.yml        the ISO catalogue (ventoy get, pmm media)
+isos/isos.yml        the ISO catalogue (anfs iso, ventoy copy, pmm media)
 docs/<category>.md   what each category holds
 ```
 
@@ -30,8 +30,11 @@ rules ("The Command Line", "Lists and --json", "Messages, Debugging and the Log"
 `packages/ventoy/home/.local/bin/ventoy` is the model, and each tool has `tests/*.bats`
 (`bats packages/<name>/tests </dev/null`).
 
-`isos/isos.yml` is this source's ISO catalogue (core's `lib/anfs/iso.sh`): what `ventoy get <id>`
-downloads into the shared store (`~/.cache/anfs/isos`) and what a pmm machine names in `media:`.
+`isos/isos.yml` is this source's ISO catalogue (core's `lib/anfs/iso.sh`): what `anfs iso pull <id>`
+downloads into the shared store (`~/.cache/anfs/isos`), what `ventoy copy <id>` puts on a stick
+and what a pmm machine names in `media:`. The `iso` group (`list`, `show`, `pull`, `add`,
+`remove`, `path`, `prune`) is core's, written once and adopted by `anfs`, `pmm` and `ventoy`
+with one call (`anfs_iso_cli`); its keys are in core's table.
 
 On it: `ventoy`, `gem-local` (ruby), `tsm` (tailscale), `opm` (op), `remotefs`, `pikvm`. Not yet:
 `rpi-imager`, `firstmate`.
@@ -40,7 +43,6 @@ On it: `ventoy`, `gem-local` (ruby), `tsm` (tailscale), `opm` (op), `remotefs`, 
 | --- | --- |
 | `ventoy disks` | `device`, `size`, `usb_id`, `bus_addr`, `mounted`, `name` |
 | `ventoy list` | `size`, `status` (`on stick`, `only on stick`, `differs`, `not copied`), `iso` |
-| `ventoy isos` | `id`, `status` (`selected`, `downloaded`, `missing`), `arch`, `file` |
 | `gem-local list` | `gem`, `dir`, `note` (`missing`) |
 | `gem-local src list` | `path`, `note` (`missing`) |
 | `remotefs list` | `label`, `remote`, `mountpoint`, `state` (`mounted`, `unmounted`, `stale`) |
