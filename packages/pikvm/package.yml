@@ -1,0 +1,6 @@
+version: 0.1.0
+author: rjayroach
+categories: [utils]
+depends:
+  # Everything goes over ssh; the target is an ssh alias or user@host
+  - ssh

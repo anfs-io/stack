@@ -5,9 +5,10 @@
 # resolves it through this same `op` CLI.
 #
 # Forwarding the service account token to a remote host is the ssh hook in
-# ssh/op.zsh. Creating and rotating vaults and service accounts is op-provision.
+# ssh/op.zsh. Creating and rotating vaults and service accounts is opm.
 
 zcomp op
+zcomp opm
 
 # check if you are running locally on macOS and set up 1Password as your local SSH agent
 # while skipping that configuration if you are logged in over SSH.

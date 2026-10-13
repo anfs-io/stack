@@ -1,14 +1,15 @@
-# Ventoy ISO catalog for `ventoy get <id>` (same format as pim's data/isos.yml)
+# The ISO catalogue of this source (lib/anfs/iso.sh): what `ventoy get <id>` downloads and what
+# a pmm machine can name as media. Files land in the store every tool shares (~/.cache/anfs/isos).
 #
-#   id            name to use with `ventoy get`
+#   id            the name to ask for
 #   name          description
-#   url           download URL
-#   filename      file name in VENTOY_ISO_DIR (default: <id>.iso, as in pim)
+#   url           download URL, or a list tried in order
+#   filename      file name in the store (default: the URL's last part)
 #   checksum      sha256:<hex>                      -- or --
 #   checksum_url  checksum file that lists filename (sha256sum style, BSD "SHA256 (file) = hash", or a bare hash)
-#   architecture  informational
+#   architecture  amd64 | arm64
 #
-# Versioned URLs stop working when a newer release ships: bump the version here when `ventoy get` reports a 404.
+# Versioned URLs stop working when a newer release ships: bump the version here when a download reports a 404.
 ---
 - id: debian
   name: Debian 13.7.0 amd64 netinst
@@ -65,4 +66,18 @@
   url: https://enterprise.proxmox.com/iso/proxmox-ve_9.2-1.iso
   checksum_url: https://enterprise.proxmox.com/iso/SHA256SUMS
   filename: proxmox-ve_9.2-1.iso
+  architecture: amd64
+
+- id: cachyos
+  name: CachyOS Desktop 260809 x86_64
+  url: https://cdn77.cachyos.org/ISO/desktop/260809/cachyos-desktop-linux-260809.iso
+  checksum_url: https://cdn77.cachyos.org/ISO/desktop/260809/cachyos-desktop-linux-260809.iso.sha256
+  filename: cachyos-desktop-linux-260809.iso
+  architecture: amd64
+
+- id: omarchy
+  name: Omarchy 4.0.4 (Quattro)
+  url: https://iso.omarchy.org/omarchy-4.0.4.iso
+  checksum_url: https://iso.omarchy.org/omarchy-4.0.4.iso.sha256
+  filename: omarchy-4.0.4.iso
   architecture: amd64

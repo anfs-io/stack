@@ -12,6 +12,7 @@ setup() {
   export XDG_CONFIG_HOME="$TMP/config"
   export XDG_CACHE_HOME="$TMP/cache"
   export TSM_LIB="$PKG/home/.local/lib/tsm"
+  export ANFS_LOG=off   # no log file from tests (lib/anfs/log.sh)
   mkdir -p "$XDG_CONFIG_HOME/tailscale" "$TMP/bin"
 
   export PATH="$TMP/bin:$PATH"
@@ -256,4 +257,21 @@ ack() { "$TSM" join --yes </dev/null >/dev/null 2>&1 || true; }
   run "$TSM" frobnicate
   [ "$status" -ne 0 ]
   [[ "$output" == *"unknown command"* ]]
+}
+
+# --- the command line (lib/anfs/cli.sh) ------------------------------------
+
+@test "an option the command does not take is a usage error" {
+  run "$TSM" show --yes
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"usage: tsm show"* ]]
+  run "$TSM" frobnicate
+  [ "$status" -eq 64 ]
+}
+
+@test "status hands what follows a -- on to tailscale" {
+  stub_tailscale Running
+  run "$TSM" status -- --json
+  [ "$status" -eq 0 ]
+  grep -qx "status --json" "$TMP/argv.log"
 }

@@ -1,0 +1,13 @@
+version: 0.1.0
+author: rjayroach
+categories: [utils]
+# sshfs, which remotefs drives. macOS: FUSE-T's, which needs no kernel extension (macFUSE does,
+# and gromgit/fuse/sshfs-mac is disabled upstream); the volume reaches macOS over a local NFS server.
+system:
+  debian: [sshfs]
+  fedora: [fuse-sshfs]
+cask:
+  macos: [fuse-t, macos-fuse-t/cask/fuse-t-sshfs]
+depends:
+  # A label is an ssh host alias: the connection is whatever ~/.ssh/config says
+  - ssh

@@ -1,0 +1,7 @@
+# The standard machine shapes (pmm): what a machine gets when its machine.yml, or its image, names
+# a profile. A higher-priority source replaces one by defining the same name in its own
+# machines/profiles.yml; a machine overrides any part of its profile in its machine.yml.
+small:  {cpus: 1, memory: 1G}
+medium: {cpus: 2, memory: 4G}
+large:  {cpus: 4, memory: 8G}
+xlarge: {cpus: 8, memory: 16G}

@@ -75,7 +75,10 @@ pass `--yes`. Join without them first, then turn them on from a second path.
 | `tsm prereqs` | The manual tailnet setup, plus three checks that run locally. |
 | `tsm info` | Paths, binary, daemon state, credential kind, key-handoff mode. |
 
-Flags: `-n/--dry-run` (print, touch nothing), `-y/--yes` (skip confirmations).
+`join` and `set` take `-n/--dry-run` (print, touch nothing) and `-y/--yes` (skip confirmations),
+after the command. Like every anfs tool, `tsm` takes `-d/--debug` and `--trace` before the command,
+writes to the shared log (`anfs log tsm`), and exits 64 when used wrongly. `--json` is tsm's own:
+tailscale's goes after a `--` (`tsm status -- --json`).
 
 ## The prerequisite gate
 

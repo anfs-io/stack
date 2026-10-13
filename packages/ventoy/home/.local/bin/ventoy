@@ -2,103 +2,200 @@
 # ventoy — wrapper around the upstream Ventoy release (Ventoy2Disk.sh)
 set -euo pipefail
 
-XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
-XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
-XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
-VENTOY_HOME="${VENTOY_HOME:-$XDG_DATA_HOME/ventoy/current}"
-VENTOY_ISO_DIR="${VENTOY_ISO_DIR:-$XDG_CACHE_HOME/ventoy/isos}"
-VENTOY_ISO_LIST="${VENTOY_ISO_LIST:-$XDG_CONFIG_HOME/ventoy/isos.yml}"
-VENTOY_MOUNT="$XDG_CACHE_HOME/ventoy/mnt"
+# Paths, messages, the log and the command line come from anfs
+ANFS_LIB="$HOME/.local/lib/anfs"
+if [[ ! -f "$ANFS_LIB/bash.sh" || ! -f "$ANFS_LIB/table.sh" || ! -f "$ANFS_LIB/iso.sh" ]]; then
+  echo "ventoy: $ANFS_LIB is missing or out of date; install core/anfs again" >&2
+  exit 69
+fi
+# The bash floor, first: re-execs under bash 5 when this is macOS's 3.2
+# shellcheck source=/dev/null
+source "$ANFS_LIB/bash.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/paths.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/log.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/sources.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/iso.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/cli.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/table.sh"
 
-usage() {
+anfs_tool_paths ventoy
+anfs_gitsrc_env
+: "${VENTOY_HOME:=$VENTOY_DATA_HOME/current}"
+: "${VENTOY_ISO_DIR:=$VENTOY_CACHE_HOME/isos}"
+VENTOY_MOUNT="$VENTOY_CACHE_HOME/mnt"
+: "${VENTOY_IMAGE_SIZE:=64G}"
+
+EX_UNAVAIL=69
+
+CLI_TOOL=ventoy
+
+cli_cmd disks "USB disks: DEVICE SIZE USB-ID BUS:ADDR MOUNTED NAME (macOS: the ids are what
+QEMU passthrough takes)"
+cli_cmd prepare "Install Ventoy to a USB disk, e.g. /dev/sdb, or a disk image (Linux; ERASES
+the disk). A path that does not exist yet is created as a sparse disk image:
+ventoy prepare ~/ventoy.img --size 32G. Other options go on to Ventoy2Disk.sh: -g (GPT),
+-s (secure boot), -L LABEL, -r MiB" \
+  --opt "-f --force: Reinstall even if Ventoy is already on the disk" \
+  --opt "--size SIZE: Size of a new image (default \$VENTOY_IMAGE_SIZE, else 64G)" \
+  --passthrough --arg "[disk]"
+cli_cmd update "Upgrade Ventoy on a disk or disk image, keeping its ISOs (Linux)" --arg "[disk]"
+cli_cmd status "Show Ventoy info for a disk or disk image (Linux)" --arg "[disk]"
+cli_cmd list "ISOs on a stick and in VENTOY_ISO_DIR: SIZE STATUS ISO" --alias ls --arg "[target]"
+cli_cmd copy "Copy ISOs from VENTOY_ISO_DIR to a stick" --arg "[target]"
+cli_cmd remove "Remove ISOs from a stick (paths as \`ventoy list\` shows them)" --alias rm \
+  --opt "-t --target TARGET: The stick" --arg "iso..."
+cli_cmd sync "Make the stick's ISOs match VENTOY_ISO_DIR exactly: copy missing or changed
+ISOs, remove all others (an empty dir removes every ISO)" \
+  --opt "-n --dry-run: Show what would change" --opt "-y --yes: Do not ask" --arg "[target]"
+cli_cmd isos "The ISO catalogue: ID STATUS ARCH FILE. selected: in VENTOY_ISO_DIR, so it goes on
+the stick; downloaded: in the store only; missing"
+cli_cmd get "Download ISOs from the catalogue into the store, verify their checksums, and
+select them (a link in VENTOY_ISO_DIR). A newer version replaces the one get selected
+before for that id" \
+  --opt "-a --all: Every ISO in the list" \
+  --opt "-f --force: Download again even if the file is already there" \
+  --opt "-k --keep: Keep the older version selected" --arg "[id...]"
+cli_cmd info "Show paths, Ventoy version and the ISOs that would be copied"
+cli_cmd path "Print VENTOY_DISK, the default disk or disk image: pmm up <machine> --media \"\$(ventoy path)\""
+cli_standard
+
+cli_help_epilogue() {
   cat <<'EOF'
-Usage: ventoy <command> [args]
+A target is the stick's disk or data partition (Linux; mounted for you), a disk image file
+(Linux; attached with losetup and detached again), or a mounted directory (default on macOS:
+/Volumes/Ventoy). Commands without a disk use VENTOY_DISK. Only *.iso files on the stick are
+ever copied or removed.
 
-Commands:
-  list                        List USB disks (macOS: with USB IDs and bus:addr for QEMU passthrough)
-  prepare [disk] [-f] [opts]  Install Ventoy to a USB disk, e.g. /dev/sdb (Linux; ERASES the disk)
-                                -f    reinstall even if Ventoy is already on the disk
-                                opts  passed to Ventoy2Disk.sh, e.g. -g (GPT), -L LABEL, -r MiB
-  update [disk]               Upgrade Ventoy on a disk, keeping its ISOs (Linux)
-  status [disk]               Show Ventoy info for a disk (Linux)
-  ls [target]                 List ISOs on a Ventoy stick and whether they match VENTOY_ISO_DIR
-  copy [target]               Copy ISOs from VENTOY_ISO_DIR to a Ventoy stick
-  rm <iso>... [-t target]     Remove ISOs from a stick (paths as shown by `ventoy ls`)
-  sync [target] [-n] [-y]     Make the stick's ISOs match VENTOY_ISO_DIR exactly: copy missing or
-                              changed ISOs, remove all others (an empty dir removes every ISO)
-                                -n  show what would change    -y  don't ask for confirmation
-  get [id...] [--all]         Download ISOs listed in VENTOY_ISO_LIST into VENTOY_ISO_DIR and verify
-      [--force] [--keep]      their checksums; without ids, list them. A newer version replaces the
-                              file `get` downloaded before for that id, unless --keep.
-                              --force downloads again even if the file is already there
-  info                        Show paths, Ventoy version and the ISOs that would be copied
-  help                        Show this help
-
-  A target is the stick's disk or data partition (Linux; mounted for you) or a mounted
-  directory (default on macOS: /Volumes/Ventoy). Commands without a disk use VENTOY_DISK.
-  Only *.iso files on the stick are ever copied or removed.
+A disk image can be served to a PiKVM over NFS and presented to its host as a USB flash
+drive. Never change it while the PiKVM has it connected: pikvm msd with -- ventoy sync -y
 
 Environment:
-  VENTOY_DISK     Default disk, e.g. /dev/disk/by-id/usb-... (stable across replugs, unlike /dev/sdX)
-  VENTOY_ISO_DIR  ISOs to copy (default ~/.cache/ventoy/isos)
-                  to use pim's ISOs: ln -s ~/.cache/pim/isos ~/.cache/ventoy/isos
-  VENTOY_ISO_LIST ISO catalog for `get`, in pim's isos.yml format (default ~/.config/ventoy/isos.yml)
+  VENTOY_DISK     Default disk, e.g. /dev/disk/by-id/usb-... (stable across replugs, unlike /dev/sdX),
+                  or a disk image, e.g. /srv/nfs/pikvm/ventoy.img
+  VENTOY_IMAGE_SIZE  Size of images created by prepare (default 64G)
+  VENTOY_ISO_DIR  The ISOs that go on the stick (default ~/.cache/ventoy/isos): links `get`
+                  makes into the store, and any file put there by hand. Delete one to drop it.
+  ANFS_ISO_HOME   The store every tool downloads into (default ~/.cache/anfs/isos)
+
+The catalogue is isos/isos.yml in each anfs source, and ~/.config/anfs/isos.yml for your own
+entries (an id there replaces a source's): id, name, architecture, url, filename, and
+checksum (a sha256) or checksum_url (the publisher's checksum file).
   VENTOY_HOME     Ventoy release directory (default ~/.local/share/ventoy/current)
 EOF
 }
 
-die() {
-  echo "ventoy: $*" >&2
-  exit 1
-}
+die()  { anfs_die "$@"; }
+warn() { anfs_warn "$@"; }
+# What a command did, for a person; --json gets anfs_result instead
+say()  { anfs_json_on || anfs_info "$@"; }
 
 is_linux() {
   [[ "$(uname -s)" == "Linux" ]]
 }
 
 require_linux() {
-  is_linux || die "'$1' needs Linux (Ventoy2Disk.sh is Linux-only); use a Linux VM with the USB stick passed through"
+  is_linux || anfs_fail "$EX_UNAVAIL" "'$1' needs Linux (Ventoy2Disk.sh is Linux-only); use a Linux VM with the USB stick passed through"
 }
 
-# The argument, else $VENTOY_DISK; symlinks such as /dev/disk/by-id/... resolve to the real device
-disk_arg() {
-  local disk="${1:-${VENTOY_DISK:-}}"
-  [[ -n "$disk" && -L "$disk" ]] && disk="$(readlink -f "$disk")"
-  echo "$disk"
+# Set by resolve_disk / open_stick and undone by cleanup on exit
+DISK=""
+IMAGE=""
+LOOP_DEV=""
+MOUNTED_PART=""
+
+cleanup() {
+  if [[ -n "$MOUNTED_PART" ]]; then
+    sync
+    sudo umount "$STICK_DIR" && echo "Unmounted $MOUNTED_PART" >&2
+    MOUNTED_PART=""
+  fi
+  if [[ -n "$LOOP_DEV" ]]; then
+    sudo losetup -d "$LOOP_DEV" && echo "Detached $IMAGE" >&2
+    LOOP_DEV=""
+  fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# Attach a disk image file to a loop device (with partition scan); ro attaches it read-only.
+# One attachment at a time: a second one could write the same exFAT from two places.
+attach_image() {
+  local img="$1" mode="$2" attached
+  is_linux || anfs_fail "$EX_UNAVAIL" "$img: disk images need Linux (losetup)"
+  attached="$(sudo losetup -j "$img" | cut -d: -f1)"
+  [[ -z "$attached" ]] || die "$img is already attached as $attached (detach with: sudo losetup -d $attached)"
+
+  local opts=(-f -P --show)
+  [[ "$mode" != ro ]] || opts+=(-r)
+  IMAGE="$img"
+  LOOP_DEV="$(sudo losetup "${opts[@]}" "$img")" || die "could not attach $img"
+  echo "Attached $img as $LOOP_DEV ($mode)" >&2
+  DISK="$LOOP_DEV"
+}
+
+# Sets DISK from the argument, else $VENTOY_DISK. Symlinks such as /dev/disk/by-id/... resolve to
+# the real device; a disk image file is attached to a loop device ("ro" or "rw", default rw).
+resolve_disk() {
+  DISK="${1:-${VENTOY_DISK:-}}"
+  [[ -z "$DISK" || ! -L "$DISK" ]] || DISK="$(readlink -f "$DISK")"
+  [[ ! -f "$DISK" ]] || attach_image "$(readlink -f "$DISK")" "${2:-rw}"
+}
+
+# Whole disk: a real disk or an attached image
+is_whole_disk() {
+  local type
+  type="$(lsblk -dno TYPE "$1")"
+  [[ "$type" == disk || "$type" == loop ]]
 }
 
 # Run Ventoy2Disk.sh from its own directory, as it expects
 ventoy2disk() {
-  [[ -f "$VENTOY_HOME/Ventoy2Disk.sh" ]] || die "Ventoy not found in $VENTOY_HOME (reinstall with: ppm install ventoy)"
+  [[ -f "$VENTOY_HOME/Ventoy2Disk.sh" ]] || anfs_fail "$EX_UNAVAIL" "Ventoy not found in $VENTOY_HOME (reinstall with: ppm install ventoy)"
   (cd "$VENTOY_HOME" && sudo sh ./Ventoy2Disk.sh "$@")
 }
 
 # Whole, unmounted disk only
 check_disk() {
   local disk="$1"
-  [[ -b "$disk" ]] || die "$disk is not a block device (list disks with: ventoy list)"
-  [[ "$(lsblk -dno TYPE "$disk")" == "disk" ]] || die "$disk is a partition; pass the whole disk (e.g. /dev/sdb, not /dev/sdb1)"
+  [[ -b "$disk" ]] || die "$disk is not a block device (list disks with: ventoy disks)"
+  is_whole_disk "$disk" || die "$disk is a partition; pass the whole disk (e.g. /dev/sdb, not /dev/sdb1)"
   if lsblk -nro MOUNTPOINT "$disk" | grep -q .; then
     lsblk -o NAME,SIZE,MOUNTPOINT "$disk" >&2
     die "$disk has mounted partitions; unmount them first"
   fi
 }
 
+# Stronger than a y/N, and deliberately without a -y: the device (or image) path has to be typed
 confirm_erase() {
   local disk="$1" answer
+  if [[ -n "$IMAGE" ]]; then
+    ls -lh "$IMAGE"
+    read -r -p "ALL DATA in $IMAGE will be erased. Type the image path to continue: " answer
+    [[ -n "$answer" && "$(readlink -f "$answer")" == "$IMAGE" ]] || die "nothing done"
+    return
+  fi
   lsblk -o NAME,SIZE,TYPE,TRAN,MODEL "$disk"
-  [[ "$(lsblk -dno TRAN "$disk" | tr -d ' ')" == "usb" ]] || echo "WARNING: $disk is not a USB device" >&2
+  [[ "$(lsblk -dno TRAN "$disk" | tr -d ' ')" == "usb" ]] || warn "$disk is not a USB device"
   read -r -p "ALL DATA on $disk will be erased. Type the device path to continue: " answer
-  [[ "$answer" == "$disk" ]] || die "aborted"
+  [[ "$answer" == "$disk" ]] || die "nothing done"
 }
 
-# Sets STICK_DIR to the stick's ISO directory. A directory is used as-is; a disk or partition
-# (Linux) has Ventoy's data partition mounted ("ro" or "rw") and unmounted again on exit.
+# Sets STICK_DIR to the stick's ISO directory. A directory is used as-is; a disk, partition or
+# disk image (Linux) has Ventoy's data partition mounted ("ro" or "rw") and unmounted again on exit.
 open_stick() {
-  local target="$1" mode="$2"
+  local target mode="$2"
+  resolve_disk "$1" "$mode"
+  target="$DISK"
 
   if [[ -z "$target" ]]; then
-    is_linux && die "no disk given (pass one, or set VENTOY_DISK)"
+    is_linux && cli_usage_err "no disk given (pass one, or set VENTOY_DISK)"
     target="/Volumes/Ventoy"
   fi
 
@@ -106,10 +203,10 @@ open_stick() {
     STICK_DIR="$target"
     return
   fi
-  is_linux && [[ -b "$target" ]] || die "$target is not a directory or block device"
+  is_linux && [[ -b "$target" ]] || die "$target is not a directory, block device or disk image"
 
   local part="$target"
-  if [[ "$(lsblk -dno TYPE "$target")" == "disk" ]]; then
+  if is_whole_disk "$target"; then
     # Ventoy's ISO (exFAT) partition is the first one
     part="$(lsblk -lnpo NAME,TYPE "$target" | awk '$2 == "part" { print $1; exit }')"
     [[ -n "$part" ]] || die "$target has no partitions; run: ventoy prepare $target"
@@ -120,58 +217,92 @@ open_stick() {
   echo "Mounting $part on $STICK_DIR ($mode)" >&2
   sudo mount -o "$mode,uid=$(id -u),gid=$(id -g)" "$part" "$STICK_DIR" \
     || die "could not mount $part; if it is already mounted, pass its mount directory instead"
-  trap "sync; sudo umount '$STICK_DIR' && echo 'Unmounted $part' >&2" EXIT
+  MOUNTED_PART="$part"
 }
 
 cmd_prepare() {
   require_linux prepare
-  local disk="" mode="-i"
+  local target="" mode="-i" size="${CLI_OPT[size]:-}" new_image=false
   local opts=()
+  ! ${CLI_OPT[force]:-false} || mode="-I"
+  # What is not ours goes on to Ventoy2Disk.sh, where it was typed
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -f|--force) mode="-I" ;;
-      -r|-L) opts+=("$1" "${2:?$1 needs a value}"); shift ;;
+      --) ;;
+      -r|-L)
+        [[ $# -ge 2 ]] || cli_usage_err "$1 needs a value"
+        opts+=("$1" "$2")
+        shift
+        ;;
       -*) opts+=("$1") ;;
-      *) disk="$1" ;;
+      *) target="$1" ;;
     esac
     shift
   done
-  disk="$(disk_arg "$disk")"
-  [[ -n "$disk" ]] || die "usage: ventoy prepare <disk> [-f] [opts] (or set VENTOY_DISK)"
+  target="${target:-${VENTOY_DISK:-}}"
+  [[ -n "$target" ]] || cli_usage_err "no disk or image given (pass one, or set VENTOY_DISK)"
 
-  check_disk "$disk"
-  confirm_erase "$disk"
+  # A path that does not exist yet becomes a new (sparse) disk image
+  if [[ ! -e "$target" ]]; then
+    [[ "$target" != /dev/* ]] || die "$target not found (list disks with: ventoy disks)"
+    truncate -s "${size:-$VENTOY_IMAGE_SIZE}" "$target" || die "could not create image $target"
+    anfs_info "Created image $target (${size:-$VENTOY_IMAGE_SIZE}, sparse)"
+    new_image=true
+  elif [[ -n "$size" ]]; then
+    cli_usage_err "--size only sizes a new image; $target exists (delete it to recreate it with another size)"
+  fi
+
+  resolve_disk "$target" rw
+  check_disk "$DISK"
+  $new_image || confirm_erase "$DISK"
   # Ventoy2Disk.sh asks "Continue?" twice; the typed confirmation above covers both
-  printf 'y\ny\n' | ventoy2disk "$mode" "${opts[@]}" "$disk"
+  if ! printf 'y\ny\n' | ventoy2disk "$mode" "${opts[@]}" "$DISK"; then
+    ! $new_image || rm -f "$target"
+    die "Ventoy2Disk.sh failed on $DISK"
+  fi
 }
 
 cmd_update() {
   require_linux update
-  local disk
-  disk="$(disk_arg "${1:-}")"
-  [[ -n "$disk" ]] || die "usage: ventoy update <disk> (or set VENTOY_DISK)"
-  check_disk "$disk"
-  printf 'y\n' | ventoy2disk -u "$disk"
+  resolve_disk "${1:-}" rw
+  [[ -n "$DISK" ]] || cli_usage_err "no disk or image given (pass one, or set VENTOY_DISK)"
+  check_disk "$DISK"
+  printf 'y\n' | ventoy2disk -u "$DISK"
 }
 
 cmd_status() {
   require_linux status
-  local disk
-  disk="$(disk_arg "${1:-}")"
-  [[ -n "$disk" ]] || die "usage: ventoy status <disk> (or set VENTOY_DISK)"
-  [[ -b "$disk" ]] || die "$disk is not a block device"
-  ventoy2disk -l "$disk"
+  resolve_disk "${1:-}" ro
+  [[ -n "$DISK" ]] || cli_usage_err "no disk or image given (pass one, or set VENTOY_DISK)"
+  [[ -b "$DISK" ]] || die "$DISK is not a block device or disk image"
+  ventoy2disk -l "$DISK"
 }
 
-cmd_list() {
+# Rows of USB disks: device, size, usb id, bus:addr, mount points, name
+usb_disks() {
+  local line disk size mounts name words
   if is_linux; then
-    lsblk -dp -o NAME,SIZE,TRAN,VENDOR,MODEL | awk 'NR == 1 || $3 == "usb"'
+    while IFS= read -r line; do
+      [[ "$line" =~ ^NAME=\"(.*)\"\ SIZE=\"(.*)\"\ TRAN=\"(.*)\"\ VENDOR=\"(.*)\"\ MODEL=\"(.*)\"$ ]] || continue
+      [[ "${BASH_REMATCH[3]}" == usb ]] || continue
+      disk="${BASH_REMATCH[1]}" size="${BASH_REMATCH[2]}"
+      # lsblk pads the vendor: fold the spaces
+      read -ra words <<< "${BASH_REMATCH[4]} ${BASH_REMATCH[5]}" || true
+      name="${words[*]}"
+      mounts="$(lsblk -nro MOUNTPOINT "$disk" | awk 'NF { printf "%s%s", sep, $0; sep = "," }')"
+      anfs_row "$disk" "$size" "" "" "$mounts" "$name"
+    done < <(lsblk -dpn -P -o NAME,SIZE,TRAN,VENDOR,MODEL)
     return
   fi
 
   # ioreg links each USB device to its disk (BSD name); partitions (diskNsM) are skipped
-  local usb
-  usb="$(ioreg -r -c IOUSBHostDevice -l -w0 | awk '
+  local id busaddr
+  while read -r disk id busaddr name; do
+    [[ -n "$disk" ]] || continue
+    size="$(diskutil info "$disk" | awk -F': *' '/Disk Size/ { sub(/ \(.*/, "", $2); print $2; exit }')"
+    mounts="$(mount | awk -v d="/dev/${disk}s" 'index($1, d) == 1 { printf "%s%s", sep, $3; sep = "," }')"
+    anfs_row "/dev/$disk" "$size" "$id" "$busaddr" "$mounts" "$name"
+  done < <(ioreg -r -c IOUSBHostDevice -l -w0 | awk '
     /"USB Product Name" = / { sub(/.*= "/, ""); sub(/"$/, ""); name = $0 }
     /"idVendor" = /         { vid = $NF }
     /"idProduct" = /        { pid = $NF }
@@ -180,16 +311,15 @@ cmd_list() {
     /"BSD Name" = "disk[0-9]+"/ {
       sub(/.*= "/, ""); sub(/"$/, "")
       printf "%s %04x:%04x %d:%d %s\n", $0, vid, pid, bus, addr, name
-    }')"
-  [[ -n "$usb" ]] || { echo "No USB disks found"; return; }
+    }')
+}
 
-  local disk id busaddr name size mounts
-  printf "%-12s %-10s %-10s %-8s %-24s %s\n" DEVICE SIZE USB-ID BUS:ADDR MOUNTED NAME
-  while read -r disk id busaddr name; do
-    size="$(diskutil info "$disk" | awk -F': *' '/Disk Size/ { sub(/ \(.*/, "", $2); print $2; exit }')"
-    mounts="$(mount | awk -v d="/dev/${disk}s" 'index($1, d) == 1 { printf "%s%s", sep, $3; sep = "," }')"
-    printf "%-12s %-10s %-10s %-8s %-24s %s\n" "/dev/$disk" "$size" "$id" "$busaddr" "${mounts:--}" "$name"
-  done <<< "$usb"
+cmd_disks() {
+  local rows
+  rows="$(usb_disks)"
+  [[ -z "$rows" ]] || rows+=$'\n'
+  printf '%s' "$rows" | anfs_table "DEVICE SIZE USB-ID BUS:ADDR MOUNTED NAME" "device size usb_id bus_addr mounted name"
+  [[ -n "$rows" ]] || anfs_json_on || warn "no USB disks found"
 }
 
 file_size() {
@@ -220,7 +350,8 @@ stick_iso_status() {
 
 # True when a local ISO is missing from the stick's top level or has a different size there
 needs_copy() {
-  local iso="$1" dest="$STICK_DIR/$(basename "$1")"
+  local iso="$1" dest
+  dest="$STICK_DIR/$(basename "$1")"
   [[ ! -f "$dest" || "$(file_size "$dest")" != "$(file_size "$iso")" ]]
 }
 
@@ -238,16 +369,13 @@ remove_iso() {
   rm -f "$STICK_DIR/$(dirname "$rel")/._$(basename "$rel")"
 }
 
-cmd_ls() {
-  open_stick "$(disk_arg "${1:-}")" ro
+cmd_list() {
+  open_stick "${1:-}" ro
 
-  local rel iso name found=0
-  printf "%-6s %-14s %s\n" SIZE STATUS ISO
-
+  local rel iso name rows=""
   while IFS= read -r -d '' iso; do
-    found=1
     rel="${iso#"$STICK_DIR"/}"
-    printf "%-6s %-14s %s\n" "$(human_size "$iso")" "$(stick_iso_status "$rel")" "$rel"
+    rows+="$(anfs_row "$(human_size "$iso")" "$(stick_iso_status "$rel")" "$rel")"$'\n'
   done < <(stick_isos)
 
   # ISOs `ventoy copy` would still add
@@ -255,11 +383,11 @@ cmd_ls() {
   for iso in "$VENTOY_ISO_DIR"/*.iso; do
     name="$(basename "$iso")"
     [[ -f "$STICK_DIR/$name" ]] && continue
-    found=1
-    printf "%-6s %-14s %s\n" "$(human_size "$iso")" "not copied" "$name"
+    rows+="$(anfs_row "$(human_size "$iso")" "not copied" "$name")"$'\n'
   done
 
-  [[ "$found" -eq 1 ]] || echo "(no ISOs on the stick or in $VENTOY_ISO_DIR)"
+  printf '%s' "$rows" | anfs_table "SIZE STATUS ISO" "size status iso"
+  [[ -n "$rows" ]] || anfs_json_on || warn "no ISOs on the stick or in $VENTOY_ISO_DIR"
 }
 
 cmd_copy() {
@@ -268,52 +396,42 @@ cmd_copy() {
   local isos=("$VENTOY_ISO_DIR"/*.iso)
   [[ ${#isos[@]} -gt 0 ]] || die "no ISOs in $VENTOY_ISO_DIR"
 
-  open_stick "$(disk_arg "${1:-}")" rw
+  open_stick "${1:-}" rw
 
   local iso name copied=0 skipped=0
   for iso in "${isos[@]}"; do
     name="$(basename "$iso")"
     if ! needs_copy "$iso"; then
-      echo "Skipping $name (already on the stick)"
+      anfs_info "Skipping $name (already on the stick)"
       skipped=$((skipped + 1))
       continue
     fi
-    echo "Copying $name"
+    anfs_info "Copying $name"
     copy_iso "$iso"
     copied=$((copied + 1))
   done
 
   sync
-  echo "Done: $copied copied, $skipped skipped"
+  anfs_info "Done: $copied copied, $skipped skipped"
 }
 
-cmd_rm() {
-  local target="" names=() name
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      -t|--target) target="${2:?$1 needs a value}"; shift ;;
-      -*) die "unknown option $1" ;;
-      *) names+=("$1") ;;
-    esac
-    shift
-  done
-  [[ ${#names[@]} -gt 0 ]] || die "usage: ventoy rm <iso>... [-t target] (paths as shown by: ventoy ls)"
+cmd_remove() {
+  local name missing=0
 
   # Validate every name before touching the stick
-  for name in "${names[@]}"; do
-    [[ "$name" != /* && "/$name/" != */../* ]] || die "'$name': use a path relative to the stick, as shown by: ventoy ls"
-    [[ "$(echo "$name" | tr '[:upper:]' '[:lower:]')" == *.iso ]] || die "'$name' is not an .iso file"
+  for name in "$@"; do
+    [[ "$name" != /* && "/$name/" != */../* ]] || die "'$name': use a path relative to the stick, as shown by: ventoy list"
+    [[ "${name,,}" == *.iso ]] || die "'$name' is not an .iso file"
   done
 
-  open_stick "$(disk_arg "$target")" rw
+  open_stick "${CLI_OPT[target]:-}" rw
 
-  local missing=0
-  for name in "${names[@]}"; do
+  for name in "$@"; do
     if [[ -f "$STICK_DIR/$name" ]]; then
       remove_iso "$name"
-      echo "Removed $name"
+      anfs_info "Removed $name"
     else
-      echo "Not on the stick: $name" >&2
+      warn "not on the stick: $name"
       missing=1
     fi
   done
@@ -323,24 +441,15 @@ cmd_rm() {
 }
 
 cmd_sync() {
-  local target="" dry_run=0 yes=0
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      -n|--dry-run) dry_run=1 ;;
-      -y|--yes) yes=1 ;;
-      -*) die "unknown option $1" ;;
-      *) target="$1" ;;
-    esac
-    shift
-  done
+  local target="${1:-}" dry_run="${CLI_OPT[dry-run]:-false}"
 
   # A missing dir (e.g. a broken symlink) must not be mistaken for "remove everything"
   [[ -d "$VENTOY_ISO_DIR" ]] || die "ISO dir $VENTOY_ISO_DIR not found; refusing to sync (it would remove every ISO)"
 
-  if [[ "$dry_run" -eq 1 ]]; then
-    open_stick "$(disk_arg "$target")" ro
+  if $dry_run; then
+    open_stick "$target" ro
   else
-    open_stick "$(disk_arg "$target")" rw
+    open_stick "$target" rw
   fi
 
   local removes=() copies=() iso rel
@@ -355,95 +464,45 @@ cmd_sync() {
   done
 
   if [[ ${#removes[@]} -eq 0 && ${#copies[@]} -eq 0 ]]; then
-    echo "Stick already matches $VENTOY_ISO_DIR"
+    anfs_info "Stick already matches $VENTOY_ISO_DIR"
     return
   fi
 
-  # ${arr[@]+"${arr[@]}"}: empty arrays are an unbound-variable error under set -u in bash 3.2
-  for rel in ${removes[@]+"${removes[@]}"}; do
+  for rel in "${removes[@]}"; do
     printf "  remove  %-6s %s\n" "$(human_size "$STICK_DIR/$rel")" "$rel"
   done
-  for iso in ${copies[@]+"${copies[@]}"}; do
+  for iso in "${copies[@]}"; do
     printf "  copy    %-6s %s\n" "$(human_size "$iso")" "$(basename "$iso")"
   done
 
-  [[ "$dry_run" -eq 0 ]] || return 0
-
-  if [[ "$yes" -eq 0 ]]; then
-    local answer
-    read -r -p "Apply? [y/N] " answer
-    [[ "$answer" == [yY] ]] || die "aborted"
-  fi
+  ! $dry_run || return 0
+  anfs_confirm "this removes ${#removes[@]} and copies ${#copies[@]} ISOs on the stick" "Apply?"
 
   # Remove first to free space for the copies
-  for rel in ${removes[@]+"${removes[@]}"}; do
+  for rel in "${removes[@]}"; do
     remove_iso "$rel"
-    echo "Removed $rel"
+    anfs_info "Removed $rel"
   done
-  for iso in ${copies[@]+"${copies[@]}"}; do
-    echo "Copying $(basename "$iso")"
+  for iso in "${copies[@]}"; do
+    anfs_info "Copying $(basename "$iso")"
     copy_iso "$iso"
   done
 
   sync
-  echo "Done: ${#removes[@]} removed, ${#copies[@]} copied"
+  anfs_info "Done: ${#removes[@]} removed, ${#copies[@]} copied"
 }
 
-# --- get: download ISOs from VENTOY_ISO_LIST (same YAML format as pim's data/isos.yml) ---
+# --- isos, get: the catalogue, the store and the downloader are anfs's (lib/anfs/iso.sh) ---
+# The store ($ANFS_ISO_HOME) is every tool's. What goes on a stick is what VENTOY_ISO_DIR holds:
+# `get` links an ISO from the store into it, and a file put there by hand counts just the same.
 
 require_iso_list() {
-  command -v yq >/dev/null && yq --version 2>&1 | grep -q mikefarah \
-    || die "'get' needs yq (https://github.com/mikefarah/yq), which ppm installs"
-  [[ -f "$VENTOY_ISO_LIST" ]] || die "ISO list $VENTOY_ISO_LIST not found (reinstall with: ppm install ventoy)"
+  anfs_require yq "https://github.com/mikefarah/yq, which ppm installs"
+  yq --version 2>&1 | grep -q mikefarah || anfs_fail "$EX_UNAVAIL" "yq is not mikefarah's (https://github.com/mikefarah/yq), which ppm installs"
+  [[ -n "$(anfs_iso_catalogs)" ]] || die "no ISO catalogue: isos/isos.yml in a source (stack ships one), or $(anfs_display "$ANFS_ISO_LOCAL_CATALOG")"
 }
 
-# A field of the entry with this id, or "" when unset
-iso_field() {
-  ID="$1" yq -r ".[] | select(.id == strenv(ID)) | .$2 // \"\"" "$VENTOY_ISO_LIST"
-}
-
-# File name in VENTOY_ISO_DIR; defaults to <id>.iso like pim
-iso_filename() {
-  local filename
-  filename="$(iso_field "$1" filename)"
-  echo "${filename:-$1.iso}"
-}
-
-sha256_file() {
-  if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | awk '{ print $1 }'
-}
-
-# Expected sha256 for an entry: `checksum` (optionally "sha256:"-prefixed), else the line for
-# its file name in `checksum_url`: "hash  file", "hash *file", BSD "SHA256 (file) = hash",
-# or a file that holds only the hash. Prints nothing when the entry has neither.
-expected_sha256() {
-  local id="$1" filename="$2" checksum url body
-  checksum="$(iso_field "$id" checksum)"
-  if [[ -n "$checksum" ]]; then
-    echo "${checksum#sha256:}" | tr '[:upper:]' '[:lower:]'
-    return
-  fi
-
-  url="$(iso_field "$id" checksum_url)"
-  [[ -n "$url" ]] || return 0
-  body="$(curl -fsSL "$url")" || die "$id: could not fetch checksums from $url"
-
-  printf '%s\n' "$body" | tr -d '\r' | awk -v file="$filename" '
-    function is_hash(s) { return length(s) == 64 && s !~ /[^0-9a-fA-F]/ }
-    is_hash($1) {
-      hashes++
-      name = $2; sub(/^\*/, "", name)
-      if (name == file) { print tolower($1); found = 1; exit }
-      if (NF == 1) bare = $1
-    }
-    index($0, "SHA256 (") == 1 {
-      rest = substr($0, 9); p = index(rest, ") = ")
-      if (p && substr(rest, 1, p - 1) == file) { print tolower(substr(rest, p + 4)); found = 1; exit }
-    }
-    END { if (!found && hashes == 1 && bare != "") print tolower(bare) }'
-}
-
-# Tab-separated "id  file" records of what `get` downloaded, so a newer version can replace it
+# Tab-separated "id  file" records of what `get` selected, so a newer version can replace it
 GET_STATE_NAME=".ventoy-get"
 
 state_filename() {
@@ -461,126 +520,79 @@ record_state() {
   mv "$state.tmp" "$state"
 }
 
+# Usage: get_one <id> <force: true|false> <keep: true|false>
 get_one() {
-  local id="$1" force="$2" keep="$3"
-  local url filename dest previous expected actual code
-
-  url="$(iso_field "$id" url)"
-  [[ -n "$url" ]] || die "$id: no url in $VENTOY_ISO_LIST"
-  filename="$(iso_filename "$id")"
-  dest="$VENTOY_ISO_DIR/$filename"
+  local id="$1" force="$2" keep="$3" file filename previous
+  local -a args=()
+  ! $force || args+=(--force)
+  file=$(anfs_iso_fetch_id "${args[@]}" "$id") || die "$id: could not be downloaded and verified"
+  filename=$(basename "$file")
   previous="$(state_filename "$id")"
 
-  if [[ -f "$dest" && "$force" -eq 0 ]]; then
-    echo "$id: already have $filename (--force to download again)"
+  mkdir -p "$VENTOY_ISO_DIR"
+  if [[ -e "$VENTOY_ISO_DIR/$filename" && ! -L "$VENTOY_ISO_DIR/$filename" ]]; then
+    say "$id: $filename is a file of its own in $(anfs_display "$VENTOY_ISO_DIR"); left as it is"
   else
-    expected="$(expected_sha256 "$id" "$filename")"
-    [[ "$force" -eq 1 ]] && rm -f "$dest.part"
-
-    echo "$id: downloading $filename"
-    # -C -: resume an interrupted download from the .part file
-    if ! code="$(curl -fL --retry 3 -C - -# -o "$dest.part" -w '%{http_code}' "$url")"; then
-      case "$code" in
-        416)
-          # The .part is already complete; its checksum decides below
-          [[ -n "$expected" ]] || die "$id: $filename.part looks complete but has no checksum to verify it; delete it and retry"
-          ;;
-        200|206)
-          # The server can't resume: start over
-          rm -f "$dest.part"
-          code="$(curl -fL --retry 3 -# -o "$dest.part" -w '%{http_code}' "$url")" \
-            || die "$id: download failed (HTTP ${code:-none}) from $url"
-          ;;
-        404) die "$id: $url not found (HTTP 404); update the url in $VENTOY_ISO_LIST" ;;
-        *) die "$id: download failed (HTTP ${code:-none}) from $url" ;;
-      esac
-    fi
-
-    if [[ -n "$expected" ]]; then
-      actual="$(sha256_file "$dest.part")"
-      if [[ "$actual" != "$expected" ]]; then
-        rm -f "$dest.part"
-        die "$id: checksum mismatch for $filename (expected $expected, got $actual)"
-      fi
-      echo "$id: checksum OK"
-    else
-      echo "$id: WARNING: no checksum or checksum_url in $VENTOY_ISO_LIST; not verified" >&2
-    fi
-
-    mv "$dest.part" "$dest"
-    record_state "$id" "$filename"
+    ln -sfn "$file" "$VENTOY_ISO_DIR/$filename"
+    say "$id: $filename ($(human_size "$file"))"
   fi
+  record_state "$id" "$filename"
 
-  # Replace the older file `get` downloaded for this id
-  if [[ -n "$previous" && "$previous" != "$filename" && -f "$VENTOY_ISO_DIR/$previous" ]]; then
-    if [[ "$keep" -eq 1 ]]; then
-      echo "$id: keeping older $previous (--keep)"
+  # Replace the older version `get` selected for this id. Its file stays in the store.
+  if [[ -n "$previous" && "$previous" != "$filename" && -e "$VENTOY_ISO_DIR/$previous" ]]; then
+    if $keep; then
+      say "$id: keeping older $previous (--keep)"
     else
       rm -f "$VENTOY_ISO_DIR/$previous"
-      echo "$id: removed older $previous"
+      say "$id: removed older $previous"
     fi
   fi
+  anfs_result id "$id" file "$file"
+}
+
+cmd_isos() {
+  require_iso_list
+  local id file status rows=""
+  while IFS= read -r id; do
+    [[ -n "$id" ]] || continue
+    file="$(anfs_iso_file "$id")"
+    if [[ -e "$VENTOY_ISO_DIR/$(basename "$file")" ]]; then status=selected
+    elif [[ -f "$file" ]]; then status=downloaded
+    else status=missing
+    fi
+    rows+="$(anfs_row "$id" "$status" "$(anfs_iso_get "$id" architecture)" "$(basename "$file")")"$'\n'
+  done < <(anfs_iso_ids)
+  printf '%s' "$rows" | anfs_table "ID STATUS ARCH FILE" "id status arch file"
 }
 
 cmd_get() {
   require_iso_list
-  local force=0 keep=0 all=0 ids=() id known
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      -f|--force) force=1 ;;
-      -k|--keep) keep=1 ;;
-      -a|--all) all=1 ;;
-      -*) die "unknown option $1" ;;
-      *) ids+=("$1") ;;
-    esac
-    shift
-  done
+  local force="${CLI_OPT[force]:-false}" keep="${CLI_OPT[keep]:-false}"
+  local ids=("$@") id known
+  local -a failed=()
 
-  known="$(yq -r '.[].id' "$VENTOY_ISO_LIST")"
-
-  if [[ "$all" -eq 1 ]]; then
-    ids=()
-    while IFS= read -r id; do [[ -n "$id" ]] && ids+=("$id"); done <<< "$known"
+  known="$(anfs_iso_ids)"
+  if ${CLI_OPT[all]:-false}; then
+    mapfile -t ids < <(printf '%s\n' "$known" | grep .)
   fi
-
-  if [[ ${#ids[@]} -eq 0 ]]; then
-    local filename
-    printf "%-10s %-11s %s\n" ID STATUS FILE
-    while IFS= read -r id; do
-      [[ -n "$id" ]] || continue
-      filename="$(iso_filename "$id")"
-      if [[ -f "$VENTOY_ISO_DIR/$filename" ]]; then
-        printf "%-10s %-11s %s\n" "$id" "downloaded" "$filename"
-      else
-        printf "%-10s %-11s %s\n" "$id" "missing" "$filename"
-      fi
-    done <<< "$known"
-    echo
-    echo "From $VENTOY_ISO_LIST; download with: ventoy get <id>... (or --all)"
-    return
-  fi
+  [[ ${#ids[@]} -gt 0 ]] || cli_usage_err "give an id, or --all (list them with: ventoy isos)"
 
   # Check every id before downloading anything
   for id in "${ids[@]}"; do
-    printf '%s\n' "$known" | grep -qxF -- "$id" || die "unknown ISO '$id' (list them with: ventoy get)"
+    grep -qxF -- "$id" <<< "$known" || die "unknown ISO '$id' (list them with: ventoy isos)"
   done
 
-  mkdir -p "$VENTOY_ISO_DIR" || die "cannot create ISO dir $VENTOY_ISO_DIR"
-
-  if [[ ${#ids[@]} -eq 1 ]]; then
-    get_one "${ids[0]}" "$force" "$keep"
-    return
-  fi
-
-  # Several ids: one child process each, so a stale URL doesn't stop the rest
-  local flags=() failed=()
-  [[ "$force" -eq 1 ]] && flags+=(--force)
-  [[ "$keep" -eq 1 ]] && flags+=(--keep)
   for id in "${ids[@]}"; do
-    "$BASH" "$0" get "$id" ${flags[@]+"${flags[@]}"} || failed+=("$id")
+    ( get_one "$id" "$force" "$keep" ) || failed+=("$id")
   done
-
   [[ ${#failed[@]} -eq 0 ]] || die "failed: ${failed[*]}"
+}
+
+cmd_path() {
+  [[ -n "${VENTOY_DISK:-}" ]] || die "VENTOY_DISK is not set: it names the default disk or disk image"
+  local disk="$VENTOY_DISK"
+  [[ ! -L "$disk" ]] || disk="$(readlink -f "$disk")"
+  echo "$disk"
 }
 
 cmd_info() {
@@ -593,7 +605,9 @@ cmd_info() {
     echo "Version:     not installed (prepare/update/status need Linux)"
   fi
 
-  if [[ -n "${VENTOY_DISK:-}" ]]; then
+  if [[ -f "${VENTOY_DISK:-}" ]]; then
+    echo "Disk:        $VENTOY_DISK (image: $(human_size "$VENTOY_DISK"), $(du -h "$VENTOY_DISK" | cut -f1) allocated)"
+  elif [[ -n "${VENTOY_DISK:-}" ]]; then
     echo "Disk:        $VENTOY_DISK$([[ -L "$VENTOY_DISK" ]] && echo " -> $(readlink -f "$VENTOY_DISK")")"
   else
     echo "Disk:        (VENTOY_DISK not set)"
@@ -604,7 +618,8 @@ cmd_info() {
   else
     echo "ISO dir:     $VENTOY_ISO_DIR"
   fi
-  echo "ISO list:    $VENTOY_ISO_LIST"
+  echo "ISO store:   $ANFS_ISO_HOME"
+  echo "Catalogue:   $(anfs_iso_catalogs | paste -sd" " -)"
 
   shopt -s nullglob
   local isos=("$VENTOY_ISO_DIR"/*.iso)
@@ -616,17 +631,12 @@ cmd_info() {
   fi
 }
 
-case "${1:-}" in
-  list)    cmd_list ;;
-  prepare) shift; cmd_prepare "$@" ;;
-  update)  shift; cmd_update "$@" ;;
-  status)  shift; cmd_status "$@" ;;
-  ls)      shift; cmd_ls "$@" ;;
-  copy)    shift; cmd_copy "$@" ;;
-  rm)      shift; cmd_rm "$@" ;;
-  sync)    shift; cmd_sync "$@" ;;
-  get)     shift; cmd_get "$@" ;;
-  info)    cmd_info ;;
-  help|-h|--help|"") usage ;;
-  *) echo "ventoy: unknown command '$1'" >&2; usage >&2; exit 1 ;;
-esac
+# What cli.sh asks for on a tab press (complete_<kind>): one candidate per line, quickly. No yq.
+complete_id() {
+  local f
+  for f in "$ANFS_ISO_LOCAL_CATALOG" "$ANFS_SOURCES_HOME"/*/isos/isos.yml; do
+    [[ ! -f "$f" ]] || sed -n 's/^- id: *//p' "$f"
+  done | LC_ALL=C sort -u
+}
+
+cli_dispatch "$@"

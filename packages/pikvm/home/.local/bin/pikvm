@@ -1,0 +1,356 @@
+#!/usr/bin/env bash
+# pikvm — run maintenance commands on a PiKVM over ssh
+#
+# Every invocation opens one multiplexed ssh connection (ControlMaster) that all remote calls,
+# ssh-copy-id included, reuse: a password is asked for at most once. The root filesystem is kept
+# read-only by PiKVM OS; with_rw switches it to rw for a command and restores the previous mode
+# from the EXIT trap, so it is restored on failure and Ctrl-C too.
+set -euo pipefail
+
+# Messages, the log and the command line come from anfs
+ANFS_LIB="$HOME/.local/lib/anfs"
+if [[ ! -f "$ANFS_LIB/bash.sh" || ! -f "$ANFS_LIB/table.sh" ]]; then
+  echo "pikvm: $ANFS_LIB is missing or out of date; install core/anfs again" >&2
+  exit 69
+fi
+# The bash floor, first: re-execs under bash 5 when this is macOS's 3.2
+# shellcheck source=/dev/null
+source "$ANFS_LIB/bash.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/paths.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/log.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/cli.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/table.sh"
+
+: "${PIKVM_HOST:=root@pikvm}"
+: "${PIKVM_SSH_OPTS:=}"
+: "${PIKVM_MSD_IMAGE:=ventoy/ventoy.img}"
+
+CLI_TOOL=pikvm
+
+_host=(--opt "-H --host HOST: The PiKVM, an ssh alias or user@host (default: \$PIKVM_HOST, else root@pikvm)")
+
+cli_cmd status "Hostname and root filesystem mode" "${_host[@]}"
+cli_cmd run "Run a command on the PiKVM. Put -- before a command that has options of its own:
+pikvm run -w -- pacman -Syu" \
+  --opt "-w --rw: Read/write root filesystem for the command; read-only again after, if it was before" \
+  "${_host[@]}" --passthrough --arg "word..."
+cli_cmd rw "Switch the root filesystem to read/write (and leave it there)" "${_host[@]}"
+cli_cmd ro "Switch the root filesystem to read-only" "${_host[@]}"
+cli_cmd copy-id "Install public keys into the PiKVM's authorized_keys with ssh-copy-id (default:
+the keys in ssh-agent). Always wrapped in rw/ro" \
+  --opt "-i --identity FILE: Install this key file instead of the agent's keys" \
+  --opt "-f --force: Install even if the key appears to be present already" "${_host[@]}"
+cli_group msd "Mass storage drive: the image the PiKVM presents to its host as USB"
+cli_cmd "msd status" "Selected image, and whether it is connected, a cdrom, read/write" "${_host[@]}"
+cli_cmd "msd list" "The images kvmd can see: SIZE IMAGE" --alias ls "${_host[@]}"
+cli_cmd "msd connect" "Present an image as a read-only USB flash drive (not a CD-ROM, so
+partitioned disk images such as a Ventoy image boot)" "${_host[@]}" --arg "[image]"
+cli_cmd "msd disconnect" "Unplug the drive from the host" "${_host[@]}"
+cli_cmd "msd with" "Disconnect, run a LOCAL command, reconnect (if it was connected), even when
+the command fails: pikvm msd with -- ventoy sync -y" "${_host[@]}" --passthrough --arg "word..."
+cli_standard
+
+cli_help_epilogue() {
+  cat <<'EOF'
+msd talks to kvmd over its unix socket as root: kvmd's auth.usc.users must include root
+(e.g. /etc/kvmd/override.d/50-usc-root.yaml), so no web UI password is needed.
+
+Environment:
+  PIKVM_HOST       Default target (root@pikvm)
+  PIKVM_SSH_OPTS   Extra ssh options, e.g. "-p 2222 -o StrictHostKeyChecking=accept-new"
+  PIKVM_MSD_IMAGE  Image for msd connect (default ventoy/ventoy.img: <storage dir>/<file>)
+EOF
+}
+
+die()  { anfs_die "$@"; }
+warn() { anfs_warn "$@"; }
+# What a command did, for a person; --json gets anfs_result instead
+say()  { anfs_json_on || anfs_info "$@"; }
+
+# --- ssh connection ----------------------------------------------------------------------------
+
+CTL_DIR=""
+CTL=""
+RESTORE_RO=0
+SSH_OPTS=()
+# Image to reconnect from the EXIT trap when `msd with` is interrupted
+MSD_RECONNECT=""
+
+cleanup() {
+  local rc=$?
+  if [[ -n "$MSD_RECONNECT" ]]; then
+    local image="$MSD_RECONNECT"
+    MSD_RECONNECT=""
+    ( msd_connect "$image" ) ||
+      warn "WARNING: failed to reconnect $image; run: pikvm msd connect $image"
+  fi
+  if [[ "$RESTORE_RO" == 1 ]]; then
+    RESTORE_RO=0
+    if ! remote ro; then
+      warn "WARNING: failed to switch $PIKVM_HOST back to read-only; run: pikvm ro"
+      [[ "$rc" != 0 ]] || rc=1
+    fi
+  fi
+  if [[ -n "$CTL" ]]; then
+    ssh -o ControlPath="$CTL" -O exit "$PIKVM_HOST" 2>/dev/null || true
+  fi
+  [[ -z "$CTL_DIR" ]] || rm -rf "$CTL_DIR"
+  exit "$rc"
+}
+
+ssh_open() {
+  anfs_require ssh
+  [[ -z "$PIKVM_SSH_OPTS" ]] || read -r -a SSH_OPTS <<<"$PIKVM_SSH_OPTS"
+  CTL_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pikvm.XXXXXX")
+  trap cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  anfs_debug "connecting to $PIKVM_HOST"
+  # -f backgrounds only after authentication, so a password prompt happens here, once
+  ssh -fNM -o ControlPath="$CTL_DIR/ctl" -o ControlPersist=no "${SSH_OPTS[@]}" "$PIKVM_HOST" ||
+    die "cannot connect to $PIKVM_HOST"
+  CTL="$CTL_DIR/ctl"
+}
+
+# Every command talks to the PiKVM: the line is read, so the connection can open
+cli_before_command() {
+  PIKVM_HOST="${CLI_OPT[host]:-$PIKVM_HOST}"
+  ssh_open
+}
+
+# Run a command on the PiKVM over the shared connection
+remote() {
+  ssh -o ControlPath="$CTL" -o ControlMaster=no "${SSH_OPTS[@]}" "$PIKVM_HOST" "$@"
+}
+
+fs_mode() {
+  remote 'findmnt -no OPTIONS /' | cut -d, -f1
+}
+
+# Run "$@" with the root filesystem read/write, restoring ro afterwards if it was ro before
+with_rw() {
+  if [[ "$(fs_mode)" == ro ]]; then
+    remote rw >/dev/null || die "failed to switch $PIKVM_HOST to read/write"
+    RESTORE_RO=1
+  fi
+  local rc=0
+  "$@" || rc=$?
+  if [[ "$RESTORE_RO" == 1 ]]; then
+    RESTORE_RO=0
+    remote ro >/dev/null ||
+      die "WARNING: failed to switch $PIKVM_HOST back to read-only; run: pikvm ro"
+  fi
+  return "$rc"
+}
+
+# --- commands ----------------------------------------------------------------------------------
+
+copy_id() {
+  ssh-copy-id -o ControlPath="$CTL" "${SSH_OPTS[@]}" "$@" "$PIKVM_HOST"
+}
+
+cmd_copy_id() {
+  local args=() key="${CLI_OPT[identity]:-}"
+  anfs_require ssh-copy-id
+  if [[ -n "$key" ]]; then
+    [[ -r "$key" ]] || die "cannot read key file $key"
+    args+=(-i "$key")
+  else
+    ssh-add -L >/dev/null 2>&1 || die "ssh-agent has no keys (load them with ssh-add, or pass -i keyfile)"
+  fi
+  ! ${CLI_OPT[force]:-false} || args+=(-f)
+
+  with_rw copy_id "${args[@]}"
+}
+
+cmd_run() {
+  [[ "${1:-}" != -- ]] || shift
+  [[ $# -gt 0 ]] || cli_usage_err "no command given"
+  if ${CLI_OPT[rw]:-false}; then
+    with_rw remote "$@"
+  else
+    remote "$@"
+  fi
+}
+
+cmd_rw() {
+  remote rw
+  anfs_result host "$PIKVM_HOST" root rw
+}
+
+cmd_ro() {
+  remote ro
+  anfs_result host "$PIKVM_HOST" root ro
+}
+
+cmd_status() {
+  local name mode
+  name="$(remote hostname)" || die "cannot read the hostname of $PIKVM_HOST"
+  mode="$(fs_mode)"
+  say "$name  root filesystem: $mode"
+  anfs_result host "$PIKVM_HOST" hostname "$name" root "$mode"
+}
+
+# --- msd ---------------------------------------------------------------------------------------
+
+# kvmd API client, run on the PiKVM with python3 (which kvmd itself needs). It talks HTTP over
+# kvmd's unix socket, where kvmd authenticates the caller by uid (auth.usc), not by password.
+#   argv: <output: none|state|fields|images> <method> <path> [key=value...]
+#   state:  <connected 0|1> <image>      fields: online busy image connected cdrom rw, tab-separated
+#   images: <size>\t<name> a line
+MSD_API_PY='
+import http.client, json, socket, sys, urllib.parse
+
+class UnixConnection(http.client.HTTPConnection):
+    def connect(self):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.connect("/run/kvmd/kvmd.sock")
+
+output, method, path, params = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4:]
+url = "/" + path
+if params:
+    url += "?" + urllib.parse.urlencode([tuple(p.split("=", 1)) for p in params])
+try:
+    conn = UnixConnection("localhost", timeout=30)
+    conn.request(method, url)
+    resp = conn.getresponse()
+    body = json.load(resp)
+except (OSError, ValueError) as e:
+    sys.exit("kvmd: %s" % e)
+
+result = body.get("result") or {}
+if not body.get("ok"):
+    if result.get("error") == "UnauthorizedError":
+        sys.exit("kvmd refused root on its unix socket: add root to kvmd auth.usc.users")
+    sys.exit(result.get("error_msg") or result.get("error") or json.dumps(result))
+
+drive = result.get("drive") or {}
+image = (drive.get("image") or {}).get("name") or "-"
+flag = lambda v: "true" if v else "false"
+if output == "state":
+    print("%d %s" % (bool(drive.get("connected")), image))
+elif output == "fields":
+    print("\t".join([flag(result.get("online")), flag(result.get("busy")), image,
+                     flag(drive.get("connected")), flag(drive.get("cdrom")), flag(drive.get("rw"))]))
+elif output == "images":
+    def human(n):
+        for unit in ("B", "K", "M", "G", "T"):
+            if n < 1024 or unit == "T":
+                return "%.1f%s" % (n, unit) if unit != "B" else "%d%s" % (n, unit)
+            n /= 1024.0
+    images = (result.get("storage") or {}).get("images") or {}
+    for name in sorted(images):
+        print("%s\t%s" % (human(images[name].get("size") or 0), name))
+'
+
+msd_api() {
+  local args=() a
+  for a in "$@"; do args+=("$(printf '%q' "$a")"); done
+  remote "python3 -c $(printf '%q' "$MSD_API_PY") ${args[*]}"
+}
+
+# Sets MSD_CONNECTED (0/1) and MSD_IMAGE ("-" when none is selected)
+msd_state() {
+  local state
+  state="$(msd_api state GET msd)" || die "msd: cannot read the drive state"
+  read -r MSD_CONNECTED MSD_IMAGE <<<"$state"
+}
+
+msd_connect() {
+  local image="$1"
+  msd_api none POST msd/set_params "image=$image" cdrom=0 rw=0 || die "msd: cannot select $image"
+  msd_api none POST msd/set_connected connected=1 || die "msd: cannot connect $image"
+  say "Connected $image (flash, read-only)"
+}
+
+msd_disconnect() {
+  msd_api none POST msd/set_connected connected=0 || die "msd: cannot disconnect"
+  say "Disconnected $1"
+}
+
+cmd_msd_status() {
+  local fields online busy image connected cdrom rw
+  fields="$(msd_api fields GET msd)" || die "msd: cannot read the drive state"
+  IFS=$'\t' read -r online busy image connected cdrom rw <<<"$fields"
+  if anfs_json_on; then
+    anfs_result host "$PIKVM_HOST" online "$online" busy "$busy" image "$image" \
+      connected "$connected" cdrom "$cdrom" rw "$rw"
+    return
+  fi
+  local note=""
+  [[ "$busy" != true ]] || note="  (busy)"
+  anfs_info "online:    $online$note"
+  anfs_info "image:     $image"
+  anfs_info "connected: $connected   cdrom: $cdrom   rw: $rw"
+}
+
+cmd_msd_list() {
+  local images rows="" size name
+  images="$(msd_api images GET msd)" || die "msd: cannot read the images"
+  while IFS=$'\t' read -r size name; do
+    [[ -n "$name" ]] || continue
+    rows+="$(anfs_row "$size" "$name")"$'\n'
+  done <<<"$images"
+  printf '%s' "$rows" | anfs_table "SIZE IMAGE" "size image"
+}
+
+cmd_msd_connect() {
+  local image="${1:-$PIKVM_MSD_IMAGE}"
+  msd_state
+  if [[ "$MSD_CONNECTED" == 1 ]]; then
+    if [[ "$MSD_IMAGE" == "$image" ]]; then
+      say "Already connected: $image"
+      anfs_result host "$PIKVM_HOST" image "$image" connected true
+      return
+    fi
+    msd_disconnect "$MSD_IMAGE"
+  fi
+  msd_connect "$image"
+  anfs_result host "$PIKVM_HOST" image "$image" connected true
+}
+
+cmd_msd_disconnect() {
+  msd_state
+  if [[ "$MSD_CONNECTED" == 1 ]]; then
+    msd_disconnect "$MSD_IMAGE"
+  else
+    say "Not connected"
+  fi
+  anfs_result host "$PIKVM_HOST" image "$MSD_IMAGE" connected false
+}
+
+cmd_msd_with() {
+  [[ "${1:-}" != -- ]] || shift
+  [[ $# -gt 0 ]] || cli_usage_err "no command given"
+
+  msd_state
+  if [[ "$MSD_CONNECTED" == 1 ]]; then
+    msd_disconnect "$MSD_IMAGE"
+    MSD_RECONNECT="$MSD_IMAGE"
+  fi
+
+  local rc=0
+  "$@" || rc=$?
+
+  if [[ -n "$MSD_RECONNECT" ]]; then
+    local image="$MSD_RECONNECT"
+    MSD_RECONNECT=""
+    msd_connect "$image"
+  fi
+  return "$rc"
+}
+
+# The Host aliases of ~/.ssh/config and what it includes from config.d
+complete_host() {
+  local f
+  for f in "$HOME/.ssh/config" "$HOME"/.ssh/config.d/*.conf; do
+    [[ -f "$f" ]] || continue
+    sed -n 's/^[Hh]ost[[:space:]]\{1,\}//p' "$f" | tr -s ' \t' '\n' | grep -v '[*?!]' || true
+  done
+}
+
+cli_dispatch "$@"

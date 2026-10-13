@@ -1,6 +1,6 @@
 # ssh
 
-Installs sshfs, ships the `Include config.d/*.conf` line that lets packages drop
+Ships the `Include config.d/*.conf` line that lets packages drop
 ssh config fragments into `~/.ssh/config.d/`, and provides the **ssh hook
 registry**.
 
@@ -80,7 +80,5 @@ The capture is guarded against re-sourcing, and `ssh_register` is idempotent, so
 
 ## Other contents
 
-- `sshfs` — mount and unmount remote directories at `$HOME/mnt/host`:
-  `ssh_mount host path`, `ssh_umount host`
 - `install.sh` — optionally fetches `$HOME/.ssh/authorized_keys`:
   `PPM_SSH_AUTHORIZED_KEYS_URL=https://github.com/USER.keys ppm install ssh`

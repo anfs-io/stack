@@ -34,7 +34,7 @@ adding a credential never means touching the ssh path.
 - 1Password desktop app, with **Settings → Developer → Integrate with 1Password
   CLI** enabled. `op whoami` must print an account.
 - A 1Password plan with service accounts (Teams or Business).
-- `jq`, for `op-provision`.
+- `jq`, for `opm`.
 
 ## Vault layout
 
@@ -58,13 +58,13 @@ ones without a second token.
 export OP_SA_CREDENTIALS_VAULT=Private   # where token items are saved
 export OP_SHARED_VAULT=shared            # cross-cutting vault
 
-op-provision create lgat          # vault + service account + token item
+opm create lgat          # vault + service account + token item
 cd ~/spaces/lgat
-op-provision link lgat            # writes ./fnox.toml
+opm link lgat            # writes ./fnox.toml
 ssh vm1                           # token forwarded from here
 ```
 
-`op-provision` has three input modes, because this is infrequent and
+`opm` has three input modes, because this is infrequent and
 security-sensitive work:
 
 | Mode | Behaviour |
@@ -78,20 +78,22 @@ confirmation, `--dry-run` prints the plan and exits.
 
 | Command | |
 |---|---|
-| `op-provision list` | every scope this tool has provisioned |
-| `op-provision create <name>` | vault, service account, token item |
-| `op-provision status <name>` | what exists today |
-| `op-provision rotate <name>` | new account and token, then revoke the old |
-| `op-provision destroy <name>` | remove token item, account and vault |
-| `op-provision link <name>` | write `./fnox.toml` for this directory |
+| `opm list` | every scope this tool has provisioned |
+| `opm create <name>` | vault, service account, token item |
+| `opm status <name>` | what exists today |
+| `opm rotate <name>` | new account and token, then revoke the old |
+| `opm remove <name>` | remove token item, account and vault (`rm`, `destroy`) |
+| `opm link <name>` | write `./fnox.toml` for this directory |
 
-`--json` gives `list` machine-readable output.
+`opm` is an anfs tool like `ppm` or `pcm`: options go after the command, `--json` gives
+`list` as objects (`scope`, `shared`, `service_account`, `token_item`, `token_vault`,
+`provisioned`), `-d` and `anfs log opm` show what it did, and a line used wrongly exits 64.
 
 ### Finding what you have provisioned
 
 ```
-$ op-provision list
-SCOPE   SHARED  SERVICE ACCOUNT         TOKEN ITEM       TOKEN VAULT  PROVISIONED
+$ opm list
+SCOPE   SHARED  SERVICE-ACCOUNT         TOKEN-ITEM       TOKEN-VAULT  PROVISIONED
 lgat    shared  lgat-sa-20260922120000  lgat-sa-token    Private      2026-09-22
 rws     shared  rws-sa                  rws-sa-token     Private      2026-09-20
 ```
@@ -101,7 +103,7 @@ and `--icon` — and service accounts are account members, which cannot be tagge
 either. Only *items* support tags and server-side tag filtering.
 
 So the token item is the index. Every one this tool writes is tagged
-`op-provision` (override with `$OP_PROVISION_TAG`) plus the scope name, and
+`op-provision` (override with `$OPM_TAG`) plus the scope name, and
 carries the scope, shared vault, service account name and provisioning date as
 fields. `list` is therefore two calls no matter how many scopes exist:
 `op item list --tags` then `op item get -`, which takes the whole list on stdin.
@@ -132,7 +134,7 @@ item picks up the new token with no config change.
 
 There is no `op service-account delete`; service accounts are account members, so
 revocation goes through `op user delete`. If your account does not permit that
-from the CLI, `op-provision` says so and points you at
+from the CLI, `opm` says so and points you at
 **my.1password.com → Developer → Service Accounts**. Until you complete it, the
 old token still grants read access.
 
@@ -150,7 +152,7 @@ type = "1password"
 GH_TOKEN = { provider = "onepass", value = "op://shared/github/token", env = "exec" }
 ```
 
-Per directory, in `fnox.toml` — written by `op-provision link`:
+Per directory, in `fnox.toml` — written by `opm link`:
 
 ```toml
 [providers.onepass]
@@ -216,7 +218,7 @@ the forwarded token remotely.
 |---|---|
 | `home/.config/zsh/op.zsh` | `op` completions |
 | `home/.config/zsh/ssh/op.zsh` | the ssh hook that forwards the token |
-| `home/.local/bin/op-provision` | vault and service account lifecycle |
+| `home/.local/bin/opm` | vault and service account lifecycle |
 | `macos/.ssh/config.d/99-op.conf` | `IdentityAgent` → 1Password SSH agent |
 | `linux/.config/mise/conf.d/op.toml` | installs `op` on Linux |
 | `install.sh` | the sshd `AcceptEnv` drop-in |
@@ -225,7 +227,7 @@ the forwarded token remotely.
 
 ```bash
 bats packages/op/tests/ssh-hook.bats      # dispatcher + token hook
-bats packages/op/tests/op-provision.bats  # provisioning, stubbed op
+bats packages/op/tests/opm.bats  # provisioning, stubbed op
 ```
 
 Both run offline in under a second; nothing touches 1Password or the network.

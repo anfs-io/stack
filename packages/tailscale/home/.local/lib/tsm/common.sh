@@ -168,7 +168,7 @@ preflight_ssh_guard() {
     return 0
   fi
 
-  printf 'tsm: refusing to apply%s while connected over ssh to %s\n\n' "$risky" "$ip" >&2
+  warn "refusing to apply%s while connected over ssh to %s\n" "$risky" "$ip"
   cat >&2 <<EOF
   Either of these can redirect the route your session is using, and Tailscale does not
   fall back to a less specific route — the connection simply stops.
@@ -231,11 +231,7 @@ require_prereq_ack() {
   # No tty: an install hook runs in a subshell of ppm, and `ssh host 'ppm install ...'`
   # has no tty at all. A read here would block forever on a prompt nobody can see.
   if [[ ! -t 0 ]]; then
-    printf 'tsm: the tailnet prerequisites have not been acknowledged on this host,\n' >&2
-    printf '     and there is no terminal to ask on.\n\n' >&2
-    printf '     Review them:   tsm prereqs\n' >&2
-    printf '     Then join:     tsm join --yes\n' >&2
-    exit 1
+    die "the tailnet prerequisites have not been acknowledged on this host,\n     and there is no terminal to ask on.\n\n     Review them:   tsm prereqs\n     Then join:     tsm join --yes"
   fi
 
   printf 'This host has not confirmed the tailnet prerequisites.\n'

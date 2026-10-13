@@ -18,3 +18,4 @@ fi
 
 # zcomp skips a command it cannot find, so this is a no-op until one of the above holds.
 zcomp tailscale
+zcomp tsm

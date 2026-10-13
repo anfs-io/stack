@@ -2,3 +2,18 @@ version: 0.1.2
 author: rjayroach
 categories: [pde]
 brew: [gh, git-filter-repo]
+onboard:
+  offer: "git and GitHub from the command line (gh): your identity, your account, your repo on it"
+  steps:
+    - name: identity
+      summary: Your git name and email
+    - name: github
+      summary: Sign in to GitHub; your ssh key on your account
+      after: [pm, pm-key, key]
+      before: [repo]
+    - name: publish
+      summary: Your git config in your repo; your repo on GitHub
+      after: [repo, github]
+  options:
+    - "--name NAME: Your name, for git"
+    - "--email EMAIL: Your email, for git"

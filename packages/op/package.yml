@@ -13,3 +13,16 @@ depends:
   - fnox
 cask:
   macos: [1password, 1password-cli]
+onboard:
+  offer: "1Password as your password manager: your ssh key and GitHub token kept in a vault"
+  steps:
+    - name: pm
+      summary: 1Password, and the vault for your credentials
+    - name: pm-key
+      summary: An ssh key kept in 1Password
+      after: [pm]
+    - name: pm-github
+      summary: Your GitHub token kept in 1Password
+      after: [github, repo, publish]
+  options:
+    - "--vault VAULT: The 1Password vault for your GitHub token and ssh key"

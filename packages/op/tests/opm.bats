@@ -1,9 +1,9 @@
 #!/usr/bin/env bats
-# op-provision, against a stubbed `op`. No network, no 1Password account.
-# Run: bats packages/op/tests/op-provision.bats
+# opm, against a stubbed `op`. No network, no 1Password account.
+# Run: bats packages/op/tests/opm.bats
 
 setup() {
-  PROV="$BATS_TEST_DIRNAME/../home/.local/bin/op-provision"
+  PROV="$BATS_TEST_DIRNAME/../home/.local/bin/opm"
   STUB="$BATS_TEST_TMPDIR/bin"
   mkdir -p "$STUB"
   export OPLOG="$BATS_TEST_TMPDIR"
@@ -11,6 +11,7 @@ setup() {
   : > "$OPLOG/stdin.log"
   export OP_SA_CREDENTIALS_VAULT=Private
   export OP_SHARED_VAULT=shared
+  export ANFS_LOG=off   # no log file from tests (lib/anfs/log.sh)
   # EXISTING lists what the fake account already has, so idempotence is testable.
   : > "$OPLOG/existing"
   cat > "$STUB/op" <<'EOF'
@@ -38,7 +39,7 @@ EOF
 
 @test "strict mode names what is missing and points at the wizard" {
   run "$PROV" create
-  [ "$status" -eq 1 ]
+  [ "$status" -eq 64 ]
   [[ "$output" == *"missing <name>"* ]]
   [[ "$output" == *"--wizard"* ]]
 }
@@ -143,10 +144,10 @@ EOF
   [[ "$output" == *"no service account"* ]]
 }
 
-@test "destroy removes item, account and vault, and leaves the shared vault" {
+@test "remove removes item, account and vault, and leaves the shared vault" {
   echo 'lgat-sa' > "$OPLOG/saname"
   printf 'vault:lgat\nitem:lgat-sa-token\nsa:lgat-sa\n' > "$OPLOG/existing"
-  run "$PROV" destroy lgat --yes
+  run "$PROV" remove lgat --yes
   [ "$status" -eq 0 ]
   grep -q 'item delete lgat-sa-token' "$OPLOG/argv.log"
   grep -q 'user delete lgat-sa' "$OPLOG/argv.log"
@@ -256,6 +257,16 @@ EOF
   [[ "$output" == *"lgat"* ]]
   [[ "$output" == *"lgat-sa"* ]]
   [ "$(grep -c 'item list\|item get' "$OPLOG/argv.log")" -eq 2 ]
+  run "$PROV" list --json
+  [ "$output" = '[{"scope":"lgat","shared":null,"service_account":"lgat-sa","token_item":"lgat-sa-token","token_vault":"Private","provisioned":null}]' ]
+}
+
+@test "an option the command does not take is a usage error" {
+  run "$PROV" list --force
+  [ "$status" -eq 64 ]
+  [[ "$output" == *"usage: opm list"* ]]
+  run "$PROV" frobnicate
+  [ "$status" -eq 64 ]
 }
 
 @test "list says something useful when nothing is provisioned" {
@@ -266,7 +277,7 @@ EOF
   chmod +x "$STUB/op"
   run "$PROV" list
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Nothing tagged"* ]]
+  [[ "$output" == *"nothing tagged"* ]]
   [[ "$output" == *"create"* ]]
 }
 
@@ -286,7 +297,7 @@ EOF
   [[ "$output" == *"legacy"* ]]     # scope recovered from the title
 }
 
-@test "OP_PROVISION_TAG overrides the marker tag" {
-  OP_PROVISION_TAG=mytag run "$PROV" create lgat --yes
+@test "OPM_TAG overrides the marker tag" {
+  OPM_TAG=mytag run "$PROV" create lgat --yes
   grep -q '"mytag"' "$OPLOG/stdin.log"
 }

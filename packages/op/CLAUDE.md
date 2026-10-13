@@ -16,7 +16,7 @@ agent, and forwards a service account token to remote hosts.
 ```
 home/.config/zsh/op.zsh          zcomp op — completions, nothing else
 home/.config/zsh/ssh/op.zsh      ssh hook: forwards the token
-home/.local/bin/op-provision     vault / service account lifecycle (bash)
+home/.local/bin/opm              vault / service account lifecycle (bash)
 macos/.ssh/config.d/99-op.conf   IdentityAgent -> 1Password agent socket
 linux/.config/mise/conf.d/op.toml
 install.sh                       sshd AcceptEnv drop-in
@@ -45,9 +45,9 @@ after `ssh.zsh` because `.` (0x2E) sorts before `/` (0x2F) in `.zshrc`'s
 5. **The token never enters argv.** Not in the ssh command line (SendEnv carries
    it), not in `op item create` (piped as JSON on stdin). argv is world-readable
    via `ps`.
-6. **`op-provision` runs `op` via `env -u OP_SERVICE_ACCOUNT_TOKEN`**, so it
+6. **`opm` runs `op` via `env -u OP_SERVICE_ACCOUNT_TOKEN`**, so it
    authenticates as the human even inside a provisioned directory.
-7. **Every token item is tagged `$OP_PROVISION_TAG` and carries scope metadata
+7. **Every token item is tagged `$OPM_TAG` and carries scope metadata
    fields.** It is the only queryable index of what has been provisioned, because
    vaults and service accounts cannot be tagged. Do not stop writing the tag or
    the fields; `list` depends on them.
@@ -72,7 +72,7 @@ after `ssh.zsh` because `.` (0x2E) sorts before `/` (0x2F) in `.zshrc`'s
 
 ```bash
 bats packages/op/tests/ssh-hook.bats
-bats packages/op/tests/op-provision.bats
+bats packages/op/tests/opm.bats
 ```
 
 Offline, stubbed, under a second. Keep them that way — no test should require a

@@ -7,7 +7,7 @@
 # Deliberately NOT declared here: OP_SERVICE_ACCOUNT_TOKEN. The ssh hook in
 # stack/op forwards whatever token the current directory resolves, so a global
 # declaration would forward it from everywhere — including to third-party hosts
-# like github.com. Declare it per directory, with `op-provision link`.
+# like github.com. Declare it per directory, with `opm link`.
 
 # default_provider = "onepass"
 

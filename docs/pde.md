@@ -55,12 +55,12 @@ Installs the latest neovim and adds many common plugins along with a sensible co
 
 Installs the 1Password CLI and desktop app, points ssh at the 1Password SSH agent so private
 keys stay off the filesystem, and forwards a service account token to remote hosts so the `op`
-there can authenticate. Secrets themselves are declared in fnox; `op-provision` creates and
+there can authenticate. Secrets themselves are declared in fnox; `opm` creates and
 rotates the vaults and service accounts. See `packages/op/README.md`.
 
 ```bash
-op-provision create lgat          # vault + service account + token
-cd ~/spaces/lgat && op-provision link lgat
+opm create lgat          # vault + service account + token
+cd ~/spaces/lgat && opm link lgat
 ssh vm1                           # credentials follow you to the remote
 ```
 
@@ -69,7 +69,7 @@ ssh vm1                           # credentials follow you to the remote
 - Provides the ssh hook registry: `ssh` is wrapped once here and packages register hooks with it
   by dropping a file in `~/.config/zsh/ssh/`, rather than each defining a competing wrapper or a
   separate command you have to remember to type. See `packages/ssh/README.md`.
-- Installs sshfs on linux and macfuse+sshfs-mac on mac to enable mounting directories on remote hosts via ssh
+- Mounting directories on remote hosts over ssh is its own package: `remotefs` (utils)
 -  to pull a keys file to `$HOME/.ssh/authorizied_keys`:
 ```bash
 PPM_SSH_AUTHORIZED_KEYS_URL=https://github.com/[USERNAME].keys ppm install ssh

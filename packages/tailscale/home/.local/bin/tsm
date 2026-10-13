@@ -14,37 +14,58 @@
 
 set -euo pipefail
 
+# Captured before anything reads the line, so the re-exec under fnox is byte-identical
 ARGV=("$@")
 
-XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
-XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+# Messages, the log and the command line come from anfs
+ANFS_LIB="$HOME/.local/lib/anfs"
+if [[ ! -f "$ANFS_LIB/bash.sh" || ! -f "$ANFS_LIB/table.sh" ]]; then
+  echo "tsm: $ANFS_LIB is missing or out of date; install core/anfs again" >&2
+  exit 69
+fi
+# The bash floor, first: re-execs under bash 5 when this is macOS's 3.2
+# shellcheck source=/dev/null
+source "$ANFS_LIB/bash.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/paths.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/log.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/cli.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/table.sh"
+
+# The config is tailscale's, not tsm's own, so these are not anfs_tool_paths
 TSM_CONFIG_HOME="${TSM_CONFIG_HOME:-$XDG_CONFIG_HOME/tailscale}"
 TSM_CONFIG="${TSM_CONFIG:-$TSM_CONFIG_HOME/config.yml}"
 TSM_CACHE="${TSM_CACHE:-$XDG_CACHE_HOME/tsm}"
 
+# What the libraries read; cli_before_command fills them from the command's options
 DRY_RUN=false
 ASSUME_YES=false
 
-usage() {
+CLI_TOOL=tsm
+
+cli_cmd join "Join this host to the tailnet using ~/.config/tailscale/config.yml" \
+  --opt "-n --dry-run: Print what would run; touch nothing" \
+  --opt "-y --yes: Do not ask, the prerequisite acknowledgement included"
+cli_cmd set "Reconcile an already-joined node with the config (no re-auth)" \
+  --opt "-n --dry-run: Print what would run; touch nothing" \
+  --opt "-y --yes: Do not ask"
+cli_cmd status "Tailnet status for this node; what follows goes on to tailscale status" \
+  --passthrough --arg "[word...]"
+cli_cmd show "Render the flags the config produces, secret masked"
+cli_cmd prereqs "The manual tailnet setup, plus what can be checked from here"
+cli_cmd info "Paths, binary, daemon state, credential and key-handoff mode"
+cli_standard
+
+cli_help_epilogue() {
   cat <<'EOF'
-Usage: tsm <command> [options]
-
-Commands:
-  join        Join this host to the tailnet using ~/.config/tailscale/config.yml
-  set         Reconcile an already-joined node with the config (no re-auth)
-  status      Tailnet status for this node
-  show        Render the flags the config produces, secret masked
-  prereqs     The manual tailnet setup, plus what can be checked from here
-  info        Paths, binary, daemon state, credential and key-handoff mode
-  help        Show this help
-
-Options:
-  -n, --dry-run   Print what would run; touch nothing
-  -y, --yes       Skip confirmations, including the prerequisite acknowledgement
-
 The first `tsm join` on a host asks you to confirm the tailnet prerequisites (see
 `tsm prereqs`) and caches the answer in ~/.cache/tsm/. Re-pointing the host at a
 different tailnet asks again.
+
+--json is tsm's own; tailscale's is after a --: tsm status -- --json
 
 Config keys: hostname, tags, ssh, accept_dns, accept_routes, advertise_routes,
 advertise_exit_node, exit_node, operator. See config.example.yml for what each does.
@@ -57,15 +78,19 @@ Environment:
 EOF
 }
 
+# printf-style, as every caller here writes them: die "no config at %s" "$file"
 die() {
+  local msg
   # shellcheck disable=SC2059
-  printf "tsm: $1\n" "${@:2}" >&2
-  exit 1
+  printf -v msg "$1" "${@:2}"
+  anfs_die "$msg"
 }
 
 warn() {
+  local msg
   # shellcheck disable=SC2059
-  printf "tsm: $1\n" "${@:2}" >&2
+  printf -v msg "$1" "${@:2}"
+  anfs_warn "$msg"
 }
 
 # Follow a symlink chain without realpath(1), which macOS lacks by default.
@@ -131,7 +156,7 @@ enter_fnox() {
   if command -v fnox >/dev/null 2>&1 && uses_fnox; then
     export TSM_FNOX_DIR
     cd "$TSM_FNOX_DIR"
-    exec fnox exec -- "$(resolve_link "$0")" ${ARGV[@]+"${ARGV[@]}"}
+    exec fnox exec -- "$(resolve_link "$0")" "${ARGV[@]}"
   fi
 }
 
@@ -157,6 +182,7 @@ cmd_show() {
 
 cmd_status() {
   need_daemon
+  [[ "${1:-}" != -- ]] || shift
   "$TAILSCALE_BIN" status "$@"
 }
 
@@ -212,7 +238,7 @@ cmd_join() {
   # Already on the tailnet: reconcile rather than re-authenticate. This is what makes
   # re-running `ppm install` a no-op instead of a fresh login.
   if is_logged_in; then
-    printf 'tsm: already joined (%s); reconciling settings instead of re-authenticating\n' "$(backend_state)"
+    anfs_info "already joined ($(backend_state)); reconciling settings instead of re-authenticating"
     cmd_set
     return
   fi
@@ -281,7 +307,7 @@ cmd_set() {
   build_flags
 
   if [[ ${#TS_FLAGS[@]} -eq 0 ]]; then
-    printf 'tsm: nothing to set — the config declares no reconcilable keys\n'
+    anfs_info "nothing to set — the config declares no reconcilable keys"
     return 0
   fi
 
@@ -300,33 +326,16 @@ cmd_set() {
 # Dispatch
 # ---------------------------------------------------------------------------
 
-main() {
-  local cmd="" rest=()
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      -n|--dry-run) DRY_RUN=true ;;
-      -y|--yes)     ASSUME_YES=true ;;
-      -h|--help)    usage; exit 0 ;;
-      --)           shift; while [[ $# -gt 0 ]]; do rest[${#rest[@]}]="$1"; shift; done; break ;;
-      -*)           die "unknown option: %s (try: tsm help)" "$1" ;;
-      *)            if [[ -z "$cmd" ]]; then cmd="$1"; else rest[${#rest[@]}]="$1"; fi ;;
-    esac
-    shift || true
-  done
-
-  load_libs
-  TAILSCALE_BIN="$(find_tailscale_bin || true)"
-
-  case "${cmd:-help}" in
-    join)    enter_fnox; cmd_join ;;
-    set)     enter_fnox; cmd_set ;;
-    show)    cmd_show ;;
-    status)  cmd_status ${rest[@]+"${rest[@]}"} ;;
-    prereqs) enter_fnox; cmd_prereqs ;;
-    info)    enter_fnox; cmd_info ;;
-    help)    usage ;;
-    *)       die "unknown command: %s (try: tsm help)" "$cmd" ;;
+# Between the line being read and the command: the options the libraries read by name, the
+# secrets (a re-exec under fnox, once), and the CLI
+cli_before_command() {
+  DRY_RUN="${CLI_OPT[dry-run]:-false}"
+  ASSUME_YES="${CLI_OPT[yes]:-false}"
+  case "$CLI_COMMAND" in
+    join|set|prereqs|info) enter_fnox ;;
   esac
+  TAILSCALE_BIN="$(find_tailscale_bin || true)"
 }
 
-main "$@"
+load_libs
+cli_dispatch "$@"

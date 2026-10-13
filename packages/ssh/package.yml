@@ -1,6 +1,15 @@
 version: 0.1.1
 author: rjayroach
 categories: [pde]
-system:
-  debian: [sshfs]
-  fedora: [fuse-sshfs]
+onboard:
+  offer: "ssh: your key, and per-host config in ~/.ssh/config.d"
+  steps:
+    - name: key
+      summary: An ssh key to be you with
+      after: [pm, pm-key]
+    - name: access
+      summary: Your agent's keys for logging in to this host
+      after: [key]
+  options:
+    - "--key KIND: The ssh key: existing, agent, local, op or skip"
+    - "--authorize FINGERPRINT: In an ssh session, an agent key (or all) to add to this host's authorized_keys; may be repeated"

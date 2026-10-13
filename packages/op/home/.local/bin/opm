@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# op-provision — create and manage 1Password vaults and service accounts.
+# opm — create and manage 1Password vaults and service accounts.
 #
 # Provisioning is occasional, security-sensitive, and easy to get subtly wrong,
 # so this script encodes the conventions rather than leaving them to memory:
@@ -22,72 +22,108 @@
 
 set -euo pipefail
 
+# Paths, messages, the log and the command line come from anfs
+ANFS_LIB="$HOME/.local/lib/anfs"
+if [[ ! -f "$ANFS_LIB/bash.sh" || ! -f "$ANFS_LIB/table.sh" ]]; then
+  echo "opm: $ANFS_LIB is missing or out of date; install core/anfs again" >&2
+  exit 69
+fi
+# The bash floor, first: re-execs under bash 5 when this is macOS's 3.2
+# shellcheck source=/dev/null
+source "$ANFS_LIB/bash.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/paths.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/log.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/cli.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/table.sh"
+
 : "${OP_SA_CREDENTIALS_VAULT:=Private}"
 : "${OP_SHARED_VAULT:=shared}"
 # Every token item this script writes carries this tag, which is what makes
-# `op-provision list` a single server-side query. Vaults and service accounts
+# `opm list` a single server-side query. Vaults and service accounts
 # cannot be tagged — `op vault create` takes only --description and --icon, and
 # service accounts are account members — so the token item is the index of what
 # has been provisioned, and it records the vault and account names as fields.
-: "${OP_PROVISION_TAG:=op-provision}"
+: "${OPM_TAG:=${OP_PROVISION_TAG:-op-provision}}"
 
-PROG=${0##*/}
+CLI_TOOL=opm
 
+# What the commands read; cli_before_command fills them from the line
 MODE=strict          # strict | prompt | wizard
 ASSUME_YES=0
 DRY_RUN=0
 FORCE=0
-JSON_OUT=0
 NAME=""
 SHARED="$OP_SHARED_VAULT"
 TOKEN_VAULT="$OP_SA_CREDENTIALS_VAULT"
 declare -a HOSTS=()
 
-die()  { printf '%s: %s\n' "$PROG" "$*" >&2; exit 1; }
-warn() { printf '%s: %s\n' "$PROG" "$*" >&2; }
-say()  { printf '%s\n' "$*"; }
+# Input modes: --wizard walks through each decision with explanation, --prompt asks only for
+# values not supplied as options, neither is strict (a missing value is an error)
+_opm_mode=(--opt "--wizard: Walk through each decision with explanation"
+           --opt "--prompt: Ask only for values not supplied as options")
+_opm_shared=(--opt "--shared VAULT: Cross-cutting vault every service account also reads (default: \$OP_SHARED_VAULT)")
+_opm_token=(--opt "--token-vault VAULT: Vault the token item is saved in (default: \$OP_SA_CREDENTIALS_VAULT)")
+_opm_act=(--opt "-y --yes: Do not ask" --opt "-n --dry-run: Show the plan and change nothing")
+
+cli_cmd create "Vault + service account + token" \
+  "${_opm_shared[@]}" "${_opm_token[@]}" "${_opm_mode[@]}" "${_opm_act[@]}" --arg "[name]"
+cli_cmd list "Every scope opm has provisioned: SCOPE SHARED SERVICE-ACCOUNT TOKEN-ITEM
+TOKEN-VAULT PROVISIONED" --alias ls
+cli_cmd status "What exists today" \
+  "${_opm_shared[@]}" "${_opm_token[@]}" "${_opm_mode[@]}" --arg "[name]"
+cli_cmd rotate "New token, then revoke the old service account" \
+  "${_opm_shared[@]}" "${_opm_token[@]}" "${_opm_mode[@]}" "${_opm_act[@]}" --arg "[name]"
+cli_cmd remove "Remove token item, service account and vault" --alias rm --alias destroy \
+  "${_opm_shared[@]}" "${_opm_token[@]}" "${_opm_mode[@]}" "${_opm_act[@]}" --arg "[name]"
+cli_cmd link "Write ./fnox.toml for this directory" \
+  "${_opm_token[@]}" --opt "--host HOST: Host to record in fnox.toml; may be repeated" \
+  --opt "-f --force: Overwrite an existing fnox.toml" \
+  "${_opm_mode[@]}" "${_opm_act[@]}" --arg "[name]"
+cli_standard
+
+cli_help_epilogue() {
+  cat <<'EOF'
+A <name> is a scope: one vault plus one service account that can read it. Without
+--wizard or --prompt a missing name is an error.
+
+create, rotate, remove and link show a plan and confirm before touching 1Password.
+
+Environment:
+  OP_SA_CREDENTIALS_VAULT   default for --token-vault
+  OP_SHARED_VAULT           default for --shared
+  OPM_TAG                   tag marking items this script created (default: op-provision)
+EOF
+}
+
+die()  { anfs_die "$@"; }
+warn() { anfs_warn "$@"; }
+say()  { anfs_info "$@"; }
 
 # Always authenticate as the human, never as a forwarded service account. Inside
 # a provisioned directory OP_SERVICE_ACCOUNT_TOKEN may be set, and a read-only
 # single-vault SA cannot create anything.
 op_() { env -u OP_SERVICE_ACCOUNT_TOKEN op "$@"; }
 
-need() {
-  command -v "$1" >/dev/null 2>&1 || die "$1 is required but not installed"
-}
+need() { anfs_require "$@"; }
 
-usage() {
-  cat <<EOF
-$PROG — create and manage 1Password vaults and service accounts
-
-Usage:
-  $PROG create  <name> [--shared V] [--token-vault V]   vault + service account + token
-  $PROG list                                            every scope $PROG has provisioned
-  $PROG status  <name>                                  what exists today
-  $PROG rotate  <name>                                  new token, then revoke the old SA
-  $PROG destroy <name>                                  remove token item, SA and vault
-  $PROG link    <name> [--host H]...                    write ./fnox.toml for this directory
-
-Input modes:
-  --wizard, --guided   walk through each decision with explanation
-  --prompt             ask only for values not supplied as flags
-  (neither)            strict — missing values are an error
-
-Options:
-  --shared VAULT       cross-cutting vault every SA also reads   (default: $OP_SHARED_VAULT)
-  --token-vault VAULT  vault the SA token item is saved in       (default: $OP_SA_CREDENTIALS_VAULT)
-  --host HOST          host to record in fnox.toml (link; repeatable)
-  -y, --yes            do not ask for confirmation
-  -n, --dry-run        show the plan and exit without changing anything
-      --force          overwrite an existing fnox.toml (link)
-      --json           machine-readable output (list)
-  -h, --help           this text
-
-Environment:
-  OP_SA_CREDENTIALS_VAULT   default for --token-vault
-  OP_SHARED_VAULT           default for --shared
-  OP_PROVISION_TAG          tag marking items this script created (default: op-provision)
-EOF
+# Between the line being read and the command: the options, into what the commands read
+cli_before_command() {
+  case "$CLI_COMMAND" in completion|help) return 0 ;; esac
+  NAME="${CLI_POS[0]:-}"
+  SHARED="${CLI_OPT[shared]:-$OP_SHARED_VAULT}"
+  TOKEN_VAULT="${CLI_OPT[token-vault]:-$OP_SA_CREDENTIALS_VAULT}"
+  ! ${CLI_OPT[prompt]:-false} || MODE=prompt
+  ! ${CLI_OPT[wizard]:-false} || MODE=wizard
+  ! ${CLI_OPT[yes]:-false} || ASSUME_YES=1
+  ! ${CLI_OPT[dry-run]:-false} || DRY_RUN=1
+  ! ${CLI_OPT[force]:-false} || FORCE=1
+  [[ -z "${CLI_OPT[host]:-}" ]] || mapfile -t HOSTS <<< "${CLI_OPT[host]}"
+  need op
+  if interactive; then require_tty; fi
 }
 
 # ---------------------------------------------------------------------------
@@ -134,7 +170,7 @@ need_value() {    # need_value <current> <flag> <prompt> <default> <wizard-text>
     ask "$prompt" "$default"
     return 0
   fi
-  die "missing $flag (try '$PROG $VERB --wizard' to be walked through it)"
+  anfs_fail "$CLI_EX_USAGE" "missing $flag (try '$CLI_TOOL $CLI_COMMAND --wizard' to be walked through it)"
 }
 
 # ---------------------------------------------------------------------------
@@ -149,7 +185,7 @@ item_exists()   { op_ item get "$1" --vault "$2" --format json >/dev/null 2>&1; 
 #
 # A rotation cannot reuse the old account's name while it still exists, so
 # rotated accounts are "<name>-sa-<timestamp>". Everything that looks one up has
-# to match that too, or `destroy` would leave a live credential behind after a
+# to match that too, or `remove` would leave a live credential behind after a
 # rotation. The pattern is anchored and the suffix is exactly 14 digits so that
 # scope "lgat" cannot match an account belonging to scope "lgat-sandbox".
 sa_pattern() { printf '^%s-sa(-[0-9]{14})?$' "$1"; }
@@ -211,21 +247,21 @@ never reads its own token.")
   if (( DRY_RUN )); then say "--dry-run: nothing was changed."; return 0; fi
   confirm "Proceed?" || { say "Aborted."; return 1; }
 
-  vault_exists "$NAME"   || { op_ vault create "$NAME"   --description "$OP_PROVISION_TAG: scope $NAME"      --format json >/dev/null; say "Created vault $NAME"; }
-  vault_exists "$SHARED" || { op_ vault create "$SHARED" --description "$OP_PROVISION_TAG: cross-cutting secrets" --format json >/dev/null; say "Created vault $SHARED"; }
+  vault_exists "$NAME"   || { op_ vault create "$NAME"   --description "$OPM_TAG: scope $NAME"      --format json >/dev/null; say "Created vault $NAME"; }
+  vault_exists "$SHARED" || { op_ vault create "$SHARED" --description "$OPM_TAG: cross-cutting secrets" --format json >/dev/null; say "Created vault $SHARED"; }
 
   if ! sa_exists "$NAME"; then
     create_sa_and_store_token "$sa" "$item"
   else
     say "Service account $(sa_names "$NAME" | tr '\n' ' ')already exists; leaving it alone."
-    say "To issue a fresh token for it, use: $PROG rotate $NAME"
+    say "To issue a fresh token for it, use: $CLI_TOOL rotate $NAME"
   fi
 
   say ""
   say "Add to the fnox.toml of any directory that should reach this scope:"
   print_fnox_snippet
   say ""
-  say "Or let $PROG write it for you:   cd <dir> && $PROG link $NAME"
+  say "Or let $CLI_TOOL write it for you:   cd <dir> && $CLI_TOOL link $NAME"
 }
 
 # 1Password returns a service account token exactly once. If storing it fails the
@@ -251,7 +287,7 @@ create_sa_and_store_token() {
   # .token in the piped JSON rather than passed via `jq --arg`, which would put
   # it back in argv.
   if ! printf '%s' "$sa_json" \
-      | jq --arg title "$item" --arg tag "$OP_PROVISION_TAG" --arg scope "$NAME" \
+      | jq --arg title "$item" --arg tag "$OPM_TAG" --arg scope "$NAME" \
            --arg shared "$SHARED" --arg sa "$sa" \
            --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{
             title:    $title,
@@ -309,7 +345,7 @@ old item, and only then is the old account revoked.")
   # Rotate whatever account the scope currently has, which after an earlier
   # rotation is not literally "<name>-sa".
   old=$(sa_names "$NAME" | tail -1)
-  [[ -n $old ]] || die "no service account for $NAME; use '$PROG create $NAME'"
+  [[ -n $old ]] || die "no service account for $NAME; use '$CLI_TOOL create $NAME'"
 
   plan_add "CREATE service account $new (read_items: $NAME, $SHARED)"
   plan_add "UPDATE item            $item in $TOKEN_VAULT -> new token"
@@ -348,9 +384,9 @@ revoke_sa() {
   fi
 }
 
-cmd_destroy() {
+cmd_remove() {
   need jq
-  NAME=$(need_value "$NAME" "<name>" "Vault / scope name to destroy" "")
+  NAME=$(need_value "$NAME" "<name>" "Vault / scope name to remove" "")
   [[ -n $NAME ]] || die "a name is required"
   local sa="${NAME}-sa" item="${NAME}-sa-token"
 
@@ -362,7 +398,7 @@ cmd_destroy() {
   if (( DRY_RUN )); then say "--dry-run: nothing was changed."; return 0; fi
 
   say "This is not reversible."
-  confirm "Destroy $NAME?" || { say "Aborted."; return 1; }
+  confirm "Remove $NAME?" || { say "Aborted."; return 1; }
 
   if item_exists "$item" "$TOKEN_VAULT"; then op_ item delete "$item" --vault "$TOKEN_VAULT" >/dev/null; say "Deleted item $item"; fi
   for one in "${sas[@]:-}"; do [[ -n $one ]] && revoke_sa "$one"; done
@@ -378,48 +414,45 @@ cmd_destroy() {
 # tagged, and the token item already records which vault each scope uses.
 cmd_list() {
   need jq
-  local items count
-  if ! items=$(op_ item list --tags "$OP_PROVISION_TAG" --format json 2>/dev/null); then
+  local items full rows
+  if ! items=$(op_ item list --tags "$OPM_TAG" --format json 2>/dev/null); then
     die "could not list items — is op signed in? (op whoami)"
   fi
-  count=$(printf '%s' "$items" | jq 'length' 2>/dev/null || echo 0)
-  if [[ ${count:-0} -eq 0 ]]; then
-    say "Nothing tagged '$OP_PROVISION_TAG' yet."
-    say "Provision a scope with: $PROG create <name> --wizard"
-    return 0
-  fi
 
-  local full
-  full=$(printf '%s' "$items" | op_ item get --format json - 2>/dev/null) \
-    || die "could not read item details"
-
-  if (( JSON_OUT )); then
-    printf '%s' "$full" | jq -s 'flatten(1)'
-    return 0
+  full="[]"
+  if [[ $(printf '%s' "$items" | jq 'length' 2>/dev/null || echo 0) -gt 0 ]]; then
+    full=$(printf '%s' "$items" | op_ item get --format json - 2>/dev/null) \
+      || die "could not read item details"
   fi
 
   # -s + flatten(1) because `op item get -` may emit either a JSON array or a
   # stream of objects depending on version; both normalise to one array here.
-  {
-    printf 'SCOPE\tSHARED\tSERVICE ACCOUNT\tTOKEN ITEM\tTOKEN VAULT\tPROVISIONED\n'
-    printf '%s' "$full" | jq -s -r '
-      def fld($id): ([.fields[]? | select(.id == $id) | .value] | first) // "";
-      flatten(1) | .[] |
-      (fld("scope")) as $scope |
-      [ (if $scope == "" then (.title | sub("-sa-token$"; "")) else $scope end),
-        (fld("shared_vault") | if . == "" then "-" else . end),
-        (fld("service_account") | if . == "" then "-" else . end),
-        .title,
-        (.vault.name // "-"),
-        (fld("provisioned") | if . == "" then "-" else (.[0:10]) end)
-      ] | @tsv'
-  } | column -t -s "$(printf '\t')"
+  # A row's fields are joined by anfs's separator (lib/anfs/table.sh).
+  rows=$(printf '%s' "$full" | jq -s -r '
+    def fld($id): ([.fields[]? | select(.id == $id) | .value] | first) // "";
+    flatten(1) | .[] |
+    (fld("scope")) as $scope |
+    [ (if $scope == "" then (.title | sub("-sa-token$"; "")) else $scope end),
+      fld("shared_vault"),
+      fld("service_account"),
+      .title,
+      (.vault.name // ""),
+      (fld("provisioned") | .[0:10])
+    ] | join("\u001f")')
+  [[ -z $rows ]] || rows+=$'\n'
+  printf '%s' "$rows" | anfs_table "SCOPE SHARED SERVICE-ACCOUNT TOKEN-ITEM TOKEN-VAULT PROVISIONED" \
+    "scope shared service_account token_item token_vault provisioned"
 
-  say ""
-  say "A scope's own vault is named after the scope. TOKEN VAULT is where that"
-  say "scope's token item is kept. Vaults are not queried here — 1Password cannot"
-  say "tag a vault, so the token item is the record of what was provisioned."
-  say "Use '$PROG status <scope>' to check one scope, or 'op vault list' for all vaults."
+  ! anfs_json_on || return 0
+  if [[ -z $rows ]]; then
+    warn "nothing tagged '$OPM_TAG' yet; provision a scope with: $CLI_TOOL create <name> --wizard"
+  elif [[ -t 1 ]]; then
+    say ""
+    say "A scope's own vault is named after the scope. TOKEN-VAULT is where that"
+    say "scope's token item is kept. Vaults are not queried here — 1Password cannot"
+    say "tag a vault, so the token item is the record of what was provisioned."
+    say "Use '$CLI_TOOL status <scope>' to check one scope, or 'op vault list' for all vaults."
+  fi
 }
 
 print_fnox_snippet() {
@@ -457,7 +490,7 @@ token to remote hosts.")
 
   {
     printf '# fnox — secrets for this directory tree.\n'
-    printf '# Written by %s on %s.\n#\n' "$PROG" "$(date +%Y-%m-%d)"
+    printf '# Written by %s on %s.\n#\n' "$CLI_TOOL" "$(date +%Y-%m-%d)"
     printf '# env = false on the token keeps it out of the environment, so nothing\n'
     printf '# started here (editor, language server, agent) can read it. The ssh hook\n'
     printf '# in stack/op materialises it for the ssh process alone.\n'
@@ -480,41 +513,4 @@ token to remote hosts.")
   say "Then:    ssh <host>        # the token is forwarded from this directory"
 }
 
-# ---------------------------------------------------------------------------
-
-VERB=${1:-}
-[[ -n $VERB ]] || { usage; exit 1; }
-case $VERB in -h|--help|help) usage; exit 0 ;; esac
-shift
-
-# A bare name may follow the verb.
-if [[ ${1:-} != -* && -n ${1:-} ]]; then NAME=$1; shift; fi
-
-while (( $# )); do
-  case $1 in
-    --shared)       SHARED=${2:?--shared needs a value}; shift 2 ;;
-    --token-vault)  TOKEN_VAULT=${2:?--token-vault needs a value}; shift 2 ;;
-    --host)         HOSTS+=("${2:?--host needs a value}"); shift 2 ;;
-    --wizard|--guided) MODE=wizard; shift ;;
-    --prompt)       MODE=prompt; shift ;;
-    -y|--yes)       ASSUME_YES=1; shift ;;
-    -n|--dry-run)   DRY_RUN=1; shift ;;
-    --force)        FORCE=1; shift ;;
-    --json)         JSON_OUT=1; shift ;;
-    -h|--help)      usage; exit 0 ;;
-    *)              die "unknown option: $1" ;;
-  esac
-done
-
-need op
-if interactive; then require_tty; fi
-
-case $VERB in
-  create)  cmd_create ;;
-  list)    cmd_list ;;
-  status)  cmd_status ;;
-  rotate)  cmd_rotate ;;
-  destroy) cmd_destroy ;;
-  link)    cmd_link ;;
-  *)       die "unknown command: $VERB (try '$PROG --help')" ;;
-esac
+cli_dispatch "$@"

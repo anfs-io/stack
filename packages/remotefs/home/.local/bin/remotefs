@@ -1,0 +1,433 @@
+#!/usr/bin/env bash
+# remotefs — named mounts of remote directories over ssh (sshfs)
+#
+# A mount is a label in $REMOTEFS_CONFIG. By convention the label is the ssh host alias, so
+# everything about the connection stays in ~/.ssh/config and an entry needs nothing else:
+#
+#   remotefs add web1                      web1:          at ~/mnt/web1
+#   remotefs add web1-logs web1:/var/log   a second path: <host>-<what>
+#
+# sshfs is the real one: the distro's on Linux (FUSE), FUSE-T's on macOS (no kernel extension;
+# the volume is served to macOS over a local NFS server, so the mount table says nfs).
+set -euo pipefail
+
+# Paths, messages, the log and the command line come from anfs
+ANFS_LIB="$HOME/.local/lib/anfs"
+if [[ ! -f "$ANFS_LIB/bash.sh" || ! -f "$ANFS_LIB/table.sh" ]]; then
+  echo "remotefs: $ANFS_LIB is missing or out of date; install core/anfs again" >&2
+  exit 69
+fi
+# The bash floor, first: re-execs under bash 5 when this is macOS's 3.2
+# shellcheck source=/dev/null
+source "$ANFS_LIB/bash.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/paths.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/log.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/cli.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/table.sh"
+
+anfs_tool_paths remotefs
+: "${REMOTEFS_CONFIG:=$REMOTEFS_CONFIG_HOME/mounts.yml}"
+# Where a mount goes when its entry names no mountpoint: <here>/<label>. In the home directory
+# because that needs no root on either platform, and is the same path on every machine
+: "${REMOTEFS_MOUNT_HOME:=$HOME/mnt}"
+# What every mount gets unless its entry says `defaults: false`: a dropped connection comes back
+# by itself, and a dead one is noticed in under a minute
+: "${REMOTEFS_DEFAULT_OPTIONS:=reconnect ServerAliveInterval=15 ServerAliveCountMax=3}"
+: "${REMOTEFS_SSHFS:=sshfs}"
+# Seconds: the ssh check before a mount, sshfs itself, and asking a mount whether it answers
+: "${REMOTEFS_CONNECT_TIMEOUT:=5}"
+: "${REMOTEFS_MOUNT_TIMEOUT:=20}"
+: "${REMOTEFS_STAT_TIMEOUT:=3}"
+
+EX_UNAVAIL=69 EX_EXISTS=73
+# A label is a config key, a directory under REMOTEFS_MOUNT_HOME and (macOS) the volume's name
+LABEL_RE='^[a-z0-9][a-z0-9._-]*$'
+
+CLI_TOOL=remotefs
+
+cli_cmd list "Mounts: LABEL REMOTE MOUNTPOINT STATE" --alias ls
+cli_cmd add "Define a mount. The remote defaults to <label>: (the ssh host of that name, your
+home directory there); the mountpoint to \$REMOTEFS_MOUNT_HOME/<label>" \
+  --opt "-o --option OPT: An sshfs or ssh option, as sshfs -o takes it; may be repeated" \
+  --opt "--no-defaults: Without the reconnect options every mount otherwise gets" \
+  --arg "label" --arg "[remote]" --arg "[mountpoint]"
+cli_cmd remove "Forget mounts; one that is mounted is refused" --alias rm \
+  --opt "-f --force: Unmount it first" --arg "label..."
+cli_cmd mount "Mount what is not mounted yet" --alias up \
+  --opt "-a --all: Every mount" --arg "[label...]"
+cli_cmd umount "Unmount" --alias down \
+  --opt "-a --all: Every mount that is mounted" \
+  --opt "-f --force: Even when it is busy or not answering" --arg "[label...]"
+cli_cmd show "The definition, the sshfs command it makes, and its state" --arg "label"
+cli_cmd path "Print a mount's mountpoint, or where mounts go by default" --arg "[label]"
+cli_cmd cd "Change to a mountpoint, mounting it first; no label: where mounts go (requires\n~/.config/sh/remotefs.sh)" --arg "[label]"
+cli_cmd edit "Open the definitions in \$EDITOR"
+cli_standard
+
+cli_help_epilogue() {
+  cat <<'EOF'
+A label is lowercase letters, digits, . _ and -. Name it after the ssh host (web1), and a
+further path on the same host <host>-<what> (web1-logs).
+
+Definitions: $REMOTEFS_CONFIG (~/.config/remotefs/mounts.yml)
+  web1:
+    remote: web1:              [user@]host:[path], as sshfs takes it
+    mountpoint: ~/mnt/web1     optional; this is the default
+    options: [ro, Port=2222]   optional; sshfs and ssh options
+    defaults: false            optional; leave out the reconnect options
+
+States: mounted, unmounted, and stale (mounted, but the remote is not answering: it comes
+back by itself when the host does, or `remotefs umount` clears it).
+
+Environment:
+  REMOTEFS_MOUNT_HOME       Where mounts go by default (~/mnt)
+  REMOTEFS_DEFAULT_OPTIONS  What every mount gets (reconnect ServerAliveInterval=15 ServerAliveCountMax=3)
+  REMOTEFS_SSHFS            The sshfs to run (sshfs)
+EOF
+}
+
+die()  { anfs_die "$@"; }
+warn() { anfs_warn "$@"; }
+# What a command says when it is done; quiet with --json, where anfs_result speaks instead
+say()  { anfs_json_on || anfs_info "$@"; }
+
+is_macos() { [[ "$(uname -s)" == Darwin ]]; }
+
+# --- Definitions ---------------------------------------------------------------------------
+
+require_yq() {
+  anfs_require yq "https://github.com/mikefarah/yq, which ppm installs"
+}
+
+# Every label, one per line
+labels() {
+  [[ -f "$REMOTEFS_CONFIG" ]] || return 0
+  yq -r '(. // {}) | keys | .[]' "$REMOTEFS_CONFIG"
+}
+
+has_label() {
+  [[ -f "$REMOTEFS_CONFIG" ]] || return 1
+  L="$1" yq -e 'has(strenv(L))' "$REMOTEFS_CONFIG" >/dev/null 2>&1
+}
+
+# A field of a label's entry, or "" when unset
+field() {
+  L="$1" yq -r ".[strenv(L)].$2 // \"\"" "$REMOTEFS_CONFIG"
+}
+
+# Load a label's entry into M_REMOTE, M_MOUNTPOINT (whole, ~ expanded) and M_OPTIONS (an array:
+# the defaults, then the entry's own)
+load_mount() {
+  local label="$1" mp opt
+  has_label "$label" || die "no mount named '$label' (see: remotefs list)"
+  M_LABEL="$label"
+  M_REMOTE="$(field "$label" remote)"
+  [[ -n "$M_REMOTE" ]] || M_REMOTE="$label:"
+  mp="$(field "$label" mountpoint)"
+  [[ -n "$mp" ]] || mp="$REMOTEFS_MOUNT_HOME/$label"
+  M_MOUNTPOINT="${mp/#\~/$HOME}"
+  M_OPTIONS=()
+  if [[ "$(L="$label" yq -r '.[strenv(L)].defaults' "$REMOTEFS_CONFIG")" != false ]]; then
+    read -ra M_OPTIONS <<< "$REMOTEFS_DEFAULT_OPTIONS"
+  fi
+  while IFS= read -r opt; do
+    [[ -z "$opt" ]] || M_OPTIONS+=("$opt")
+  done < <(L="$label" yq -r '.[strenv(L)].options // [] | .[]' "$REMOTEFS_CONFIG")
+  # Finder shows the volume by this name, not by the remote path
+  ! is_macos || M_OPTIONS+=("volname=$label")
+}
+
+# --- The mount table -----------------------------------------------------------------------
+
+# The mountpoint as the mount table spells it: no symlinks (macOS's /tmp is /private/tmp)
+canon() {
+  anfs_canon "$1" || printf '%s\n' "$1"
+}
+
+in_mount_table() {
+  local mp
+  mp="$(canon "$1")"
+  if is_macos; then
+    # Not grep -q: it stops reading at the first match, and pipefail then reports mount's SIGPIPE
+    mount | grep -F " on $mp (" >/dev/null
+  else
+    findmnt -rn -M "$mp" >/dev/null 2>&1
+  fi
+}
+
+# True when a mounted directory answers within REMOTEFS_STAT_TIMEOUT. The question is df's
+# (statfs), which goes to the remote every time: a listing or a stat is answered from the
+# client's cache while the host is down. A mount whose host is gone may also block instead of
+# failing, so it is asked by a child that can be abandoned.
+answers() {
+  local pid i
+  ( df "$1" >/dev/null 2>&1 ) &
+  pid=$!
+  for (( i = 0; i < REMOTEFS_STAT_TIMEOUT * 10; i++ )); do
+    kill -0 "$pid" 2>/dev/null || { wait "$pid"; return; }
+    sleep 0.1
+  done
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  return 1
+}
+
+# mounted | unmounted | stale
+state_of() {
+  if ! in_mount_table "$1"; then echo unmounted
+  elif answers "$1"; then echo mounted
+  else echo stale
+  fi
+}
+
+# --- Mounting ------------------------------------------------------------------------------
+
+# The ssh host of a remote: [user@]host:[path]
+remote_host() {
+  printf '%s\n' "${1%%:*}"
+}
+
+# The ssh options among a mount's options. ssh's are Capitalized=value (Port=2222,
+# IdentityFile=...); sshfs's and FUSE's own are lowercase (ro, reconnect, volname=...)
+ssh_options() {
+  local opt
+  for opt in "${M_OPTIONS[@]}"; do
+    [[ "$opt" =~ ^[A-Z][A-Za-z]*= ]] && printf -- '-o\n%s\n' "$opt"
+  done
+  return 0
+}
+
+# Stop unless the host answers ssh without asking for anything. sshfs with a host it cannot
+# log in to does not fail: it waits, and leaves its helper behind.
+preflight() {
+  local host out
+  local -a opts
+  host="$(remote_host "$M_REMOTE")"
+  mapfile -t opts < <(ssh_options)
+  anfs_debug "ssh check: ssh -o BatchMode=yes -o ConnectTimeout=$REMOTEFS_CONNECT_TIMEOUT ${opts[*]} $host true"
+  if ! out="$(ssh -o BatchMode=yes -o ConnectTimeout="$REMOTEFS_CONNECT_TIMEOUT" "${opts[@]}" "$host" true 2>&1 </dev/null)"; then
+    die "$M_LABEL: cannot log in to $host over ssh${out:+: ${out##*$'\n'}}"
+  fi
+}
+
+# The sshfs command line of the loaded mount, one word per line
+sshfs_argv() {
+  local opt
+  printf '%s\n' "$REMOTEFS_SSHFS" "$M_REMOTE" "$M_MOUNTPOINT"
+  for opt in "${M_OPTIONS[@]}"; do
+    printf -- '-o\n%s\n' "$opt"
+  done
+}
+
+# What a mount that did not come up may have left: FUSE-T's server for that mountpoint
+cleanup_failed_mount() {
+  ! is_macos || pkill -f "go-nfsv4 .*$(canon "$M_MOUNTPOINT")\$" 2>/dev/null || true
+  rmdir_default "$M_MOUNTPOINT"
+}
+
+# Remove an empty mountpoint, when it is one remotefs made: under REMOTEFS_MOUNT_HOME
+rmdir_default() {
+  [[ "$1" == "$REMOTEFS_MOUNT_HOME"/* ]] || return 0
+  rmdir "$1" 2>/dev/null || true
+}
+
+mount_one() {
+  local state pid i rc=0
+  local -a argv
+  load_mount "$1"
+  state="$(state_of "$M_MOUNTPOINT")"
+  case "$state" in
+    mounted)
+      say "$M_LABEL: already mounted at $(anfs_display "$M_MOUNTPOINT")"
+      anfs_result label "$M_LABEL" mountpoint "$M_MOUNTPOINT" state mounted
+      return 0
+      ;;
+    stale) die "$M_LABEL: mounted at $(anfs_display "$M_MOUNTPOINT") but not answering; clear it with: remotefs umount $M_LABEL" ;;
+  esac
+
+  command -v "$REMOTEFS_SSHFS" >/dev/null 2>&1 \
+    || anfs_fail "$EX_UNAVAIL" "$REMOTEFS_SSHFS is required (ppm install remotefs)"
+  preflight
+  mkdir -p "$M_MOUNTPOINT" || die "$M_LABEL: cannot create $M_MOUNTPOINT"
+
+  mapfile -t argv < <(sshfs_argv)
+  anfs_debug "${argv[*]}"
+  # sshfs goes to the background by itself once the volume is up; one that is still in the
+  # foreground after REMOTEFS_MOUNT_TIMEOUT is not going to
+  "${argv[@]}" </dev/null &
+  pid=$!
+  for (( i = 0; i < REMOTEFS_MOUNT_TIMEOUT * 10; i++ )); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    cleanup_failed_mount
+    die "$M_LABEL: sshfs did not finish mounting within ${REMOTEFS_MOUNT_TIMEOUT}s"
+  fi
+  wait "$pid" || rc=$?
+  if [[ $rc -ne 0 ]] || ! in_mount_table "$M_MOUNTPOINT"; then
+    cleanup_failed_mount
+    die "$M_LABEL: sshfs could not mount $M_REMOTE (exit $rc)"
+  fi
+  say "$M_LABEL: mounted $M_REMOTE at $(anfs_display "$M_MOUNTPOINT")"
+  anfs_result label "$M_LABEL" mountpoint "$M_MOUNTPOINT" state mounted
+}
+
+umount_one() {
+  local force="$2" out
+  load_mount "$1"
+  if ! in_mount_table "$M_MOUNTPOINT"; then
+    warn "$M_LABEL: not mounted"
+    return 1
+  fi
+  if is_macos; then
+    if $force; then out="$(umount -f "$M_MOUNTPOINT" 2>&1)"; else out="$(umount "$M_MOUNTPOINT" 2>&1)"; fi
+  else
+    local fusermount=fusermount3
+    command -v fusermount3 >/dev/null 2>&1 || fusermount=fusermount
+    # -z: detach now, finish when it is no longer busy; the way out of a mount that hangs
+    if $force; then out="$("$fusermount" -uz "$M_MOUNTPOINT" 2>&1)"; else out="$("$fusermount" -u "$M_MOUNTPOINT" 2>&1)"; fi
+  fi || {
+    warn "$M_LABEL: could not unmount $(anfs_display "$M_MOUNTPOINT")${out:+: ${out##*: }}$($force || echo " (-f to force)")"
+    return 1
+  }
+  rmdir_default "$M_MOUNTPOINT"
+  say "$M_LABEL: unmounted"
+  anfs_result label "$M_LABEL" mountpoint "$M_MOUNTPOINT" state unmounted
+}
+
+# The labels a command acts on: the ones given, or with --all every one
+# Usage: targets <labels...>   (into TARGETS)
+targets() {
+  TARGETS=("$@")
+  if ${CLI_OPT[all]:-false}; then
+    [[ $# -eq 0 ]] || cli_usage_err "--all takes no labels"
+    mapfile -t TARGETS < <(labels)
+  fi
+  [[ ${#TARGETS[@]} -gt 0 ]] || { ${CLI_OPT[all]:-false} && return 0; cli_usage_err "give a label, or --all"; }
+}
+
+# --- Commands ------------------------------------------------------------------------------
+
+cmd_list() {
+  require_yq
+  local label rows=""
+  while IFS= read -r label; do
+    [[ -n "$label" ]] || continue
+    load_mount "$label"
+    rows+="$(anfs_row "$label" "$M_REMOTE" "$M_MOUNTPOINT" "$(state_of "$M_MOUNTPOINT")")"$'\n'
+  done < <(labels)
+  printf '%s' "$rows" | anfs_table "LABEL REMOTE MOUNTPOINT STATE" "label remote mountpoint state"
+  [[ -n "$rows" ]] || anfs_json_on || warn "no mounts defined; add one with: remotefs add <host>"
+}
+
+cmd_add() {
+  require_yq
+  local label="$1" remote="${2:-$1:}" mountpoint="${3:-}" opt
+  [[ "$label" =~ $LABEL_RE ]] || cli_usage_err "'$label' is not a label (lowercase letters, digits, . _ -)"
+  [[ "$remote" == *:* ]] || cli_usage_err "'$remote' is not a remote ([user@]host:[path])"
+  ! has_label "$label" || anfs_fail "$EX_EXISTS" "a mount named '$label' already exists (see: remotefs show $label)"
+
+  if [[ ! -f "$REMOTEFS_CONFIG" ]]; then
+    mkdir -p "$(dirname "$REMOTEFS_CONFIG")"
+    printf '# remotefs mounts (remotefs help): <label>: {remote, mountpoint, options, defaults}\n{}\n' > "$REMOTEFS_CONFIG"
+  fi
+  L="$label" R="$remote" yq -i '.[strenv(L)].remote = strenv(R)' "$REMOTEFS_CONFIG"
+  # Kept as typed, so a ~ stays a ~ and the file reads the same on another machine
+  [[ -z "$mountpoint" ]] || L="$label" V="$(anfs_display "$mountpoint")" yq -i '.[strenv(L)].mountpoint = strenv(V)' "$REMOTEFS_CONFIG"
+  while IFS= read -r opt; do
+    [[ -z "$opt" ]] || L="$label" V="$opt" yq -i '.[strenv(L)].options += [strenv(V)]' "$REMOTEFS_CONFIG"
+  done <<< "${CLI_OPT[option]:-}"
+  ! ${CLI_OPT[no-defaults]:-false} || L="$label" yq -i '.[strenv(L)].defaults = false' "$REMOTEFS_CONFIG"
+
+  load_mount "$label"
+  say "Added $label: $M_REMOTE at $(anfs_display "$M_MOUNTPOINT")"
+  say "Mount it with: remotefs mount $label"
+  anfs_result label "$label" remote "$M_REMOTE" mountpoint "$M_MOUNTPOINT"
+}
+
+cmd_remove() {
+  require_yq
+  local label
+  for label in "$@"; do
+    load_mount "$label"
+    if in_mount_table "$M_MOUNTPOINT"; then
+      ${CLI_OPT[force]:-false} || die "$label is mounted; unmount it first, or pass -f"
+      umount_one "$label" true >/dev/null || die "$label: still mounted, not removed"
+    fi
+    L="$label" yq -i 'del(.[strenv(L)])' "$REMOTEFS_CONFIG"
+    say "Removed $label"
+    anfs_result label "$label" removed true
+  done
+}
+
+cmd_mount() {
+  require_yq
+  local label failed=0
+  targets "$@"
+  for label in "${TARGETS[@]}"; do
+    # Each in its own shell: one host that is down does not stop the rest
+    ( mount_one "$label" ) || failed=1
+  done
+  return $failed
+}
+
+cmd_umount() {
+  require_yq
+  local label failed=0
+  targets "$@"
+  for label in "${TARGETS[@]}"; do
+    if ${CLI_OPT[all]:-false}; then
+      load_mount "$label"
+      in_mount_table "$M_MOUNTPOINT" || continue
+    fi
+    umount_one "$label" "${CLI_OPT[force]:-false}" || failed=1
+  done
+  return $failed
+}
+
+cmd_show() {
+  require_yq
+  local -a argv
+  load_mount "$1"
+  mapfile -t argv < <(sshfs_argv)
+  printf 'label:       %s\n' "$M_LABEL"
+  printf 'remote:      %s\n' "$M_REMOTE"
+  printf 'mountpoint:  %s\n' "$M_MOUNTPOINT"
+  printf 'options:     %s\n' "${M_OPTIONS[*]:--}"
+  printf 'state:       %s\n' "$(state_of "$M_MOUNTPOINT")"
+  printf 'command:     %s\n' "${argv[*]}"
+}
+
+cmd_path() {
+  if [[ $# -eq 0 ]]; then
+    printf '%s\n' "$REMOTEFS_MOUNT_HOME"
+    return 0
+  fi
+  require_yq
+  load_mount "$1"
+  printf '%s\n' "$M_MOUNTPOINT"
+}
+
+cmd_cd() {
+  die "cd requires the remotefs shell function (source ~/.config/sh/remotefs.sh)"
+}
+
+cmd_edit() {
+  mkdir -p "$(dirname "$REMOTEFS_CONFIG")"
+  ${EDITOR:-vi} "$REMOTEFS_CONFIG"
+}
+
+# What cli.sh asks for on a tab press (complete_<kind>): one candidate per line, quickly. No yq.
+complete_label() {
+  [[ -f "$REMOTEFS_CONFIG" ]] || return 0
+  sed -n 's/^\([a-z0-9][a-z0-9._-]*\):.*/\1/p' "$REMOTEFS_CONFIG"
+}
+
+cli_dispatch "$@"
