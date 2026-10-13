@@ -391,7 +391,7 @@ cmd_list() {
 }
 
 cmd_copy() {
-  [[ -d "$VENTOY_ISO_DIR" ]] || die "ISO dir $VENTOY_ISO_DIR not found (mkdir it, or: ln -s ~/.cache/pim/isos $VENTOY_ISO_DIR)"
+  [[ -d "$VENTOY_ISO_DIR" ]] || die "ISO dir $VENTOY_ISO_DIR not found (mkdir it, or: ln -s ~/.cache/anfs/isos $VENTOY_ISO_DIR)"
   shopt -s nullglob
   local isos=("$VENTOY_ISO_DIR"/*.iso)
   [[ ${#isos[@]} -gt 0 ]] || die "no ISOs in $VENTOY_ISO_DIR"

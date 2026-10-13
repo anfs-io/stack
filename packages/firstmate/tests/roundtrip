@@ -45,7 +45,7 @@ podman rm -f "anfs-test-$distro" >/dev/null 2>&1 || true
 "$H" start "$distro" --from bootstrap "${srcs[@]}" >/dev/null
 
 box() {
-  "$H" exec "$distro" -- bash -c '[ -x /home/linuxbrew/.linuxbrew/bin/brew ] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"; export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"; export PIM_INSTALL=validate; '"$1"
+  "$H" exec "$distro" -- bash -c '[ -x /home/linuxbrew/.linuxbrew/bin/brew ] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"; export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"; export PMM_INSTALL=validate; '"$1"
 }
 
 echo "== install.sh"

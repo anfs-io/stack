@@ -29,7 +29,7 @@ install_linux() {
 }
 
 post_install() {
-  user_message "Choose the ISOs for a stick with: ventoy get <id> (list them with: ventoy isos); they are downloaded once, into the store pim and pmm use too"
+  user_message "Choose the ISOs for a stick with: ventoy get <id> (list them with: ventoy isos); they are downloaded once, into the store pmm uses too"
   user_message "For a PiKVM, use a disk image instead of a stick: ventoy prepare /srv/nfs/pikvm/ventoy.img (see: ventoy help)"
 }
 

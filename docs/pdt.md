@@ -16,4 +16,5 @@ ppm install <package>
 pcm install dnsmasq
 ```
 
-VM images (building, testing, running them) are `pim`, part of anfs: images/ in any source.
+Machines and the images they run from (building, testing, running them) are `pmm`, part of anfs:
+`machines/` in any source, with the images in `machines/images/`.
