@@ -1,4 +1,4 @@
-version: 0.1.4
+version: 0.1.5
 author: rjayroach
 categories: [pde]
 # The command-line tools (bat, fzf, ...) and their config come from stack/cli, shared with stack/bash

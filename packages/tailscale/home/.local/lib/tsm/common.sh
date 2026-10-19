@@ -126,7 +126,7 @@ try_authkey() {
 
 # How the key reaches tailscale. `--auth-key=<literal>` puts the secret in argv, where any
 # local user can read it from ps — which is exactly what stack/op goes out of its way to
-# avoid (see op/CLAUDE.md invariant 5, "the token never enters argv").
+# avoid (see op/AGENTS.md invariant 5, "the token never enters argv").
 #
 # Tailscale documents a file: prefix for the tailscaled config file's authKey. Whether the
 # CLI flag honours it is undocumented, so it is probed rather than assumed, and the result

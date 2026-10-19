@@ -14,7 +14,7 @@ fi
 # Path to your Oh My Zsh installation.
 export ZSH="$HOME/.local/share/omz"
 export ZSH_CONFIG="$HOME/.config/zsh"
-# Portable snippets shared with bash (see the shell-integration tiers in ppm's CLAUDE.md)
+# Portable snippets shared with bash (see the shell-integration tiers in ppm's AGENTS.md)
 export SH_CONFIG="$HOME/.config/sh"
 
 # XDG directories

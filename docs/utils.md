@@ -36,7 +36,7 @@ software, `install.sh` holds anything imperative, and `home/` is the stow tree.
 ## Conventions
 
 These follow the repo-wide ppm conventions — see
-[ppm's CLAUDE.md](https://github.com/anfs-io/system/blob/main/CLAUDE.md) for the full spec.
+[ppm's AGENTS.md](https://github.com/anfs-io/system/blob/main/AGENTS.md) for the full spec.
 Two worth knowing when reading these packages:
 
 - **Software is declared, not installed.** `package.yml` lists `brew` / `cask` / `system`
