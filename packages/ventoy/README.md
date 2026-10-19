@@ -6,7 +6,7 @@ A wrapper around the upstream [Ventoy](https://www.ventoy.net) release: it prepa
 ```bash
 ventoy disks                          # USB disks: DEVICE SIZE USB-ID BUS:ADDR MOUNTED NAME
 ventoy prepare /dev/sdb               # install Ventoy (Linux; ERASES the disk, asks for its path)
-ventoy iso list                       # the catalogue: ID NAME ARCH FILE STATE SIZE
+ventoy iso list                       # the catalogue: ISO STATUS NAME ARCH FILE SIZE
 ventoy copy debian proxmox            # download what is missing, select both, copy them
 ventoy list                           # what is on the stick, what differs, what is not copied
 ventoy sync -y                        # make the stick match the selection exactly

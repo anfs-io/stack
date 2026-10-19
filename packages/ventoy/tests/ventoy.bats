@@ -133,9 +133,9 @@ EOF
   echo sum > "$STORE/debian-13.iso.sha256"
   run "$VENTOY" iso list --all
   [ "$status" -eq 0 ]
-  [ "${lines[0]}" = "debian"$'\t'"-"$'\t'"-"$'\t'"debian-13.iso"$'\t'"present"$'\t'"0B" ]
-  [ "${lines[1]}" = "arch"$'\t'"-"$'\t'"-"$'\t'"arch.iso"$'\t'"missing"$'\t'"-" ]
-  [ "${lines[2]}" = "-"$'\t'"-"$'\t'"-"$'\t'"stray.iso"$'\t'"unlisted"$'\t'"0B" ]
+  [ "${lines[0]}" = "debian"$'\t'"present"$'\t'"-"$'\t'"-"$'\t'"debian-13.iso"$'\t'"0B" ]
+  [ "${lines[1]}" = "arch"$'\t'"missing"$'\t'"-"$'\t'"-"$'\t'"arch.iso"$'\t'"-" ]
+  [ "${lines[2]}" = "-"$'\t'"unlisted"$'\t'"-"$'\t'"-"$'\t'"stray.iso"$'\t'"0B" ]
   local rows="$output" anfs="$HOME/.local/lib/anfs/../../bin/anfs"
   run "$VENTOY" __complete copy ""
   [ "$output" = "debian"$'\n'"arch" ]
