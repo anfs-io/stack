@@ -1,0 +1,3 @@
+version: 0.1.0
+description: netboot.xyz for pcs, TFTP for the PXE boot loaders and HTTP for the installers
+upstream: docker.io/netbootxyz/netbootxyz

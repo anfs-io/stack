@@ -1,0 +1,4 @@
+version: 0.1.0
+description: Workflow automation
+upstream: docker.io/n8nio/n8n, docker.io/n8nio/runners
+url: https://n8n.io

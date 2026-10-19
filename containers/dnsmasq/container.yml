@@ -1,0 +1,3 @@
+version: 0.1.0
+description: dnsmasq for pcs, proxy DHCP so PXE clients at the site boot from this machine
+upstream: docker.io/dockurr/dnsmasq

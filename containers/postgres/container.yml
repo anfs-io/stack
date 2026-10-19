@@ -1,0 +1,3 @@
+version: 0.1.0
+description: The shared pcm postgres; dependents get their own database
+upstream: docker.io/library/postgres:17-alpine

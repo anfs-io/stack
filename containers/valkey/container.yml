@@ -1,0 +1,4 @@
+version: 0.1.0
+description: The shared pcm key-value store (Redis-compatible)
+upstream: docker.io/valkey/valkey
+url: https://valkey.io

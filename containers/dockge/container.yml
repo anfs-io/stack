@@ -1,0 +1,4 @@
+version: 0.1.0
+description: Web UI for managing compose stacks
+upstream: docker.io/louislam/dockge
+url: https://dockge.kuma.pet
