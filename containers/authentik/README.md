@@ -6,7 +6,8 @@ app will authenticate against in production, so you can build and test real
 OIDC/SAML flows locally.
 
 The stack is the authentik `server` + `worker`, using the shared pcm postgres
-(declared in `x-pcm.depends_on`). authentik 2025.10+ needs no Redis.
+(declared in `x-pcm.depends_on`). authentik 2025.10+ needs no Redis. Images, ports,
+data and env names: `pcm show authentik`.
 
 ## Run
 
@@ -20,9 +21,6 @@ podman compose --pcm logs -f authentik
 the `authentik` database and passes the connection details in as
 `PCM_POSTGRES_*`. Plain `podman compose up` in this directory has neither those
 nor the defaults from `.env.schema`, so use pcm (or `--pcm`).
-
-Data (`data/`, `certs/`, `custom-templates/`) lives in
-`$PCM_VOLUMES_HOME/authentik/`.
 
 Web UI: <http://localhost:9000> (HTTPS on <https://localhost:9443>). The first
 start runs migrations and takes a minute or two.
@@ -91,10 +89,8 @@ browser and the app agreeing on one URL.
 
 ## Configuration
 
-All tunables — image, ports, secret key — and their defaults live in
-[`.env.schema`](./.env.schema), so first run needs nothing beyond pcm's postgres.
-
-To override, add a `.env` next to it (e.g. stowed from your own ppm layer); none
+The defaults in [`.env.schema`](./.env.schema) need nothing beyond pcm's postgres
+on first run. To override, add a `.env` next to it (e.g. stowed from your own ppm layer); none
 is shipped. Real secrets belong in fnox: a `fnox.toml` in this directory, with
 providers in `../fnox.toml`.
 

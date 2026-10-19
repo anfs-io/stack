@@ -7,7 +7,8 @@ receiving webhooks from apps under development.
 The stack is n8n plus an external task runner (which runs Code nodes), using the
 shared pcm postgres (declared in `x-pcm.depends_on`). It is adapted from
 [n8n-hosting `withPostgres`](https://github.com/n8n-io/n8n-hosting/tree/main/docker-compose/withPostgres);
-the bundled postgres and its `init-data.sh` are replaced by pcm's.
+the bundled postgres and its `init-data.sh` are replaced by pcm's. Images, ports,
+data and env names: `pcm show n8n`.
 
 ## Run
 
@@ -20,8 +21,6 @@ podman compose --pcm logs -f n8n
 Editor: <http://localhost:5678> — the first visit asks you to create the owner
 account.
 
-Data lives in `$PCM_VOLUMES_HOME/n8n/data` (mounted at `/home/node/.n8n`).
-
 > **Memory:** n8n settles around 570 MB and peaks higher while migrating. On a
 > 2 GiB podman machine alongside other stacks (authentik alone is ~720 MB) it gets
 > OOM-killed and restart-loops, logging "Last session crashed". Give the machine
@@ -30,8 +29,7 @@ Data lives in `$PCM_VOLUMES_HOME/n8n/data` (mounted at `/home/node/.n8n`).
 
 ## Configuration
 
-All tunables — images, tag, port, webhook URL, timezone, runner token — and their
-defaults live in [`.env.schema`](./.env.schema). To override, add a `.env` next
+Defaults live in [`.env.schema`](./.env.schema). To override, add a `.env` next
 to it (e.g. stowed from your own ppm layer); none is shipped. Real secrets belong
 in fnox.
 

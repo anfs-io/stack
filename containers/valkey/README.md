@@ -1,8 +1,8 @@
 # Valkey
 
-Shared, Redis-compatible key-value store for pcm services (<https://valkey.io>).
-It works like the shared postgres: one instance, and each dependent gets its own
-slice.
+Shared, Redis-compatible key-value store for pcm services. It works like the
+shared postgres: one instance, and each dependent gets its own slice. Image, port,
+data and env names: `pcm show valkey`.
 
 ## Run
 
@@ -47,6 +47,6 @@ podman exec valkey_valkey_1 valkey-cli -n 0 HGETALL pcm:databases
   and `FLUSHALL` wipes every app. That's fine for dev. For real isolation, switch
   provision to per-dependent ACL users.
 - **Capacity:** `VALKEY_DATABASES` (default 64) minus db 0.
-- **Persistence:** AOF on, in `~/.local/share/pcm/volumes/valkey`.
+- **Persistence:** AOF on.
 - **Reset one app's keys:** `valkey-cli -n <db> FLUSHDB`. Leave its entry in
   `pcm:databases` so it keeps the same number.

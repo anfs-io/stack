@@ -4,7 +4,8 @@ Self-hosted, Sentry-compatible error tracking. Point your app's Sentry SDK at a
 GlitchTip DSN and exceptions land here instead of (or alongside) hosted Sentry.
 
 In a dev environment this gives you a local error inbox. The stack is GlitchTip,
-using the shared pcm postgres and valkey (declared in `x-pcm.depends_on`).
+using the shared pcm postgres and valkey (declared in `x-pcm.depends_on`). Image,
+port, data and env names: `pcm show glitchtip`.
 
 ## Run
 
@@ -27,9 +28,8 @@ set it as your Sentry `dsn`.
 
 ## Configuration
 
-All tunables — images, ports, connections, feature flags — and their defaults
-live in [`.env.schema`](./.env.schema), so first run needs nothing beyond pcm's
-postgres.
+The defaults in [`.env.schema`](./.env.schema) need nothing beyond pcm's postgres
+on first run.
 
 To override, add a `.env` next to it (e.g. stowed from your own ppm layer); none
 is shipped. Real secrets belong in fnox: a `fnox.toml` in this directory, with

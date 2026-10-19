@@ -1,7 +1,8 @@
 # Traefik
 
 The pcm proxy (`x-pcm.provides: proxy`): it routes hostnames to pcm services.
-See <https://doc.traefik.io/traefik/>.
+See <https://doc.traefik.io/traefik/>. Image, ports, env names and the privilege it
+takes: `pcm show traefik`.
 
 ## How services use it
 
@@ -59,7 +60,7 @@ in `~/.config/pcm/env/traefik.env`.
 
 ## SELinux
 
-Traefik runs with `security_opt: label=disable` (declared under
-`x-pcm.privileges`). SELinux is enforcing in the podman machine and on Fedora,
-and it denies containers the podman API socket (`user_tmp_t`). Without this,
-the docker provider logs `permission denied` and nothing is routed.
+The `security_opt: label=disable` privilege (`x-pcm.privileges`, reason in
+`pcm show traefik`) is what lets the docker provider read the podman socket
+(`user_tmp_t`). Without it the provider logs `permission denied` and nothing is
+routed.

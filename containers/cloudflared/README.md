@@ -2,6 +2,7 @@
 
 The Cloudflare Tunnel connector behind pcm's `cloudflare-tunnel` edge. You don't
 start it yourself: a service with a host under a Cloudflare domain depends on it.
+Image, env names and links: `pcm show cloudflared`.
 
 ## Setup (once)
 

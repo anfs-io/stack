@@ -1,7 +1,7 @@
 # Dockge
 
-Web UI for creating, editing and running compose stacks. See
-<https://dockge.kuma.pet>.
+Web UI for creating, editing and running compose stacks. Image, ports, data and
+env names: `pcm show dockge`.
 
 ## Run
 
@@ -45,5 +45,4 @@ The UI binds to 127.0.0.1 by default; set `DOCKGE_BIND` in a `.env` to expose it
 
 ## Configuration
 
-Tunables and their defaults live in [`.env.schema`](./.env.schema). To override
-them, add a `.env` next to it (e.g. stowed from your own ppm layer); none is shipped.
+Defaults live in [`.env.schema`](./.env.schema). To override them, add a `.env` next to it (e.g. stowed from your own ppm layer); none is shipped.

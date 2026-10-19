@@ -5,7 +5,8 @@ A throwaway, local-only tracing stack. Traces flow:
     host app --OTLP--> otel-collector --OTLP--> tempo <--query-- grafana
 
 Any process that speaks OTLP can export to it. The stack is app-independent: it
-ships no dashboards and no project paths.
+ships no dashboards and no project paths. Images, ports, data and env names:
+`pcm show telemetry`.
 
 ## Run
 
@@ -15,10 +16,8 @@ pcm down telemetry
 podman compose --pcm logs -f telemetry
 ```
 
-- Grafana: <http://localhost:8080> (anonymous admin, Tempo datasource pre-wired)
-- OTLP: `localhost:4317` (gRPC), `localhost:4318` (HTTP)
-
-Tempo data lives in `$PCM_VOLUMES_HOME/telemetry/tempo` (1h retention).
+Grafana (<http://localhost:8080>) is anonymous admin with the Tempo datasource
+pre-wired. OTLP comes in on 4317 (gRPC) and 4318 (HTTP).
 
 ## Architecture (Tempo 3.0)
 
@@ -35,9 +34,8 @@ in-process — distributor → block-builder → live-store — with **no Kafka*
 
 ## Configuration
 
-Image tags, host ports and the dashboards dir, with defaults, live in
-[`.env.schema`](./.env.schema). To override, add a `.env` next to it (e.g.
-stowed from your own ppm layer); none is shipped.
+Defaults live in [`.env.schema`](./.env.schema). To override, add a `.env` next
+to it (e.g. stowed from your own ppm layer); none is shipped.
 
 ## Connecting an app
 
