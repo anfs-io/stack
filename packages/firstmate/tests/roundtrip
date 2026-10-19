@@ -9,7 +9,7 @@
 # Usage: stack/packages/firstmate/tests/roundtrip [--keep] [debian|fedora]       (default: debian)
 #   --keep  leave the box and its source copy in place afterwards, to poke at
 #
-# Uses the anfs test harness and its `bootstrap` snapshot (built by core/packages/anfs/tests/roundtrip
+# Uses the anfs test harness and its `bootstrap` snapshot (built by anfs-dev/packages/dev/tests/roundtrip
 # on first use). The core and stack sources are copied from $ANFS_SOURCES_HOME (working
 # tree, uncommitted edits included) and mounted read-only. Claude is not authenticated in the
 # box: the first mate is only checked to start and be detected by herdr.
@@ -19,7 +19,7 @@ keep=false
 [[ "${1:-}" == --keep ]] && { keep=true; shift; }
 distro="${1:-debian}"
 SRC="${ANFS_SOURCES_HOME:-$HOME/.local/share/anfs/sources}"
-H="$SRC/core/packages/anfs/tests/harness"
+H="$SRC/anfs-dev/packages/dev/tests/harness"
 DEPS="herdr claude node git python"
 
 # What the dependencies may leave, which is theirs and not firstmate's: tool caches and state (brew,
@@ -28,7 +28,7 @@ DEPS="herdr claude node git python"
 IGNORE_RE='^\./(\.cache|\.local|\.local/share|\.local/state|\.config|\.claude|\.claude\.json|\.bash_history)$|^\./(\.cache/|\.npm|\.claude/|\.claude\.json\.|\.local/share/mise|\.local/state/(mise|herdr|gh)|\.config/herdr/(\.plugins\.lock|sessions))'
 
 podman image exists "localhost/anfs-test:$distro-bootstrap" \
-  || { echo "no $distro-bootstrap image: run core/packages/anfs/tests/roundtrip $distro once" >&2; exit 2; }
+  || { echo "no $distro-bootstrap image: run anfs-dev/packages/dev/tests/roundtrip $distro once" >&2; exit 2; }
 
 copy=$(mktemp -d "${TMPDIR:-/tmp}/fm-roundtrip.XXXXXX")
 if $keep; then
