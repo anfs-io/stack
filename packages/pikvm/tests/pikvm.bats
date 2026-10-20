@@ -156,16 +156,19 @@ EOF
   [ "$(cat "$FS")" = ro ]
 }
 
-@test "copy-id: -i a key file, -f; no agent keys and an unreadable file are refused" {
+@test "copy-id: --identity a key file, -f; no agent keys and an unreadable file are refused" {
   echo key > "$HOME/id.pub"
-  PIKVM_SSH_OPTS="-p 2222" run "$PIKVM" copy-id -f -i "$HOME/id.pub"
+  PIKVM_SSH_OPTS="-p 2222" run "$PIKVM" copy-id -f --identity "$HOME/id.pub"
   [ "$status" -eq 0 ]
   grep -qx "ssh-copy-id fs=rw: -o ControlPath=CTL -p 2222 -i $HOME/id.pub -f root@pikvm" "$ARGV"
   AGENT_RC=1 run "$PIKVM" copy-id
   [ "$status" -eq 1 ]
   [[ "$output" == *"ssh-agent has no keys"* ]]
-  run "$PIKVM" copy-id -i "$HOME/nope.pub"
+  run "$PIKVM" copy-id --identity "$HOME/nope.pub"
   [ "$status" -eq 1 ]
+  # -i is every tool's --interactive, not --identity
+  run "$PIKVM" copy-id -i "$HOME/id.pub" < /dev/null
+  [ "$status" -eq 77 ]
   [ "$(cat "$FS")" = ro ]
 }
 

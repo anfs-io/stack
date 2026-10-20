@@ -42,7 +42,7 @@ cli_cmd rw "Switch the root filesystem to read/write (and leave it there)" "${_h
 cli_cmd ro "Switch the root filesystem to read-only" "${_host[@]}"
 cli_cmd copy-id "Install public keys into the PiKVM's authorized_keys with ssh-copy-id (default:
 the keys in ssh-agent). Always wrapped in rw/ro" \
-  --opt "-i --identity FILE: Install this key file instead of the agent's keys" \
+  --opt "--identity FILE: Install this key file instead of the agent's keys" \
   --opt "-f --force: Install even if the key appears to be present already" "${_host[@]}"
 cli_group msd "Mass storage drive: the image the PiKVM presents to its host as USB"
 cli_cmd "msd status" "Selected image, and whether it is connected, a cdrom, read/write" "${_host[@]}"
@@ -160,7 +160,7 @@ cmd_copy_id() {
     [[ -r "$key" ]] || die "cannot read key file $key"
     args+=(-i "$key")
   else
-    ssh-add -L >/dev/null 2>&1 || die "ssh-agent has no keys (load them with ssh-add, or pass -i keyfile)"
+    ssh-add -L >/dev/null 2>&1 || die "ssh-agent has no keys (load them with ssh-add, or pass --identity keyfile)"
   fi
   ! ${CLI_OPT[force]:-false} || args+=(-f)
 
