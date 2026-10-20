@@ -98,7 +98,7 @@ EOF
   printf 'aaaa' > "$ISOS/new.iso"
   printf 'aaaa' > "$STICK/extra.iso"
   run "$VENTOY" sync "$STICK" </dev/null
-  [ "$status" -eq 1 ]
+  [ "$status" -eq 77 ]
   [[ "$output" == *"pass -y"* ]]
   [ -f "$STICK/extra.iso" ]
   run "$VENTOY" sync "$STICK" -y </dev/null
@@ -106,14 +106,17 @@ EOF
   [ ! -f "$STICK/extra.iso" ] && [ -f "$STICK/new.iso" ]
 }
 
-@test "remove takes rm and --target, and refuses a path off the stick" {
+@test "remove takes rm and --target, asks first, and refuses a path off the stick" {
   printf 'aaaa' > "$STICK/a.iso"
-  run "$VENTOY" rm a.iso -t "$STICK"
+  run "$VENTOY" rm a.iso -t "$STICK" </dev/null
+  [ "$status" -eq 77 ]
+  [ -f "$STICK/a.iso" ]
+  run "$VENTOY" rm -y a.iso -t "$STICK"
   [ "$status" -eq 0 ]
   [ ! -f "$STICK/a.iso" ]
-  run "$VENTOY" remove ../a.iso --target "$STICK"
+  run "$VENTOY" remove -y ../a.iso --target "$STICK"
   [ "$status" -eq 1 ]
-  run "$VENTOY" remove gone.iso -t "$STICK"
+  run "$VENTOY" remove -y gone.iso -t "$STICK"
   [ "$status" -eq 1 ]
   [[ "$output" == *"not on the stick: gone.iso"* ]]
 }
@@ -152,7 +155,7 @@ EOF
   [ "$status" -eq 0 ]
   [ "$(cat "$STORE/arch.iso")" = "from https://example.invalid/arch.iso" ]
   [ ! -e "$ISOS/arch.iso" ]
-  run "$VENTOY" iso rm arch
+  run "$VENTOY" iso rm -y arch
   [ "$status" -eq 0 ]
   [ ! -e "$STORE/arch.iso" ]
 }

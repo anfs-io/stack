@@ -54,10 +54,10 @@ the one selected before for that id" \
   --opt "-t --target TARGET: The stick" \
   --opt "-k --keep: Keep the older version selected" --arg "[iso...]"
 cli_cmd remove "Remove ISOs from a stick (paths as \`ventoy list\` shows them)" --alias rm \
-  --opt "-t --target TARGET: The stick" --arg "iso..."
+  --opt "-t --target TARGET: The stick" --opt "-y --yes: Do not ask before deleting" --arg "iso..."
 cli_cmd sync "Make the stick's ISOs match VENTOY_ISO_DIR exactly: copy missing or changed
 ISOs, remove all others (an empty dir removes every ISO)" \
-  --opt "-n --dry-run: Show what would change" --opt "-y --yes: Do not ask" --arg "[target]"
+  --opt "-n --dry-run: Show what would change" --opt "-y --yes: Do not ask before applying" --arg "[target]"
 # The catalogue and the store are anfs's, and so is the group: `ventoy iso list`, `ventoy iso pull`
 # are `anfs iso` and `pmm iso` (lib/anfs/iso.sh)
 anfs_iso_cli
@@ -439,6 +439,7 @@ cmd_remove() {
   done
 
   open_stick "${CLI_OPT[target]:-}" rw
+  anfs_confirm "this deletes $* from the stick" "Remove?"
 
   for name in "$@"; do
     if [[ -f "$STICK_DIR/$name" ]]; then

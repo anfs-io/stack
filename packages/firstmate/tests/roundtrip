@@ -95,7 +95,7 @@ check "no processes reference FM_HOME or the session" '! pgrep -f "[f]irstmate/h
 check "the firstmate session is gone"           '! herdr session list --json | jq -e ".sessions[] | select(.name == \"firstmate\")"'
 
 echo "== ppm remove stack/firstmate"
-box 'ppm remove stack/firstmate' >/dev/null 2>&1 || { echo "!! ppm remove stack/firstmate failed"; status=1; }
+box 'ppm remove -y stack/firstmate' >/dev/null 2>&1 || { echo "!! ppm remove stack/firstmate failed"; status=1; }
 check "firstmate launcher unstowed"             '! command -v firstmate'
 check "repo and FM_HOME removed"                '! test -e ~/.local/share/firstmate'
 
