@@ -1,7 +1,10 @@
-version: 0.1.2
+version: 0.1.3
 author: rjayroach
 categories: [pde]
 brew: [gh, git-filter-repo]
+depends:
+  # git account uses ssh-key
+  - ssh
 onboard:
   offer: "git and GitHub from the command line (gh): your identity, your account, your repo on it"
   steps:

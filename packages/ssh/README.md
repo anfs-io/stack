@@ -78,6 +78,13 @@ The capture is guarded against re-sourcing, and `ssh_register` is idempotent, so
 | stack/op | forwards `OP_SERVICE_ACCOUNT_TOKEN` to the remote |
 | stack/ghostty | per-host background colour and tab title |
 
+## Commands
+
+- `ssh-key list` — `KEY STATUS FILE`: each key this machine can use (`local`: in ~/.ssh with
+  its private key; `agent`: ssh-agent's).
+- `ssh-key add [--type ed25519]` — make `~/.ssh/id_ed25519`, unless there is a key already.
+- `ssh-key public [key]` — print a public key: the only one, or the one named by fingerprint.
+
 ## Other contents
 
 - `install.sh` — optionally fetches `$HOME/.ssh/authorized_keys`:

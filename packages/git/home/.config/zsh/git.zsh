@@ -88,3 +88,6 @@ gh-create-repos() {
   gh repo create "${org}/${name}-space" --private
   gh repo create "${org}/${name}-ppm" --private
 }
+
+# git account: zsh's git completion calls _git-account for it
+zcomp git-account

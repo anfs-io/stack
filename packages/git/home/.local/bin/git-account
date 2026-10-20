@@ -1,0 +1,247 @@
+#!/usr/bin/env bash
+# git-account — your accounts at git hosts (git account ...), and your ssh key on each
+#
+# An account is kept in git's global config: account.<host>.user (git config --global
+# account.github.com.user octo). Its public keys are read from https://<host>/<user>.keys, which
+# needs no sign-in; the keys here are ssh-key's.
+set -euo pipefail
+
+ANFS_LIB="$HOME/.local/lib/anfs"
+if [[ ! -f "$ANFS_LIB/bash.sh" || ! -f "$ANFS_LIB/table.sh" ]]; then
+  echo "git-account: $ANFS_LIB is missing or out of date; install core/anfs again" >&2
+  exit 69
+fi
+# shellcheck source=/dev/null
+source "$ANFS_LIB/bash.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/paths.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/log.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/cli.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/table.sh"
+
+CLI_TOOL=git-account
+
+cli_cmd add "Record your account at a git host, and see that your ssh key is on it: if not, gh
+adds it (github.com, signed in), else the key and where to add it are printed" \
+  --opt "--host HOST: The git host (default: the one recorded, else github.com)" \
+  --opt "--user USER: Your user name there (default: the one recorded)" \
+  --opt "-y --yes: Ask nothing (a new key has no passphrase; a different user replaces the one recorded)"
+cli_cmd list "Your accounts: ACCOUNT STATUS KEYS (how many the account has). STATUS: key on
+account, no key here, key not on account, unreachable" --alias ls
+cli_cmd remove "Forget the account at a host (your keys stay where they are)" --alias rm \
+  --opt "-y --yes: Do not ask" --arg "host"
+cli_standard
+
+# --- the accounts --------------------------------------------------------------------------
+
+# host<TAB>user, one per recorded account
+_accounts() {
+  local key user
+  git config --global --get-regexp '^account\..*\.user$' 2>/dev/null |
+    while read -r key user; do
+      key="${key#account.}"
+      printf '%s\t%s\n' "${key%.user}" "$user"
+    done || true
+}
+
+_account_user() { git config --global "account.$1.user" 2>/dev/null || true; }
+
+# The host when none is given: the only one recorded, else github.com
+_default_host() {
+  local accounts
+  accounts=$(_accounts)
+  if [[ -n "$accounts" && "$(grep -c . <<< "$accounts")" == 1 ]]; then
+    REPLY="${accounts%%$'\t'*}"
+  else
+    REPLY=github.com
+  fi
+}
+
+complete_host() {
+  { printf '%s\n' github.com gitlab.com; _accounts | cut -f1; } | awk '!seen[$0]++'
+}
+
+# The user recorded for the host given (or the default one): -i's default
+complete_user() {
+  local host="${CLI_OPT[host]:-}"
+  [[ -n "$host" ]] || { _default_host; host="$REPLY"; }
+  _account_user "$host"
+}
+
+# Where a person adds a key by hand
+_settings_url() {
+  case "$1" in
+    github.com) echo "https://github.com/settings/ssh/new" ;;
+    gitlab.com) echo "https://gitlab.com/-/user_settings/ssh_keys" ;;
+  esac
+}
+
+# git writes ~/.gitconfig unless ~/.config/git/config exists: a package can own the second
+_git_config_file() {
+  local config="$XDG_CONFIG_HOME/git/config"
+  [[ -z "${GIT_CONFIG_GLOBAL:-}" && ! -e "$HOME/.gitconfig" && ! -e "$config" ]] || return 0
+  mkdir -p "${config%/*}"
+  : > "$config"
+}
+
+# --- keys ------------------------------------------------------------------------------------
+
+_ssh_key() {
+  [[ -x "$ANFS_BIN_DIR/ssh-key" ]] || anfs_fail 69 "ssh-key is required (ppm install stack/ssh)"
+  "$ANFS_BIN_DIR/ssh-key" "$@"
+}
+
+# fingerprint<TAB>public key, one per key here
+_local_keys() {
+  ANFS_TABLE= _ssh_key list --json </dev/null | yq -p json -r '.[] | .key + "\t" + .public'
+}
+
+# The account's public keys into ACCOUNT_KEYS, one per line. 1: no such user (404); 2: unreachable
+_account_keys() {
+  local url="https://$1/$2.keys" out code
+  ACCOUNT_KEYS=""
+  anfs_debug "reading $url"
+  out=$(curl -sS --max-time 10 -w '\n%{http_code}' "$url" 2>/dev/null) || return 2
+  code="${out##*$'\n'}"
+  case "$code" in
+    200) ACCOUNT_KEYS="${out%$'\n'*}" ;;
+    404) return 1 ;;
+    *) return 2 ;;
+  esac
+}
+
+# The first local key (fingerprint<TAB>public) whose blob is among ACCOUNT_KEYS, in REPLY
+_key_on_account() {
+  local fp pub blob
+  REPLY=""
+  while IFS=$'\t' read -r fp pub; do
+    [[ -n "$fp" ]] || continue
+    blob=$(awk '{print $2}' <<< "$pub")
+    if [[ -n "$blob" ]] && grep -qF -- " $blob" <<< "$ACCOUNT_KEYS"; then
+      REPLY="$fp"
+      return 0
+    fi
+  done <<< "$1"
+  return 1
+}
+
+# gh's token the way the gh wrapper finds it in a shell (git.zsh): fnox reads ~/.config/fnox/gh.toml
+_gh_env() {
+  local file="$XDG_CONFIG_HOME/fnox/gh.toml"
+  [[ -z "${GH_TOKEN:-}" && -f "$file" ]] && command -v fnox >/dev/null 2>&1 || return 0
+  eval "$(fnox export --config "$file" 2>/dev/null)" || true
+}
+
+_gh_authed() {
+  command -v gh >/dev/null 2>&1 || return 1
+  gh auth status >/dev/null 2>&1 && return 0
+  _gh_env
+  [[ -n "${GH_TOKEN:-}" ]] && gh auth status >/dev/null 2>&1
+}
+
+# gh signed in as <user>, with the scope that adds keys. Says why not, on stderr.
+_gh_can_add() {
+  local login
+  _gh_authed || { anfs_warn "gh is not signed in (gh auth login -s admin:public_key opens a browser)"; return 1; }
+  login=$(gh api user -q .login 2>/dev/null || true)
+  [[ "$login" == "$1" ]] || { anfs_warn "gh is signed in as ${login:-someone else}, not $1"; return 1; }
+  gh auth status 2>&1 | grep -q 'admin:public_key' ||
+    { anfs_warn "gh's token cannot add keys: gh auth refresh -h github.com -s admin:public_key"; return 1; }
+}
+
+# --- commands ------------------------------------------------------------------------------
+
+cmd_add() {
+  local host="${CLI_OPT[host]:-}" user="${CLI_OPT[user]:-}" recorded keys fp pub url rc=0
+  local -a pass=()
+  [[ -n "$host" ]] || { _default_host; host="$REPLY"; }
+  recorded=$(_account_user "$host")
+  [[ -n "$user" ]] || user="$recorded"
+  [[ -n "$user" ]] || cli_usage_err "--user is needed: your user name at $host"
+
+  # 2: the account's keys, which also says the user exists
+  url="https://$host/$user.keys"
+  _account_keys "$host" "$user" || rc=$?
+  case "$rc" in
+    1) anfs_die "no user $user at $host ($url: 404)" ;;
+    2) anfs_fail 69 "cannot read $url" ;;
+  esac
+
+  # 1: the account, recorded
+  if [[ "$recorded" != "$user" ]]; then
+    [[ -z "$recorded" ]] ||
+      anfs_confirm "your account at $host is $recorded; this makes it $user" "Replace $host/$recorded with $host/$user?"
+    _git_config_file
+    git config --global "account.$host.user" "$user"
+    anfs_json_on || anfs_info "Recorded $host/$user"
+  fi
+
+  # 3, 4: a key here, made when there is none
+  keys=$(_local_keys)
+  if [[ -z "$keys" ]]; then
+    ! ${CLI_OPT[yes]:-false} || pass+=(-y)
+    ! ${CLI_OPT[interactive]:-false} || pass+=(-i)
+    _ssh_key add ${pass[@]+"${pass[@]}"} >&2
+    keys=$(_local_keys)
+    [[ -n "$keys" ]] || anfs_die "ssh-key add made no key"
+  fi
+  if _key_on_account "$keys"; then
+    anfs_json_on || anfs_info "Your key $REPLY is on $host"
+    anfs_result account "$host/$user" status "key on account" key "$REPLY"
+    return 0
+  fi
+
+  # 5: put it there
+  IFS=$'\t' read -r fp pub <<< "${keys%%$'\n'*}"
+  if [[ "$host" == github.com ]] && _gh_can_add "$user"; then
+    printf '%s\n' "$pub" | gh ssh-key add - --title "$(hostname -s)" >&2 ||
+      anfs_die "gh could not add the key ($fp)"
+    anfs_json_on || anfs_info "Your key $fp is on $host now"
+    anfs_result account "$host/$user" status "key on account" key "$fp" added true
+    return 0
+  fi
+  url=$(_settings_url "$host")
+  if anfs_json_on; then
+    anfs_result account "$host/$user" status "key not on account" key "$fp" public "$pub" url "$url"
+    return 0
+  fi
+  anfs_info "Your key $fp is not on $host/$user. Add it${url:+ at $url}:"
+  anfs_info ""
+  anfs_info "$pub"
+  anfs_info ""
+  anfs_info "then run this again: git account add --host $host"
+}
+
+cmd_list() {
+  local host user keys status n
+  keys=$(_local_keys)
+  while IFS=$'\t' read -r host user; do
+    [[ -n "$host" ]] || continue
+    n=""
+    if ! _account_keys "$host" "$user"; then
+      status=unreachable
+    else
+      n=$(grep -c . <<< "$ACCOUNT_KEYS" || true)
+      if [[ -z "$keys" ]]; then status="no key here"
+      elif _key_on_account "$keys"; then status="key on account"
+      else status="key not on account"
+      fi
+    fi
+    anfs_row "$host/$user" "$status" "$n" "$host" "$user"
+  done < <(_accounts) | anfs_table "ACCOUNT STATUS KEYS" "account status keys host user"
+}
+
+cmd_remove() {
+  local host="$1" user
+  user=$(_account_user "$host")
+  [[ -n "$user" ]] || anfs_die "no account at $host (git account list)"
+  anfs_confirm "this forgets $host/$user (your keys stay)" "Forget $host/$user?"
+  git config --global --remove-section "account.$host"
+  anfs_json_on || anfs_info "Forgot $host/$user"
+  anfs_result account "$host/$user" removed true
+}
+
+cli_dispatch "$@"

@@ -36,7 +36,8 @@ and what a pmm machine names in `media:`. The `iso` group (`list`, `show`, `pull
 `remove`, `path`, `prune`) is core's, written once and adopted by `anfs`, `pmm` and `ventoy`
 with one call (`anfs_iso_cli`); its keys are in core's table.
 
-On it: `ventoy`, `gem-local` (ruby), `tsm` (tailscale), `opm` (op), `remotefs`, `pikvm`. Not yet:
+On it: `ventoy`, `gem-local` (ruby), `tsm` (tailscale), `opm` (op), `remotefs`, `pikvm`, `ssh-key`
+(ssh), `git-account` (git: run as `git account`). Not yet:
 `rpi-imager`, `firstmate`.
 
 | Command | Keys |
@@ -47,4 +48,6 @@ On it: `ventoy`, `gem-local` (ruby), `tsm` (tailscale), `opm` (op), `remotefs`, 
 | `gem-local src list` | `path`, `note` (`missing`) |
 | `remotefs list` | `label`, `remote`, `mountpoint`, `state` (`mounted`, `unmounted`, `stale`) |
 | `pikvm msd list` | `size`, `image` |
+| `ssh-key list` | `key` (the fingerprint), `status` (`local`, `agent`), `file`, `type`, `comment`, `public` |
+| `git account list` | `account` (`<host>/<user>`), `status` (`key on account`, `no key here`, `key not on account`, `unreachable`), `keys` (how many the account has), `host`, `user` |
 | `opm list` | `scope`, `shared`, `service_account`, `token_item`, `token_vault`, `provisioned` |

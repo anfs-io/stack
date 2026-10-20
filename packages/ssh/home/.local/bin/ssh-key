@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# ssh-key — the ssh keys this machine can use to be you: list them, make one, print one
+#
+# A key is one of ~/.ssh/*.pub with its private key beside it (local), or one the agent holds
+# (ssh-add -L: a forwarded agent's, 1Password's). Its name is its fingerprint (SHA256:...).
+set -euo pipefail
+
+ANFS_LIB="$HOME/.local/lib/anfs"
+if [[ ! -f "$ANFS_LIB/bash.sh" || ! -f "$ANFS_LIB/table.sh" ]]; then
+  echo "ssh-key: $ANFS_LIB is missing or out of date; install core/anfs again" >&2
+  exit 69
+fi
+# shellcheck source=/dev/null
+source "$ANFS_LIB/bash.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/paths.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/log.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/cli.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB/table.sh"
+
+CLI_TOOL=ssh-key
+
+cli_cmd list "Each key this machine can use: KEY STATUS FILE. local: in ~/.ssh, its private key
+beside it; agent: held by ssh-agent" --alias ls
+cli_cmd add "Make a key in ~/.ssh, unless there is one already (any of list): then nothing is done.
+At a terminal ssh-keygen asks for a passphrase; without one (or with -y) it has none" \
+  --opt "-t --type TYPE: The key type (default: ed25519)" \
+  --opt "-y --yes: Ask nothing: no passphrase"
+cli_cmd public "Print a public key: the only one, or the one named by its fingerprint" --arg "[key]"
+cli_standard
+
+# Fingerprint, type and comment of the public key on stdin, tab-separated
+_ssh_key_info() {
+  local bits fp rest type
+  read -r bits fp rest < <(ssh-keygen -lf /dev/stdin 2>/dev/null) || return 1
+  [[ -n "${fp:-}" ]] || return 1
+  type="${rest##*(}" type="${type%)}"
+  rest="${rest% (*}"
+  printf '%s\t%s\t%s\n' "$fp" "${type,,}" "$rest"
+}
+
+# The keys, one row each (anfs_row): key status file type comment public. ~/.ssh/id_ed25519.pub
+# first, then the other files, then the agent's that are not among them.
+_ssh_keys() {
+  local file line fp type comment keys
+  local -A seen=()
+  for file in "$HOME/.ssh/id_ed25519.pub" "$HOME"/.ssh/*.pub; do
+    [[ -f "$file" && -f "${file%.pub}" && -z "${seen[$file]:-}" ]] || continue
+    seen[$file]=1
+    line=$(head -n 1 "$file")
+    IFS=$'\t' read -r fp type comment < <(_ssh_key_info <<< "$line") || continue
+    seen[$fp]=1
+    anfs_row "$fp" local "$file" "$type" "$comment" "$line"
+  done
+  # Without keys (or an agent) ssh-add fails, and says so on stdout
+  keys=$(ssh-add -L 2>/dev/null) || return 0
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    IFS=$'\t' read -r fp type comment < <(_ssh_key_info <<< "$line") || continue
+    [[ -z "${seen[$fp]:-}" ]] || continue
+    seen[$fp]=1
+    anfs_row "$fp" agent "" "$type" "$comment" "$line"
+  done <<< "$keys"
+}
+
+complete_key() {
+  local fp status file
+  while IFS="$ANFS_US" read -r fp status file _; do
+    printf '%s\t%s\n' "$fp" "$status${file:+ $(anfs_display "$file")}"
+  done < <(_ssh_keys)
+}
+
+complete_type() { printf '%s\n' ed25519 ecdsa rsa; }
+
+cmd_list() {
+  _ssh_keys | anfs_table "KEY STATUS FILE" "key status file type comment public"
+}
+
+cmd_add() {
+  local type="${CLI_OPT[type]:-ed25519}" first fp status file file_key
+  local -a args=()
+  first=$(_ssh_keys | head -n 1)
+  if [[ -n "$first" ]]; then
+    IFS="$ANFS_US" read -r fp status file _ <<< "$first"
+    anfs_json_on || anfs_info "You have a key already: $fp ($status${file:+ $(anfs_display "$file")})"
+    anfs_result key "$fp" status "$status" file "$file" created false
+    return 0
+  fi
+  case "$type" in
+    ed25519|ecdsa|rsa) ;;
+    *) cli_usage_err "--type is ed25519, ecdsa or rsa, not '$type'" ;;
+  esac
+  anfs_require ssh-keygen
+  file_key="$HOME/.ssh/id_$type"
+  [[ ! -e "$file_key" ]] ||
+    anfs_die "$file_key is there without its public key: ssh-keygen -y -f $file_key > $file_key.pub"
+  mkdir -p "$HOME/.ssh"
+  chmod 700 "$HOME/.ssh"
+  args=(-q -t "$type" -f "$file_key" -C "$(id -un)@$(hostname -s)")
+  # ssh-keygen asks for a passphrase itself; with nobody to ask there is none
+  if ${CLI_OPT[yes]:-false} || [[ ! -t 0 ]]; then args+=(-N ""); fi
+  ssh-keygen "${args[@]}" || anfs_die "ssh-keygen failed"
+  fp=$(_ssh_key_info < "$file_key.pub" | cut -f1)
+  anfs_json_on || anfs_info "Made $fp: $(anfs_display "$file_key")"
+  anfs_result key "$fp" status local file "$file_key.pub" created true
+}
+
+cmd_public() {
+  local want="${1:-}" fp line n=0 found=""
+  while IFS="$ANFS_US" read -r fp _ _ _ _ line; do
+    n=$((n + 1))
+    if [[ -n "$want" ]]; then
+      [[ "$fp" == "$want" || "$fp" == "SHA256:$want" ]] && found="$line"
+    else
+      found="$line"
+    fi
+  done < <(_ssh_keys)
+  (( n > 0 )) || anfs_die "no ssh key here (make one: ssh-key add)"
+  [[ -n "$want" ]] || (( n == 1 )) || cli_usage_err "there are $n keys: name one (ssh-key list)"
+  [[ -n "$found" ]] || anfs_die "no key $want (ssh-key list)"
+  printf '%s\n' "$found"
+}
+
+cli_dispatch "$@"

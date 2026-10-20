@@ -104,3 +104,5 @@ ssh_host_arg() {
   done
   (( $# )) && print -r -- "${1#*@}"          # strip user@
 }
+
+zcomp ssh-key
