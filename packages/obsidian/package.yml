@@ -1,3 +1,6 @@
-version: 0.1.0
+version: 0.2.0
 author: rjayroach
 categories: [pde]
+# wsm is what ovm's links point into, and what tells ovm when a level is installed or removed
+depends:
+  - wsm

@@ -37,7 +37,7 @@ and what a pmm machine names in `media:`. The `iso` group (`list`, `show`, `pull
 with one call (`anfs_iso_cli`); its keys are in core's table.
 
 On it: `ventoy`, `gem-local` (ruby), `tsm` (tailscale), `opm` (op), `remotefs`, `pikvm`, `ssh-key`
-(ssh), `git-account` (git: run as `git account`). Not yet:
+(ssh), `git-account` (git: run as `git account`), `ovm` (obsidian). Not yet:
 `rpi-imager`, `firstmate`.
 
 | Command | Keys |
@@ -50,4 +50,8 @@ On it: `ventoy`, `gem-local` (ruby), `tsm` (tailscale), `opm` (op), `remotefs`, 
 | `pikvm msd list` | `size`, `image` |
 | `ssh-key list` | `key` (the fingerprint), `status` (`local`, `agent`), `file`, `type`, `comment`, `public` |
 | `git account list` | `account` (`<host>/<user>`), `status` (`key on account`, `no key here`, `key not on account`, `unreachable`), `keys` (how many the account has), `host`, `user` |
+| `ovm list` | `name`, `id`, `status` (`ok`, `stale`, `unreachable`), `path` |
+| `ovm link list` | `source`, `target`, `as`, `status` (`ok`, `pending`, `missing`, `conflict`, `dangling`, `unknown`), `link`, `vault` |
+| `ovm docs` | `id`, `type`, `title`, `space`, `path`, `vault` |
+| `ovm validate` | `path`, `finding` |
 | `opm list` | `scope`, `shared`, `service_account`, `token_item`, `token_vault`, `provisioned` |
