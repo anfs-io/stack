@@ -40,19 +40,3 @@ ovm link apply; ovm link validate
 wsm tells ovm when a level is installed or removed: this package's `install.sh` registers
 `ovm link apply --event` as a wsm listener (`anfs callbacks wsm` lists it under
 `stack/obsidian`). wsm knows nothing about ovm.
-
-## From pvm
-
-ovm was `pvm` (Personal Vault Manager), a core tool, until 2026-10-21. Installing this package
-carries a pvm install over once: when `$XDG_STATE_HOME/pvm` exists and `$XDG_STATE_HOME/ovm` does
-not, the directory moves, and each registered vault that answers and has no `ovm.yml` gets its
-`pvm.yml` renamed. One line per vault says what was done; ids, links and document ids are
-unchanged. If both directories exist, nothing moves.
-
-By hand, for a vault the install could not reach (or instead of the install):
-
-```bash
-mv ~/.local/state/pvm ~/.local/state/ovm        # only when there is no ovm/ yet
-mv <vault>/pvm.yml <vault>/ovm.yml              # each vault
-anfs callbacks wsm                              # no user/pvm or core/pvm listener left
-```
