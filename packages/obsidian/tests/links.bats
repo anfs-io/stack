@@ -44,7 +44,7 @@ setup() {
 @test "link add refuses a level no source defines, a directory outside a vault, and a missing --to" {
   run ovm link add notes/product --to acme/nope
   [ "$status" -eq 1 ]
-  [[ "$output" == *"no wsm level 'acme/nope'"* ]]
+  [[ "$output" == *"no wsm space 'acme/nope'"* ]]
   mkdir loose
   run ovm link add loose --to acme/main
   [ "$status" -eq 1 ]

@@ -10,11 +10,11 @@
 #
 # ovm does three things with a vault:
 #
-#   links      ovm.yml maps vault directories to wsm levels (source, source/ws, source/ws/space).
-#              ovm puts a symlink in the level's directory pointing back into the vault, so the
-#              documentation sits next to the code it describes. Knowledge of the links is the
-#              vault's; the symlinks are machine-local and `ovm link apply` recreates them. wsm
-#              tells ovm when a level is installed or removed (lib/anfs/callbacks.sh; this
+#   links      ovm.yml maps vault directories to wsm spaces (an id, as `wsm ls` has it: lgat,
+#              lgat/tech/web). ovm puts a symlink in the space's directory pointing back into the
+#              vault, so the documentation sits next to the code it describes. Knowledge of the
+#              links is the vault's; the symlinks are machine-local and `ovm link apply` recreates
+#              them. wsm tells ovm when a space is installed or removed (lib/anfs/callbacks.sh; this
 #              package's install.sh registers), without knowing ovm exists.
 #   documents  every document has frontmatter with a stable `id`, so it can be found whatever
 #              its path becomes: `ovm docs`, `ovm path ID`, `ovm show ID`.
@@ -80,18 +80,18 @@ cli_cmd prune "Drop every stale registry entry" --opt "-n --dry-run: Say what wo
   --opt "-y --yes: Do not ask before dropping them"
 cli_cmd path "Print the path of a vault (default: the one you are in) or of a document" --arg "[vault-or-doc]"
 cli_cmd docs "List documents: id, type, title, space, path" \
-  --opt "--type TYPE: Only that type" --opt "--space SPEC: Only the documents of that wsm level" --arg "[dir]"
+  --opt "--type TYPE: Only that type" --opt "--space SPEC: Only the documents of that wsm space" --arg "[dir]"
 cli_cmd show "Print a document by id" --opt "--body: Leave out the frontmatter" --arg "doc"
-cli_group link "Vault directories linked into wsm levels"
-cli_cmd "link add" "Link a directory (default .) into a level, and record it in ovm.yml" \
-  --opt "--to SPEC: The wsm level: source, source/ws or source/ws/space" \
+cli_group link "Vault directories linked into wsm spaces"
+cli_cmd "link add" "Link a directory (default .) into a space, and record it in ovm.yml" \
+  --opt "--to SPEC: The wsm space (wsm ls): lgat, lgat/tech/web" \
   --opt "--as NAME: The symlink's name (default: the directory's)" --arg "[dir]"
 cli_cmd "link remove" "Remove a directory's links and their ovm.yml entries" --alias rm \
-  --opt "--to SPEC: Only the link to that level" \
+  --opt "--to SPEC: Only the link to that space" \
   --opt "-y --yes: Do not ask before removing the links" --arg "[dir]"
 cli_cmd "link list" "The configured links and their state" --alias ls --arg "[dir]"
 cli_cmd "link apply" "Create this vault's links that are missing" \
-  --opt "--event EVENT: From wsm: install or remove, for the levels that follow" --arg "[spec...]"
+  --opt "--event EVENT: From wsm: install or remove, for the spaces that follow" --arg "[spec...]"
 cli_cmd "link validate" "Every vault's links that are missing, dangling or in conflict" --arg "[spec]"
 cli_cmd validate "Check documents against the vault's profile" \
   --opt "--fix: Mint the ids that are missing" --opt "--strict: Exit 1 on any finding" --arg "[path]"
@@ -99,8 +99,8 @@ cli_standard
 
 cli_help_epilogue() {
   cat <<EOF
-A vault is named by its id, a unique id prefix (4+ characters) or its name. SPEC is a wsm level
-as \`wsm list\` has it: source, source/ws or source/ws/space.
+A vault is named by its id, a unique id prefix (4+ characters) or its name. SPEC is a wsm space
+(wsm ls): its id, the source and its path (lgat, lgat/tech/web).
 
 Registry: $(_display "$OVM_REGISTRY")
 EOF
@@ -428,10 +428,10 @@ cmd_init() {
 # An ovm vault (ovm help). The id is this vault's identity: do not change it.
 id: $id
 name: ""
-# Directories linked into wsm levels are recorded here: ovm link add DIR --to SPEC
+# Directories linked into wsm spaces are recorded here: ovm link add DIR --to SPEC
 #links:
 #  - source: docs/product      # relative to this file
-#    target: source/ws/space   # a wsm level (wsm ls)
+#    target: lgat/tech/web     # a wsm space (wsm ls)
 #    as: product               # optional: the symlink's name; default is the directory's
 # What \`ovm validate\` requires of every document's frontmatter
 profile:
@@ -610,7 +610,7 @@ _links_load() {
   done < <(yq -r ".links[]? | [.source // \"\", .target // \"\", .as // \"\"] | join(\"$US\")" "$root/$OVM_CONFIG" 2>/dev/null || true)
 }
 
-# The wsm level a path relative to the vault root belongs to: the link whose source holds it,
+# The wsm space a path relative to the vault root belongs to: the link whose source holds it,
 # the deepest one when links nest. Empty when no link does. Uses L_* (_links_load).
 _space_of() {
   local rel="$1" i best="" len=-1 src
@@ -734,8 +734,8 @@ cmd_show() {
 
 # --- Links --------------------------------------------------------------------------------
 #
-# A link is <level's directory>/<as> -> <vault>/<source>. The level's directory comes from wsm
-# (`wsm ls --json`: space and dir, null when the level is not installed), so ovm.yml holds no
+# A link is <space's directory>/<as> -> <vault>/<source>. The space's directory comes from wsm
+# (`wsm ls --json`: space and dir, null when the space is not installed), so ovm.yml holds no
 # absolute path and works on another machine. One tool reads another's list as JSON, never by
 # column (lib/anfs/table.sh).
 
@@ -755,7 +755,7 @@ _wsm_load() {
   WSM_LOADED=true
 }
 
-# The record of the symlinks ovm made: path, vault id, what it points at, the level. Loaded into
+# The record of the symlinks ovm made: path, vault id, what it points at, the space. Loaded into
 # R_PATH, R_VID, R_DEST, R_TGT.
 R_PATH=() R_VID=() R_DEST=() R_TGT=()
 _rec_load() {
@@ -783,9 +783,9 @@ _rec_set() {
 
 # Where one link stands. Sets LS_STATE, LS_PATH (the symlink), LS_DEST (what it should point at):
 #   ok        the symlink is there and points into the vault
-#   missing   the level is installed and nothing is at the symlink's path
-#   pending   the level is not installed; wsm will say when it is
-#   unknown   no source defines the level
+#   missing   the space is installed and nothing is at the symlink's path
+#   pending   the space is not installed; wsm will say when it is
+#   unknown   no source defines the space
 #   conflict  something else is at the symlink's path
 #   dangling  the vault directory is gone (the symlink, if any, points at nothing)
 LS_STATE="" LS_PATH="" LS_DEST=""
@@ -842,8 +842,8 @@ _link_make() {
       _rec_set "$LS_PATH" "$vid" "$LS_DEST" "$tgt"
       say "linked $(_display "$LS_PATH") -> $(_display "$LS_DEST")"
       ;;
-    pending)  say "pending $src -> $tgt: the level is not installed (wsm install $tgt)" ;;
-    unknown)  warn "$src: no wsm level '$tgt' (wsm ls)"; return 1 ;;
+    pending)  say "pending $src -> $tgt: the space is not installed (wsm install $tgt)" ;;
+    unknown)  warn "$src: no wsm space '$tgt' (wsm ls)"; return 1 ;;
     dangling) warn "$src: no such directory in the vault: $(_display "$LS_DEST")"; return 1 ;;
     conflict) warn "$src: $(_display "$LS_PATH") exists and is not this link; move it away, or pick another name with --as"; return 1 ;;
   esac
@@ -877,7 +877,7 @@ cmd_link_add() {
   _require_yq
   _link_dir "$dir"
   _wsm_load
-  [[ -n "${WSM_KNOWN[$to]:-}" ]] || fail "$EX_NOTFOUND" "no wsm level '$to': it is source, source/ws or source/ws/space (wsm ls)"
+  [[ -n "${WSM_KNOWN[$to]:-}" ]] || fail "$EX_NOTFOUND" "no wsm space '$to' (wsm ls)"
   local name="$as" vid file="$LK_ROOT/$OVM_CONFIG"
   [[ -n "$name" ]] || name=$(_default_as "$LK_ROOT" "$LK_SRC")
   vid=$(_cfg_id "$LK_ROOT")
@@ -893,7 +893,7 @@ cmd_link_add() {
       ;;
   esac
 
-  # One entry per source and level: adding it again replaces it, and a link it had under
+  # One entry per source and space: adding it again replaces it, and a link it had under
   # another name goes. ("=" marks an entry, so one without `as` is told from none at all.)
   local old
   old=$(S="$LK_SRC" T="$to" yq -r '.links[]? | select(.source == strenv(S) and .target == strenv(T)) | "=" + (.as // "")' "$file" | head -n 1)
@@ -996,7 +996,7 @@ cmd_link_apply() {
     return "$rc"
   fi
 
-  # From wsm, for the levels it just installed or removed. Never fails the tool that emitted:
+  # From wsm, for the spaces it just installed or removed. Never fails the tool that emitted:
   # what could not be done is said, and `ovm link validate` shows it later.
   local -A want=()
   for arg in "${specs[@]}"; do want[${arg%/}]=1; done
@@ -1014,7 +1014,7 @@ cmd_link_apply() {
       done
       ;;
     remove)
-      # The level is gone from wsm, so its directory is only in the record of what ovm linked
+      # The space is gone from wsm, so its directory is only in the record of what ovm linked
       _rec_load
       local -a paths=("${R_PATH[@]}") dests=("${R_DEST[@]}") tgts=("${R_TGT[@]}")
       for i in "${!paths[@]}"; do
@@ -1174,7 +1174,7 @@ complete_vault() {
   done < "$OVM_REGISTRY"
 }
 complete_vault_or_doc() { complete_vault; }
-# A wsm level: wsm's to say
+# A wsm space: wsm's to say
 complete_spec() { command wsm __complete install "" 2>/dev/null | cut -f1; }
 
 # --- Dispatch -----------------------------------------------------------------------------

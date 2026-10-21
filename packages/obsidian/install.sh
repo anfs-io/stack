@@ -4,7 +4,7 @@
 # plain markdown) whose directories are linked into wsm spaces, and whose documents are found by
 # a stable id. The nvim plugin config and the `ob` alias are stowed with it.
 #
-# ovm listens to wsm (lib/anfs/callbacks.sh): when wsm installs a level, ovm creates the links
+# ovm listens to wsm (lib/anfs/callbacks.sh): when wsm installs a space, ovm creates the links
 # that point into it; when wsm removes one, ovm removes them. wsm knows nothing about ovm. The
 # registration is kept by anfs, so it outlives a wsm implode and goes when ovm is removed.
 

@@ -25,8 +25,8 @@ ovm validate [--fix] [--strict]       # documents against the vault's profile
 
 ### Links into spaces
 
-`ovm.yml`'s `links:` map a vault directory to a wsm level (`source`, `source/ws`,
-`source/ws/space`). ovm reads the level's directory from `wsm ls --json` and puts an absolute
+`ovm.yml`'s `links:` map a vault directory to a wsm space (`wsm ls`: its id, `lgat` or
+`lgat/tech/web`). ovm reads the space's directory from `wsm ls --json` and puts an absolute
 symlink there, so the documentation sits next to the code it describes. The links are the
 vault's; the symlinks are this machine's, and `ovm link apply` makes the missing ones.
 
@@ -37,6 +37,6 @@ ovm link remove [dir] [--to <spec>]
 ovm link apply; ovm link validate
 ```
 
-wsm tells ovm when a level is installed or removed: this package's `install.sh` registers
+wsm tells ovm when a space is installed or removed: this package's `install.sh` registers
 `ovm link apply --event` as a wsm listener (`anfs callbacks wsm` lists it under
 `stack/obsidian`). wsm knows nothing about ovm.
