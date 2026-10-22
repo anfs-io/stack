@@ -205,10 +205,10 @@ setup() {
   run ovm docs notes
   [ "${#lines[@]}" -eq 3 ]
   [[ "$output" != *jjjjjjjjjj* && "$output" != *kkkkkkkkkk* && "$output" != *llllllllll* ]]
-  # No exclude at all: hidden directories are still skipped
+  # No exclude at all: hidden directories are still skipped (init's two templates are documents then)
   yq -i 'del(.exclude)' vaults/notes/vault.yml
   run ovm docs notes
-  [ "${#lines[@]}" -eq 7 ]
+  [ "${#lines[@]}" -eq 9 ]
   [[ "$output" != *mmmmmmmmmm* ]]
   # validate and path go through the same walk
   yq -i '.exclude = ["*/drafts"]' vaults/notes/vault.yml
@@ -216,7 +216,7 @@ setup() {
   [ "$status" -eq 1 ]
   cd vaults/notes
   run ovm validate
-  [[ "$output" == *"5 document(s)"* ]]
+  [[ "$output" == *"7 document(s)"* ]]   # init's two templates among them
 }
 
 @test "quoted titles lose their quotes, and CRLF files read the same" {

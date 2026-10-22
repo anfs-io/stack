@@ -10,7 +10,7 @@ setup() { ovm_setup; }
   mkdir -p vaults/notes
   run ovm init vaults/notes
   [ "$status" -eq 0 ]
-  [[ "$output" == "initialized vault notes ("*") at ~/vaults/notes" ]]
+  [[ "${lines[0]}" == "initialized vault notes ("*") at ~/vaults/notes" ]]
   run yq -r .id vaults/notes/vault.yml
   [[ "$output" =~ ^[a-z2-7]{10}$ ]]
   local id="$output"
@@ -36,7 +36,7 @@ setup() { ovm_setup; }
   id=$(yq -r .id vault.yml)
   run ovm init
   [ "$status" -eq 0 ]
-  [ "$output" = "vault work ($id) at ~/vaults/work is initialized already" ]
+  [ "${lines[0]}" = "vault work ($id) at ~/vaults/work is initialized already" ]
   [ "$(yq -r .id vault.yml)" = "$id" ]
   mkdir ../other
   printf '# mine\nspaces_path: notes\ntags: [a]\n' > ../other/vault.yml
@@ -63,10 +63,10 @@ setup() { ovm_setup; }
   ln -s ../elsewhere/apex vaults/main
   run ovm init elsewhere/apex
   [ "$status" -eq 0 ]
-  [[ "$output" == "initialized vault main ("*") at ~/elsewhere/apex" ]]
+  [[ "${lines[0]}" == "initialized vault main ("*") at ~/elsewhere/apex" ]]
   [ -f elsewhere/apex/vault.yml ]
   run ovm init vaults/main
-  [[ "$output" == "vault main ("*") at ~/elsewhere/apex is initialized already" ]]
+  [[ "${lines[0]}" == "vault main ("*") at ~/elsewhere/apex is initialized already" ]]
 }
 
 @test "a vault does not hold another" {
@@ -81,7 +81,7 @@ setup() { ovm_setup; }
 @test "new creates ~/vaults/NAME and inits it; an existing entry, a path or no name is refused" {
   run ovm new fresh
   [ "$status" -eq 0 ]
-  [[ "$output" == "initialized vault fresh ("*") at ~/vaults/fresh" ]]
+  [[ "${lines[0]}" == "initialized vault fresh ("*") at ~/vaults/fresh" ]]
   [ -f vaults/fresh/vault.yml ]
   run ovm new fresh
   [ "$status" -eq 73 ]
@@ -263,7 +263,7 @@ YML
   [[ "$output" == *"space <list|add|remove|link|unlink|apply>"* ]]
   [[ "$output" == *"~/.config/ovm/links.yml"* ]]
   [[ "$output" == *"list, ls "* ]]
-  [[ "$output" == *"new <name>"* ]]
+  [[ "$output" == *"new [--no-plugins] <name>"* ]]
   [[ "$output" == *"-d, --debug"* ]]
   [[ "$output" == *"~/vaults (OVM_VAULTS_HOME)"* ]]
   [[ "$output" != *scan* && "$output" != *prune* && "$output" != *egistry* ]]

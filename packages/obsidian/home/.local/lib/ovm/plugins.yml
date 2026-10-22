@@ -1,0 +1,28 @@
+# The Obsidian plugins `ovm init` places in a vault, at these versions (ovm help init). Each is
+# downloaded once from its GitHub release (https://github.com/<repo>/releases/download/<version>/<asset>)
+# into ~/.cache/ovm/plugins/<id>/<version>/ and checked against these sha256s.
+#
+# Bump: change version, then every sha256 (packages/obsidian/tests/pins fetches the assets and
+# prints them; ovm's bats tests never reach the network). The key is the plugin's id, as its
+# manifest.json has it. Checked 2026-10-22 (docs: units/ovm.md, "Obsidian, checked 2026-10-22").
+templater-obsidian:
+  repo: SilentVoid13/Templater
+  version: 2.26.0
+  sha256:
+    main.js: 0acd45cfdb3a7337e2bef511699bc1f819dc64645ad3480df33579d42d2dcbaa
+    manifest.json: 91c9fa8510082fffa0b3d022aac4986e3b392295b1126e847ead7ed7289169b8
+    styles.css: 67a6dd2d1d6dedca1287c334ca884ec4196433f71ca47388a0bd3eac14cf8b5f
+obsidian-shellcommands:
+  repo: Taitava/obsidian-shellcommands
+  version: 0.23.0
+  sha256:
+    main.js: 0c5e247a91c96c0af5f3e333ba43be4285469566c819d59b7de129ad33d14d8a
+    manifest.json: 20ae8ccfa8972027d35b4457d21b6ab86aebc8e3b1dee5eba34dad19e46a2462
+    styles.css: 3bd8380e5aa53fc447ea6a4c14ddfb94198f1a6d003e6e5f994b459cf9684c53
+obsidian-meta-bind-plugin:
+  repo: mProjectsCode/obsidian-meta-bind-plugin
+  version: 1.5.1
+  sha256:
+    main.js: d328bfaa4d1f48259074b28f249a9f911ea34327e7e1123d8a1f2afc3e9784b3
+    manifest.json: 3c1dff1e36a17811851f3c7446b875cf901288b73261caea61bc0d440d3c4325
+    styles.css: 97069e183224c55428fe0b983d42435aa2cd4ac14d0f50186138b4751ad55d61

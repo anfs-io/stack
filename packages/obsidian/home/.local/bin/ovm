@@ -30,7 +30,7 @@ set -euo pipefail
 # A job's copy of this tool runs instead when ANFS_WORK names one (lib/anfs/work.sh)
 [ -z "${ANFS_WORK:-}" ] || [ ! -f "$HOME/.local/lib/anfs/work.sh" ] || . "$HOME/.local/lib/anfs/work.sh"
 
-OVM_VERSION=0.4.0
+OVM_VERSION=0.5.0
 
 # Paths, messages, the log and the command line come from anfs
 if [[ ! -f "$HOME/.local/lib/anfs/paths.sh" ]]; then
@@ -89,8 +89,11 @@ US="$ANFS_US"
 RS=$'\x1e'
 
 CLI_VERSION="$OVM_VERSION"
-cli_cmd init "Make an entry of ~/vaults (default .) a vault: write vault.yml, mint its id" --arg "[dir]"
-cli_cmd new "Create ~/vaults/NAME and init it" --arg "name"
+cli_cmd init "Make an entry of ~/vaults (default .) a vault: vault.yml, the pinned plugins, their settings and our templates (each only where missing)" \
+  --opt "--update: Bring the plugins already in the vault to the pinned versions; nothing else" \
+  --opt "--no-plugins: vault.yml, the settings and the templates only (nothing downloaded)" --arg "[dir]"
+cli_cmd new "Create ~/vaults/NAME and init it" \
+  --opt "--no-plugins: vault.yml, the settings and the templates only (nothing downloaded)" --arg "name"
 cli_cmd list "The entries of ~/vaults: the vaults" --alias ls
 cli_cmd cd "Change to a vault (default: the one you are in) or a document's directory (requires the ovm shell function)" \
   --arg "[vault-or-doc]"
@@ -130,6 +133,14 @@ beside it for this machine; ovm space link and unlink write them); one may hold 
 anfs/product) under different names. A document's space is the deepest linked vault space holding
 it, else the first folder under spaces_path. SPEC is a wsm space (wsm ls): its id, the source and
 its path (lgat, lgat/tech/web).
+
+ovm init places the Obsidian plugins ~/.local/lib/ovm/plugins.yml pins (downloaded once into
+$(_display "$OVM_CACHE_HOME/plugins"), sha256-checked) and copies the settings and templates of
+~/.local/lib/ovm/vault/ where they are missing, never over a file that is there. What no file can
+do, once per device: turn on community plugins, and Templater's "Trigger Templater on new file
+creation". Shell commands lets a note run commands on this computer: read
+.obsidian/plugins/obsidian-shellcommands/data.json before turning plugins on in a vault you did not
+write. After init --update, quit Obsidian or reload it (Command palette: Reload app without saving).
 EOF
 }
 
@@ -497,18 +508,322 @@ _lock_release() {
   rm -rf "$OVM_LOCK"
 }
 
+# --- The workflow: plugins, their settings and our templates (init) -----------------------
+#
+# ~/.local/lib/ovm (this package's links: entry) holds plugins.yml, the pins, and vault/, the
+# skeleton. Every file of the skeleton is copied into a vault where it is missing and never again
+# (lib/anfs/files.sh: a package's files: semantics), so once there it is the person's. A plugin is
+# its release's files in .obsidian/plugins/<id>/, downloaded once into $OVM_CACHE_HOME/plugins
+# (CACHE: rebuildable) and checked against its pinned sha256s; one already in the vault is left
+# as it is (init --update brings it to the pin). These are ovm's only network calls.
+
+OVM_SHELLCMD_DATA=.obsidian/plugins/obsidian-shellcommands/data.json
+OVM_SHELLCMD="PATH=\"\$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:\$PATH\" ovm validate"
+
+# The library, into OVM_LIB: ~/.local/lib/ovm, else the package's own beside this script's real
+# path (a checkout). Returns 1 when neither has plugins.yml and vault/.
+OVM_LIB=""
+_ovm_lib() {
+  local self t here c
+  [[ -z "$OVM_LIB" ]] || return 0
+  self="${BASH_SOURCE[0]}"
+  while [[ -L "$self" ]]; do
+    t=$(readlink -- "$self")
+    [[ "$t" == /* ]] || t="$(dirname -- "$self")/$t"
+    self="$t"
+  done
+  here=$(cd -P -- "$(dirname -- "$self")" 2>/dev/null && pwd -P) || here=""
+  for c in "$HOME/.local/lib/ovm" ${here:+"$here/../lib/ovm"}; do
+    [[ -f "$c/plugins.yml" && -d "$c/vault" ]] || continue
+    OVM_LIB=$(cd -P -- "$c" && pwd -P)
+    return 0
+  done
+  return 1
+}
+
+# The pins, from plugins.yml: PIN_ID, PIN_REPO, PIN_VER, and per pin its assets and their sha256s
+# (PIN_ASSETS, PIN_SHAS: space-separated, in the same order, manifest.json last so a plugin is
+# never seen as there before its code is). Fails 69 on a file that does not read.
+PIN_ID=() PIN_REPO=() PIN_VER=() PIN_ASSETS=() PIN_SHAS=()
+_pins_load() {
+  local f="$OVM_LIB/plugins.yml" out id repo ver asset sha i=-1 last="" bad=""
+  out=$(US="$US" yq -r 'to_entries[] | .key as $id | .value as $p | (($p.sha256 // {}) | to_entries[]) |
+    [$id, ($p.repo // "" | tostring), ($p.version // "" | tostring), .key, (.value | tostring)] | join(strenv(US))' "$f" 2>/dev/null) ||
+    fail "$EX_UNAVAIL" "$(_display "$f") does not read: ppm install -f stack/obsidian"
+  local -A man=()
+  while IFS="$US" read -r id repo ver asset sha; do
+    [[ -n "$id" ]] || continue
+    if [[ ! "$id" =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then bad="not a plugin id: $id"
+    elif [[ ! "$repo" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]]; then bad="$id: repo is <owner>/<name>: $repo"
+    elif [[ ! "$ver" =~ ^[0-9A-Za-z][0-9A-Za-z.+-]*$ ]]; then bad="$id: not a version: $ver"
+    elif [[ ! "$asset" =~ ^[A-Za-z0-9_-][A-Za-z0-9._-]*$ ]]; then bad="$id: not an asset's name: $asset"
+    elif [[ ! "$sha" =~ ^[0-9a-f]{64}$ ]]; then bad="$id $asset: not a sha256: $sha"
+    fi
+    [[ -z "$bad" ]] || fail "$EX_UNAVAIL" "$(_display "$f"): $bad"
+    if [[ "$id" != "$last" ]]; then
+      i=$((i + 1)) last="$id"
+      PIN_ID+=("$id") PIN_REPO+=("$repo") PIN_VER+=("$ver") PIN_ASSETS+=("") PIN_SHAS+=("")
+    fi
+    if [[ "$asset" == manifest.json ]]; then man[$id]="$sha"; continue; fi
+    PIN_ASSETS[i]+="$asset " PIN_SHAS[i]+="$sha "
+  done <<< "$out"
+  [[ ${#PIN_ID[@]} -gt 0 ]] || fail "$EX_UNAVAIL" "$(_display "$f") pins no plugin"
+  for i in "${!PIN_ID[@]}"; do
+    [[ -n "${man[${PIN_ID[$i]}]:-}" ]] || fail "$EX_UNAVAIL" "$(_display "$f"): ${PIN_ID[$i]} has no sha256 for manifest.json"
+    PIN_ASSETS[i]+="manifest.json" PIN_SHAS[i]+="${man[${PIN_ID[$i]}]}"
+  done
+}
+
+# sha256 of <file>: sha256sum (Linux), else shasum (macOS)
+_sha256() {
+  local out
+  if command -v sha256sum >/dev/null 2>&1; then out=$(sha256sum -- "$1") || return 1
+  else out=$(shasum -a 256 -- "$1") || return 1
+  fi
+  printf '%s\n' "${out%% *}"
+}
+
+# The version in a plugin's <manifest.json>, or nothing
+_plugin_version() { yq -p json -o yaml -r '.version // ""' "$1" 2>/dev/null || true; }
+
+# <a> is older than <b> (versions, as sort -V orders them)
+_older() { [[ "$1" != "$2" && "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n 1)" == "$1" ]]; }
+
+# One asset of pin <i> in the cache, fetched when it is missing or its bytes are not the pin's.
+# Into REPLY (its path). Returns 0, or 69 with FETCH_ERR set.
+FETCH_ERR=""
+_fetch() {
+  local i="$1" asset="$2" sha="$3" dir f url got
+  dir="$OVM_CACHE_HOME/plugins/${PIN_ID[$i]}/${PIN_VER[$i]}" f="$dir/$asset"
+  REPLY="$f"
+  if [[ -f "$f" ]] && [[ "$(_sha256 "$f")" == "$sha" ]]; then return 0; fi
+  url="https://github.com/${PIN_REPO[$i]}/releases/download/${PIN_VER[$i]}/$asset"
+  command -v curl >/dev/null 2>&1 || { FETCH_ERR="curl is not installed: it is how ovm downloads the plugins"; return "$EX_UNAVAIL"; }
+  mkdir -p -- "$dir" || { FETCH_ERR="cannot create $(_display "$dir")"; return "$EX_UNAVAIL"; }
+  rm -f -- "$f.part"
+  if ! curl -fsSL --retry 3 -o "$f.part" "$url" 2>/dev/null; then
+    rm -f -- "$f.part"
+    FETCH_ERR="download failed: $url"
+    return "$EX_UNAVAIL"
+  fi
+  got=$(_sha256 "$f.part") || got=""
+  if [[ "$got" != "$sha" ]]; then
+    rm -f -- "$f.part"
+    FETCH_ERR="checksum mismatch for ${PIN_ID[$i]} $asset: the pin or the release changed"
+    return "$EX_UNAVAIL"
+  fi
+  mv -f -- "$f.part" "$f"
+}
+
+# Pin <i>'s files into <root>/.obsidian/plugins/<id>/ (made when missing): every asset fetched
+# first, then each written beside its name and moved into place, manifest.json last. Nothing else
+# in the directory (data.json) is touched. Returns 0; 69 (FETCH_ERR) when a fetch failed and
+# nothing was written; 1 (FETCH_ERR) when something is in the way.
+_plugin_put() {
+  local root="$1" i="$2" pdir a n=0 rc=0 tmp
+  local -a assets shas files=()
+  pdir="$root/.obsidian/plugins/${PIN_ID[$i]}"
+  read -ra assets <<< "${PIN_ASSETS[$i]}"
+  read -ra shas <<< "${PIN_SHAS[$i]}"
+  for a in "${assets[@]}"; do
+    _fetch "$i" "$a" "${shas[$n]}" || return $?
+    files+=("$REPLY")
+    n=$((n + 1))
+  done
+  if [[ -e "$pdir" && ! -d "$pdir" ]] || ! mkdir -p -- "$pdir" 2>/dev/null; then
+    FETCH_ERR="$(_display "$pdir") is in the way (not a directory)"
+    return 1
+  fi
+  for a in "${assets[@]}"; do
+    if [[ -d "$pdir/$a" || -L "$pdir/$a" ]]; then
+      FETCH_ERR="$(_display "$pdir/$a") is in the way (a directory or a link)"
+      return 1
+    fi
+  done
+  n=0
+  for a in "${assets[@]}"; do
+    tmp="$pdir/.$a.ovm.$$"
+    cp -- "${files[$n]}" "$tmp" && mv -f -- "$tmp" "$pdir/$a" || { rm -f -- "$tmp"; rc=1; }
+    n=$((n + 1))
+  done
+  [[ $rc -eq 0 ]] || FETCH_ERR="could not write $(_display "$pdir")"
+  return $rc
+}
+
+# <ids> listed in <root>/.obsidian/community-plugins.json (a JSON array; made as [] when missing):
+# each id appended when it is not there, nothing else changed, the file moved into place whole.
+# Returns 1 when the file is not a JSON array of strings (it is not written).
+_plugins_enable() {
+  local root="$1"; shift
+  local f="$root/.obsidian/community-plugins.json" id add="" tmp
+  [[ $# -gt 0 ]] || return 0
+  if [[ -e "$f" ]]; then
+    if ! yq -p json -e 'tag == "!!seq" and all_c(tag == "!!str")' "$f" >/dev/null 2>&1; then
+      warn "$(_display "$f") is not a JSON array of plugin ids: not written; add $* to it by hand"
+      return 1
+    fi
+    for id in "$@"; do grep -q "\"$id\"" "$f" || add+="${add:+ }$id"; done
+  else
+    add="$*"
+  fi
+  [[ -n "$add" ]] || return 0
+  tmp="$root/.obsidian/.community-plugins.json.ovm.$$"
+  if [[ -e "$f" ]]; then
+    A="$add" yq -p json -o json -I 2 '. + (strenv(A) | split(" "))' "$f" > "$tmp"
+  else
+    A="$add" yq -n -o json -I 2 'strenv(A) | split(" ")' > "$tmp"
+  fi && mv -f -- "$tmp" "$f" || { rm -f -- "$tmp"; warn "could not write $(_display "$f")"; return 1; }
+  say "enabled in .obsidian/community-plugins.json: $add"
+}
+
+# The skeleton into <root>: copied where missing (WF_COPIED), the rest kept (WF_KEPT). Returns 1
+# when something is in the way (nothing copied, said), 69 when the library is broken.
+WF_COPIED=() WF_KEPT=0
+_skeleton_apply() {
+  local root="$1" list out rc=0 state f why
+  local -a inway=()
+  if ! declare -F anfs_files_apply >/dev/null; then
+    # shellcheck source=/dev/null
+    [[ -f "$ANFS_LIB/files.sh" ]] && source "$ANFS_LIB/files.sh" ||
+      { warn "settings and templates: $ANFS_LIB/files.sh is missing: install core/anfs again"; return "$EX_UNAVAIL"; }
+  fi
+  list=$(mktemp "${TMPDIR:-/tmp}/ovm-skeleton.XXXXXX")
+  (cd "$OVM_LIB/vault" && find . -type f ! -name .DS_Store | sed 's|^\./||' | LC_ALL=C sort) > "$list"
+  out=$(anfs_files_apply "$OVM_LIB/vault" "$root" "$list" 2>&1) || rc=$?
+  rm -f -- "$list"
+  while IFS=$'\t' read -r state f why; do
+    case "$state" in
+      missing) WF_COPIED+=("$f") ;;
+      present|differs) WF_KEPT=$((WF_KEPT + 1)) ;;
+      "in the way") inway+=("$f ($why)") ;;
+    esac
+  done <<< "$out"
+  if [[ $rc -eq 1 ]]; then
+    WF_COPIED=()
+    warn "settings and templates: nothing copied: in the way: ${inway[*]}"
+    return 1
+  elif [[ $rc -ne 0 ]]; then
+    WF_COPIED=()
+    warn "settings and templates: nothing copied: ${out//$'\n'/; }"
+    return "$EX_UNAVAIL"
+  fi
+  for f in "${WF_COPIED[@]}"; do say "copied $f"; done
+  [[ $WF_KEPT -eq 0 ]] || say "kept $WF_KEPT $( ((WF_KEPT == 1)) && echo "file that is" || echo "files that are") yours (settings and templates already there)"
+}
+
+# The plugins into <root>: each pin whose directory has no manifest.json is placed (WF_PLACED),
+# the others left (WF_LEFT), then the placed ones enabled. Returns the worst: 1 in the way, 69 a
+# fetch failed.
+WF_PLACED=() WF_LEFT=()
+_plugins_apply() {
+  local root="$1" i id m have rc=0 r
+  for i in "${!PIN_ID[@]}"; do
+    id="${PIN_ID[$i]}" m="$root/.obsidian/plugins/${PIN_ID[$i]}/manifest.json"
+    if [[ -f "$m" ]]; then
+      WF_LEFT+=("$id")
+      have=$(_plugin_version "$m")
+      if [[ "$have" == "${PIN_VER[$i]}" ]]; then say "$id $have is there"
+      else say "$id ${have:-?} is there: left as it is (the pin is ${PIN_VER[$i]}; ovm init --update brings an older one to it)"
+      fi
+      continue
+    fi
+    r=0
+    _plugin_put "$root" "$i" || r=$?
+    if [[ $r -eq 0 ]]; then
+      WF_PLACED+=("$id")
+      say "placed $id ${PIN_VER[$i]}"
+    else
+      warn "$id not placed: $FETCH_ERR"
+      [[ $r -eq 1 || $rc -eq 1 ]] && rc=1 || rc=$r
+    fi
+  done
+  if [[ ${#WF_PLACED[@]} -gt 0 ]]; then _plugins_enable "$root" "${WF_PLACED[@]}" || rc=1; fi
+  return $rc
+}
+
+# init --update: each pin whose plugin is in <root> brought to the pin when older (WF_UPDATED);
+# newer or equal left (WF_LEFT); absent named. Only the plugins' files are written.
+WF_UPDATED=()
+_plugins_update() {
+  local root="$1" i id m have rc=0 r
+  for i in "${!PIN_ID[@]}"; do
+    id="${PIN_ID[$i]}" m="$root/.obsidian/plugins/${PIN_ID[$i]}/manifest.json"
+    if [[ ! -f "$m" ]]; then say "$id is not in this vault: ovm init places it"; continue; fi
+    have=$(_plugin_version "$m")
+    if [[ "$have" == "${PIN_VER[$i]}" ]]; then
+      WF_LEFT+=("$id"); say "$id $have is at the pin"
+    elif [[ -n "$have" ]] && _older "${PIN_VER[$i]}" "$have"; then
+      WF_LEFT+=("$id"); say "$id $have is newer than the pin (${PIN_VER[$i]}): left as it is"
+    else
+      r=0
+      _plugin_put "$root" "$i" || r=$?
+      if [[ $r -eq 0 ]]; then
+        WF_UPDATED+=("$id"); say "updated $id ${have:-?} -> ${PIN_VER[$i]}"
+      else
+        warn "$id not updated: $FETCH_ERR"
+        [[ $r -eq 1 || $rc -eq 1 ]] && rc=1 || rc=$r
+      fi
+    fi
+  done
+  [[ ${#WF_UPDATED[@]} -eq 0 ]] || say "quit Obsidian or reload it (Command palette: Reload app without saving) to run the new code"
+  return $rc
+}
+
+# What no file can do, said when this run placed a plugin or community-plugins.json lists one of
+# the pins (ovm cannot see whether the clicks were made). Into WF_STEPS.
+WF_STEPS=()
+_steps_left() {
+  local root="$1" placed="$2" f="$1/.obsidian/community-plugins.json" id ours=false
+  if [[ "$placed" == true ]]; then ours=true
+  elif [[ -f "$f" ]]; then
+    for id in "${PIN_ID[@]}"; do grep -q "\"$id\"" "$f" && { ours=true; break; }; done
+  fi
+  if [[ -f "$root/$OVM_SHELLCMD_DATA" ]] && ! grep -q '"ovm-validate"' "$root/$OVM_SHELLCMD_DATA"; then
+    WF_STEPS+=(add-ovm-command)
+    say ""
+    say "Shell commands' settings in this vault are yours, so ovm's command is not in them. To add it:"
+    say "Settings > Shell commands > New shell command: $OVM_SHELLCMD"
+    say "(alias \"ovm: validate this vault\", outputs to a notification)."
+  fi
+  $ours || return 0
+  WF_STEPS+=(turn-on-community-plugins templater-trigger-on-new-file)
+  say ""
+  say "If you have not yet, on each device, in Obsidian (no file can do these):"
+  say "  1. Open this vault and turn on community plugins (Settings > Community plugins, or the"
+  say "     \"Turn on community plugins\" button of the trust dialog)."
+  say "  2. Settings > Templater: turn on \"Trigger Templater on new file creation\"."
+  say ""
+  say "Shell commands lets a note run commands on this computer, and Meta Bind buttons can run them"
+  say "from inside a note. A vault that syncs (iCloud, git) carries its plugin settings: whoever can"
+  say "write to the vault can add a command that runs when you click. ovm ships one command (ovm"
+  say "validate). Before turning on community plugins in a vault you did not write, read"
+  say "$OVM_SHELLCMD_DATA."
+  say "Shell commands is desktop only: on a phone Obsidian does not load it."
+}
+
 # --- init, new, list ----------------------------------------------------------------------
 
 cmd_init() {
-  local dir="${1:-}"
+  local dir="${1:-}" update=${CLI_OPT[update]:-false} noplug=${CLI_OPT[no-plugins]:-false}
   _require_yq
-  local root parent id file name made=false
+  ! $update || ! $noplug || usage_err "--update and --no-plugins: --update only touches plugins"
+  local root parent id file name made=false rc=0 r
   root=$(_canon "${dir:-.}") || fail "$EX_NOTFOUND" "no such directory: ${dir:-.}"
   file="$root/$OVM_CONFIG"
   name=$(_entry_of "$root") ||
     fail "$EX_NOTFOUND" "$(_display "$root") is not in $(_display "$OVM_VAULTS_HOME"), where vaults are: ovm new NAME, or link it there (ln -s '$root' $(_display "$OVM_VAULTS_HOME")/<name>) and ovm init that"
   if [[ "$root" != / && "$root" != "$OVM_HOME" ]] && parent=$(_find_root "$(dirname -- "$root")"); then
     fail "$EX_EXISTS" "$(_display "$root") is inside the vault at $(_display "$parent"); a vault does not hold another"
+  fi
+
+  if $update; then
+    [[ -f "$file" ]] || fail "$EX_STALE" "$(_display "$root") is not a vault (no $OVM_CONFIG): ovm init it first"
+    id=$(_cfg_id "$root")
+    _ovm_lib || fail "$EX_UNAVAIL" "ovm's files are missing: ppm install -f stack/obsidian"
+    _pins_load
+    _plugins_update "$root" || rc=$?
+    _wf_result "$id" "$name" "$root" unchanged
+    return $rc
   fi
 
   if [[ -f "$file" ]]; then
@@ -546,7 +861,32 @@ CFG
   else
     say "vault $name ($id) at $(_display "$root") is initialized already"
   fi
-  anfs_result id "$id" name "$name" path "$root" status "$($made && echo initialized || echo unchanged)"
+
+  # The workflow: what can be done is done; running init again finishes the rest
+  if ! _ovm_lib; then
+    warn "ovm's files are missing: ppm install -f stack/obsidian (vault.yml is written; ovm init again then)"
+    rc=$EX_UNAVAIL
+  else
+    r=0
+    _skeleton_apply "$root" || r=$?
+    [[ $r -eq 0 ]] || rc=$r
+    if ! $noplug; then
+      _pins_load
+      r=0
+      _plugins_apply "$root" || r=$?
+      [[ $r -eq 0 || $rc -eq 1 ]] || rc=$r
+      _steps_left "$root" "$([[ ${#WF_PLACED[@]} -gt 0 ]] && echo true || echo false)"
+    fi
+  fi
+  _wf_result "$id" "$name" "$root" "$($made && echo initialized || echo unchanged)"
+  return $rc
+}
+
+# init's --json: what it did, the lists space-separated
+_wf_result() {
+  anfs_result id "$1" name "$2" path "$3" status "$4" \
+    placed "${WF_PLACED[*]}" updated "${WF_UPDATED[*]}" kept "${WF_LEFT[*]}" \
+    copied "${WF_COPIED[*]}" steps_left "${WF_STEPS[*]}"
 }
 
 cmd_new() {

@@ -30,8 +30,10 @@ target is gone is `unreachable` in `ovm list`, as is a vault that does not answe
 (`ovm config set OVM_VAULTS_HOME=~/notes`).
 
 ```bash
-ovm new <name>                        # create ~/vaults/<name> and init it
-ovm init [dir]                        # make an entry of ~/vaults a vault: vault.yml, a new id
+ovm new <name> [--no-plugins]         # create ~/vaults/<name> and init it
+ovm init [dir] [--no-plugins]         # make an entry of ~/vaults a vault: vault.yml, a new id, the
+                                      # plugins, their settings and our templates (where missing)
+ovm init --update [dir]               # bring the plugins in the vault to the pinned versions
 ovm list                              # NAME ID STATUS (ok, unreachable, not a vault) PATH
 ovm path [--dir] [vault-or-doc]       # a vault's path, or a document's by id (--dir: its directory)
 ovm cd [vault-or-doc]                 # go there: a vault, or a document's directory
@@ -45,6 +47,55 @@ ovm validate [--fix] [--strict]       # documents against the vault's vocabulary
 `ovm cd` is a shell function (`~/.config/sh/ovm.sh`, bash and zsh) through core's `_anfs_cd`,
 like `wsm cd`: it goes where `ovm path --dir` says, a vault's directory or a document's, and with
 no argument the vault you are in (outside one it fails and you stay put). It completes vault names.
+
+### A workflow-ready vault
+
+`ovm init` (and so `ovm new`) does more than write `vault.yml`. On every run, and never over
+anything that is there:
+
+- **The plugins**, at the versions `~/.local/lib/ovm/plugins.yml` pins: Templater
+  (`templater-obsidian`), Shell commands (`obsidian-shellcommands`) and Meta Bind
+  (`obsidian-meta-bind-plugin`). Each is its release's `main.js`, `manifest.json` and `styles.css`
+  in `.obsidian/plugins/<id>/`, downloaded once from GitHub into `~/.cache/ovm/plugins/<id>/<version>/`
+  (a cache: delete it any time) and checked against the pinned sha256s; a file that does not match
+  is fetched again, and a download that does not match is refused ("checksum mismatch"; nothing of
+  that plugin is placed). A plugin whose `manifest.json` is already in the vault is left as it is,
+  whatever its version. A plugin placed is added to `.obsidian/community-plugins.json` (made when
+  missing; the ids already there and their order kept; a file that is not a JSON array is not
+  written, and init says so).
+- **Their settings and our templates**, from `~/.local/lib/ovm/vault/`, copied where missing and
+  never again, so once there they are yours: Templater's `data.json` (templates in `_templates/`,
+  `_templates/note.md` for every new note), Shell commands' (one command, `ovm-validate`: `ovm
+  validate` in the vault's directory, its output in a notification), Meta Bind's (it skips
+  `_templates/`), and `_templates/note.md` and `_templates/task-list.md` (a note with an id minted by
+  Templater, `type: note` and its title; the task list adds a Meta Bind button that runs Shell
+  commands' `ovm validate`, and a `## Tasks` list).
+- **What no file can do**, said at the end, once per device and vault: open the vault in Obsidian and
+  turn on community plugins (Obsidian keeps that switch outside the vault, so a vault with plugins
+  opens in restricted mode until you click), and turn on Templater's "Trigger Templater on new file
+  creation" (since Templater 2.24 that switch is per device too).
+
+`ovm init --update` brings each plugin that is in the vault and older than its pin to the pin's
+files (its `data.json` stays), leaves a newer one (you updated it in Obsidian) and names one that
+is not there; it touches nothing else. Obsidian loads plugin code at start: quit it, or reload it
+(Command palette: "Reload app without saving"), after `--update`. `--no-plugins` writes `vault.yml`
+and the settings and templates and downloads nothing (a plain-markdown vault, a machine offline).
+
+Exit codes: 0 when everything is done or was; 69 when a download failed or ovm's files are missing
+(`ppm install -f stack/obsidian`): what could be done was, and init again finishes it; 1 when
+something is in the way (a directory where a template goes: nothing of the skeleton is copied).
+
+**Bumping a pin**: change `version` in `plugins.yml`, run `packages/obsidian/tests/pins --print`
+(it fetches the assets and prints their sha256s; the bats suite never reaches the network), put
+them in, run it again without `--print`.
+
+**Shell commands runs commands on this computer**, and Meta Bind buttons can run them from inside
+a note. A vault that syncs (iCloud, git) carries its plugin settings: whoever can write to the
+vault can add a command that runs when you click. ovm ships one command (`ovm validate`). Before
+turning on community plugins in a vault you did not write, read
+`.obsidian/plugins/obsidian-shellcommands/data.json`. Shell commands is desktop only: on a phone
+Obsidian does not load it. A vault whose Shell commands `data.json` is its own keeps it: init does
+not edit it, and prints how to add ovm's command by hand.
 
 ### vault.yml
 

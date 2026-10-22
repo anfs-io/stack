@@ -1,6 +1,10 @@
-version: 0.4.0
+version: 0.5.0
 author: rjayroach
 categories: [pde]
 # wsm is what ovm's links point into, and what tells ovm when a space is installed or removed
 depends:
   - wsm
+
+# ~/.local/lib/ovm is one link: the plugin pins (plugins.yml) and the vault skeleton (vault/) that
+# ovm init copies from
+links: [.local/lib/ovm/]

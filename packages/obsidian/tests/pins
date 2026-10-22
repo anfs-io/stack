@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Check the real pins of home/.local/lib/ovm/plugins.yml against GitHub: fetch every pinned asset
+# into a temp directory, compare its sha256 with the pin's, and check each manifest.json's id and
+# version against the key and the pin. Not part of the bats suite (it reaches the network): run by
+# hand when bumping a pin, and paste what it prints into the plan's log.
+#
+#   packages/obsidian/tests/pins            check
+#   packages/obsidian/tests/pins --print    also print each asset's sha256 as fetched (for a bump)
+set -euo pipefail
+
+here=$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+pins="$here/../home/.local/lib/ovm/plugins.yml"
+print=false
+[[ "${1:-}" != --print ]] || print=true
+
+command -v yq >/dev/null || { echo "pins: yq is required" >&2; exit 69; }
+command -v curl >/dev/null || { echo "pins: curl is required" >&2; exit 69; }
+sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
+
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/ovm-pins.XXXXXX")
+trap 'rm -rf "$tmp"' EXIT
+bad=0
+while IFS=$'\t' read -r id repo ver asset want; do
+  url="https://github.com/$repo/releases/download/$ver/$asset"
+  mkdir -p "$tmp/$id"
+  if ! curl -fsSL --retry 3 -o "$tmp/$id/$asset" "$url"; then
+    echo "FAIL $id $ver $asset: download failed: $url"; bad=1; continue
+  fi
+  got=$(sha256 "$tmp/$id/$asset")
+  if [[ "$got" == "$want" ]]; then echo "ok   $id $ver $asset $got"
+  else echo "FAIL $id $ver $asset: sha256 $got, pinned $want"; bad=1
+  fi
+  if [[ "$asset" == manifest.json ]]; then
+    m=$(yq -p json -o tsv '[.id, .version]' "$tmp/$id/$asset")
+    if [[ "$m" == "$id"$'\t'"$ver" ]]; then echo "ok   $id $ver manifest.json: id and version match"
+    else echo "FAIL $id $ver manifest.json: id and version are ${m//$'\t'/ }"; bad=1
+    fi
+  fi
+  ! $print || printf '    %s: %s\n' "$asset" "$got"
+done < <(yq -o tsv 'to_entries[] | .key as $id | .value as $p | ($p.sha256 | to_entries[]) | [$id, $p.repo, ($p.version | tostring), .key, .value]' "$pins")
+exit $bad

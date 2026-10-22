@@ -1,0 +1,23 @@
+{
+  "settings_version": "0.23.0",
+  "shell_commands": [
+    {
+      "id": "ovm-validate",
+      "platform_specific_commands": {
+        "default": "PATH=\"$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH\" ovm validate"
+      },
+      "shells": {},
+      "alias": "ovm: validate this vault",
+      "output_handlers": {
+        "stdout": {
+          "handler": "notification",
+          "convert_ansi_code": true
+        },
+        "stderr": {
+          "handler": "notification",
+          "convert_ansi_code": true
+        }
+      }
+    }
+  ]
+}

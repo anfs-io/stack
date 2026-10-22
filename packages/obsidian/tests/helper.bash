@@ -39,8 +39,76 @@ awk -F'\t' '
 ' "$WSM_LEVELS"
 STUB
   chmod +x "$BATS_TEST_TMPDIR/bin/wsm"
+
+  # ovm's library (~/.local/lib/ovm): the package's skeleton and fixture pins, and curl a stub that
+  # serves the fixture releases and logs each URL. No test reaches the network.
+  _ovm_fixture_lib
+  ln -s "$BATS_FILE_TMPDIR/ovm-fixture/lib" "$HOME/.local/lib/ovm"
+  export OVM_RELEASES="$BATS_TEST_TMPDIR/releases" CURL_LOG="$BATS_TEST_TMPDIR/curl.log"
+  cp -R "$BATS_FILE_TMPDIR/ovm-fixture/releases" "$OVM_RELEASES"
+  : > "$CURL_LOG"
+  cat > "$BATS_TEST_TMPDIR/bin/curl" <<'STUB'
+#!/usr/bin/env bash
+# curl -o <file> <url>: https://github.com/<path> from $OVM_RELEASES/<path>; anything else fails as
+# a 404 does (22)
+out="" url=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    --retry) shift 2 ;;
+    -*) shift ;;
+    *) url="$1"; shift ;;
+  esac
+done
+printf '%s\n' "$url" >> "$CURL_LOG"
+src="$OVM_RELEASES/${url#https://github.com/}"
+[[ "$url" == https://github.com/* && -f "$src" && -n "$out" ]] || exit 22
+cp "$src" "$out"
+STUB
+  chmod +x "$BATS_TEST_TMPDIR/bin/curl"
   PATH="$BATS_TEST_TMPDIR/bin:$PATH"
   cd "$HOME" || return 1
+}
+
+# The three pins of the real plugins.yml, each at a fixture version 1.0.0: small assets (a
+# manifest.json with the plugin's id) under $BATS_FILE_TMPDIR/ovm-fixture/releases/<repo>/releases/
+# download/1.0.0/, and a plugins.yml with their sha256s beside the package's real vault/ skeleton.
+# Built once per file.
+FIXTURE_PINS="templater-obsidian:SilentVoid13/Templater obsidian-shellcommands:Taitava/obsidian-shellcommands obsidian-meta-bind-plugin:mProjectsCode/obsidian-meta-bind-plugin"
+_ovm_fixture_lib() {
+  local base="$BATS_FILE_TMPDIR/ovm-fixture" spec id repo d a
+  [[ -f "$base/lib/plugins.yml" ]] && return 0
+  mkdir -p "$base/lib"
+  ln -s "$(cd "$BATS_TEST_DIRNAME/../home/.local/lib/ovm/vault" && pwd -P)" "$base/lib/vault"
+  for spec in $FIXTURE_PINS; do
+    id=${spec%%:*} repo=${spec#*:}
+    d="$base/releases/$repo/releases/download/1.0.0"
+    mkdir -p "$d"
+    printf '// %s 1.0.0\n' "$id" > "$d/main.js"
+    printf '{\n  "id": "%s",\n  "name": "%s",\n  "version": "1.0.0"\n}\n' "$id" "$id" > "$d/manifest.json"
+    printf '/* %s 1.0.0 */\n' "$id" > "$d/styles.css"
+    printf '%s:\n  repo: %s\n  version: 1.0.0\n  sha256:\n' "$id" "$repo" >> "$base/lib/plugins.yml.tmp"
+    for a in main.js manifest.json styles.css; do
+      printf '    %s: %s\n' "$a" "$(sha256 "$d/$a")" >> "$base/lib/plugins.yml.tmp"
+    done
+  done
+  mv "$base/lib/plugins.yml.tmp" "$base/lib/plugins.yml"
+}
+
+# The sha256 of <file>
+sha256() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
+  else shasum -a 256 "$1" | cut -d' ' -f1
+  fi
+}
+
+# A plugin's files as if installed at <version> in vault <name>: <name> <id> <version>
+plugin_at() {
+  local d="$VAULTS/$1/.obsidian/plugins/$2"
+  mkdir -p "$d"
+  printf '// %s %s\n' "$2" "$3" > "$d/main.js"
+  printf '{"id": "%s", "version": "%s"}\n' "$2" "$3" > "$d/manifest.json"
+  printf '/* %s */\n' "$3" > "$d/styles.css"
 }
 
 ovm() { "$OVM" "$@"; }
@@ -70,7 +138,7 @@ unlevel() {
 # A vault at ~/vaults/<name>, initialized. Prints nothing; its id is in VID.
 vault() {
   mkdir -p "$VAULTS/$1"
-  ovm init "$VAULTS/$1" >/dev/null
+  ovm init --no-plugins "$VAULTS/$1" >/dev/null
   VID=$(yq -r .id "$VAULTS/$1/vault.yml")
 }
 
