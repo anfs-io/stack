@@ -1,7 +1,8 @@
 # Shared setup for ovm's tests.
 #
 # Every test runs the script straight out of the package, with HOME and the XDG dirs inside the
-# per-test temp directory, so nothing reaches the real registry or the real home. anfs's
+# per-test temp directory, so nothing reaches the real ~/vaults or the real home. Vaults are in
+# ~/vaults (OVM_VAULTS_HOME's default) of that HOME. anfs's
 # libraries are ANFS_TEST_LIB's (stack's convention: a core checkout's lib/anfs), else the
 # installed ones (ovm lives in another source than they do), linked into the test HOME. wsm is a stub that answers `wsm ls --json`, which is how ovm reads it, from a file the
 # test writes with `level`.
@@ -17,12 +18,12 @@ ovm_setup() {
   XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share"
   XDG_STATE_HOME="$HOME/.local/state" XDG_CACHE_HOME="$HOME/.cache"
   unset ANFS_CONFIG_HOME ANFS_DATA_HOME ANFS_CACHE_HOME ANFS_STATE_HOME ANFS_DEBUG
-  unset OVM_CONFIG_HOME OVM_DATA_HOME OVM_STATE_HOME OVM_CACHE_HOME
+  unset OVM_CONFIG_HOME OVM_DATA_HOME OVM_STATE_HOME OVM_CACHE_HOME OVM_VAULTS_HOME OVM_PROBE_SECONDS
   export HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
   export ANFS_LOG=off   # no log file from tests (lib/anfs/log.sh)
   mkdir -p "$HOME/.local/lib"
   ln -s "$(cd "$lib" && pwd -P)" "$HOME/.local/lib/anfs"
-  REGISTRY="$XDG_STATE_HOME/ovm/vaults"
+  VAULTS="$HOME/vaults"
 
   export WSM_LEVELS="$BATS_TEST_TMPDIR/levels"
   : > "$WSM_LEVELS"
@@ -65,11 +66,11 @@ unlevel() {
   mv "$WSM_LEVELS.tmp" "$WSM_LEVELS"
 }
 
-# A vault at ~/<name>, initialized. Prints nothing; its id is in VID.
+# A vault at ~/vaults/<name>, initialized. Prints nothing; its id is in VID.
 vault() {
-  mkdir -p "$HOME/$1"
-  ovm init "$HOME/$1" >/dev/null
-  VID=$(yq -r .id "$HOME/$1/ovm.yml")
+  mkdir -p "$VAULTS/$1"
+  ovm init "$VAULTS/$1" >/dev/null
+  VID=$(yq -r .id "$VAULTS/$1/ovm.yml")
 }
 
 # A file in the test HOME: <path relative to ~> <content, \n-escaped>

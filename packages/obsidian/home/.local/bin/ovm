@@ -3,10 +3,10 @@
 #
 # A vault is a directory of markdown documents with an ovm.yml at its root: an Obsidian vault, or
 # any directory of markdown, Obsidian's or not (a plain tree, a git repo of docs). "Obsidian" is
-# the name, not a restriction. Vaults can live anywhere, so ovm never assumes where: ovm.yml
-# is the marker and carries the vault's id, and a registry ($OVM_STATE_HOME/vaults) indexes the
-# vaults this machine knows. The marker is the source of truth; the registry is a cache that
-# `ovm scan` rebuilds, and a vault found at a new path is the same vault, moved.
+# the name, not a restriction. Vaults are the entries of ~/vaults ($OVM_VAULTS_HOME), as spaces
+# are ~/spaces': a directory there, or a link to one (a vault stored on iCloud is a link, declared
+# by a package's links: entry), with an ovm.yml, which carries the vault's id. `ls ~/vaults` is
+# the list; a vault is named by its entry.
 #
 # ovm does three things with a vault:
 #
@@ -21,11 +21,11 @@
 #   validate   documents are checked against the vault's `profile` (required keys, allowed
 #              types). OKF itself only requires `type`; the profile is the real schema.
 #
-# Every command takes --json. Exit codes follow wsm: 1 not found, 2 ambiguous, 3 stale,
+# Every command takes --json. Exit codes follow wsm: 1 not found, 2 ambiguous, 3 not a usable vault,
 # 64 usage, 69 unavailable, 73 exists, 75 lock.
 set -euo pipefail
 
-OVM_VERSION=0.2.1
+OVM_VERSION=0.3.0
 
 # Paths, messages, the log and the command line come from anfs
 ANFS_LIB="$HOME/.local/lib/anfs"
@@ -52,8 +52,9 @@ if [[ -f "$ANFS_LIB/config.sh" ]]; then source "$ANFS_LIB/config.sh"; fi
 source "$ANFS_LIB/link.sh"
 
 anfs_tool_paths ovm
-OVM_REGISTRY="$OVM_STATE_HOME/vaults"
-OVM_LOCK="$OVM_STATE_HOME/vaults.lock"
+OVM_VAULTS_HOME="${OVM_VAULTS_HOME:-$HOME/vaults}"
+OVM_VAULTS_HOME="${OVM_VAULTS_HOME%/}"
+OVM_LOCK="$OVM_STATE_HOME/links.lock"
 # The symlinks ovm made: what `remove` events and `link validate` work from
 OVM_LINKS="$OVM_STATE_HOME/links"
 OVM_CONFIG=ovm.yml
@@ -73,17 +74,9 @@ ID_RE='^[a-z2-7]{10}$'
 US="$ANFS_US"
 
 CLI_VERSION="$OVM_VERSION"
-cli_cmd init "Make a directory (default .) a vault: write ovm.yml, mint its id, register it" \
-  --opt "--name NAME: The vault's name (default: the directory's)" --arg "[dir]"
-cli_cmd new "Create a directory and init it" \
-  --opt "--name NAME: The vault's name (default: the directory's)" --arg "dir"
-cli_cmd list "The vaults this machine knows" --alias ls \
-  --opt "--stale: Only the ones that are gone or changed id"
-cli_cmd scan "Find ovm.yml under the directories (default ~) and register what is found" --arg "[dir...]"
-cli_cmd remove "Drop a vault from the registry; its files are untouched" --alias rm \
-  --opt "-y --yes: Do not ask before dropping it" --arg "vault"
-cli_cmd prune "Drop every stale registry entry" --opt "-n --dry-run: Say what would be dropped" \
-  --opt "-y --yes: Do not ask before dropping them"
+cli_cmd init "Make an entry of ~/vaults (default .) a vault: write ovm.yml, mint its id" --arg "[dir]"
+cli_cmd new "Create ~/vaults/NAME and init it" --arg "name"
+cli_cmd list "The entries of ~/vaults: the vaults" --alias ls
 cli_cmd cd "Change to a vault (default: the one you are in) or a document's directory (requires the ovm shell function)" \
   --arg "[vault-or-doc]"
 cli_cmd path "Print the path of a vault (default: the one you are in) or of a document" \
@@ -109,10 +102,10 @@ cli_standard
 
 cli_help_epilogue() {
   cat <<EOF
-A vault is named by its id, a unique id prefix (4+ characters) or its name. SPEC is a wsm space
-(wsm ls): its id, the source and its path (lgat, lgat/tech/web).
-
-Registry: $(_display "$OVM_REGISTRY")
+A vault is an entry of $(_display "$OVM_VAULTS_HOME") (OVM_VAULTS_HOME), a directory or a link to one,
+with an ovm.yml; it is named by its entry, its id or a unique id prefix (4+ characters). A vault
+stored elsewhere is a link there. SPEC is a wsm space (wsm ls): its id, the source and its path
+(lgat, lgat/tech/web).
 EOF
 }
 
@@ -129,8 +122,6 @@ _display() { anfs_display "$1"; }
 # The canonical path of an existing directory
 _canon() { anfs_canon "$1"; }
 
-_now() { printf '%(%Y-%m-%dT%H:%M:%S%z)T\n' -1; }
-
 _require_yq() { anfs_require yq "it is anfs's base software: brew install yq"; }
 
 _new_id() {
@@ -146,7 +137,7 @@ _new_id() {
 # What a command says when it is done; quiet with --json, where anfs_result speaks instead
 say() { anfs_json_on || printf '%s\n' "$*"; }
 
-# --- The marker and config: ovm.yml -------------------------------------------------------
+# --- The marker: ovm.yml ------------------------------------------------------------------
 
 # The id in <root>/ovm.yml, or nothing when there is none or it is not an id
 _cfg_id() {
@@ -155,12 +146,6 @@ _cfg_id() {
   id=$(yq -r '.id // ""' "$1/$OVM_CONFIG" 2>/dev/null) || return 0
   [[ "$id" =~ $ID_RE ]] && printf '%s\n' "$id"
   return 0
-}
-
-_cfg_name() {
-  local name=""
-  name=$(yq -r '.name // ""' "$1/$OVM_CONFIG" 2>/dev/null) || name=""
-  printf '%s\n' "${name:-${1##*/}}"
 }
 
 # The root of the vault containing <dir>, or return 1. Checks $HOME itself but never walks above
@@ -175,62 +160,6 @@ _find_root() {
   done
 }
 
-# The vault you are in, or die
-_here() {
-  _find_root "$PWD" || fail "$EX_NOTFOUND" "not inside a vault (no $OVM_CONFIG here or above): ovm init, or name one"
-}
-
-# --- Registry -----------------------------------------------------------------------------
-#
-# id <TAB> name <TAB> added <TAB> path, the path last so it may hold spaces. Parallel arrays, in
-# file order; a slot with an empty id is deleted.
-
-REG_ID=() REG_NAME=() REG_ADDED=() REG_PATH=()
-
-_registry_load() {
-  local id name added path i dup
-  REG_ID=() REG_NAME=() REG_ADDED=() REG_PATH=()
-  [[ -f "$OVM_REGISTRY" ]] || return 0
-  while IFS=$'\t' read -r id name added path || [[ -n "$id" ]]; do
-    [[ "$id" =~ $ID_RE && "$path" == /* ]] || continue
-    dup=false
-    for i in "${!REG_ID[@]}"; do
-      [[ "${REG_ID[$i]}" == "$id" || "${REG_PATH[$i]}" == "$path" ]] && dup=true
-    done
-    $dup && continue
-    REG_ID+=("$id") REG_NAME+=("$name") REG_ADDED+=("$added") REG_PATH+=("$path")
-  done < "$OVM_REGISTRY"
-}
-
-# Write REG_* out atomically, sorted by name then path so the file does not churn. Lock held.
-_registry_write() {
-  local tmp="$OVM_REGISTRY.tmp.$$" i
-  (umask 077; : > "$tmp") || fail "$EX_LOCK" "cannot write $tmp"
-  for i in "${!REG_ID[@]}"; do
-    [[ -n "${REG_ID[$i]}" ]] || continue
-    printf '%s\t%s\t%s\t%s\n' "${REG_ID[$i]}" "${REG_NAME[$i]}" "${REG_ADDED[$i]}" "${REG_PATH[$i]}"
-  done | LC_ALL=C sort -t$'\t' -k2,2 -k4,4 >> "$tmp"
-  mv -- "$tmp" "$OVM_REGISTRY" || fail "$EX_LOCK" "cannot replace $OVM_REGISTRY"
-}
-
-# Index of the entry with this id / at this path, or -1
-_reg_by_id() {
-  local i
-  for i in "${!REG_ID[@]}"; do
-    [[ -n "${REG_ID[$i]}" && "${REG_ID[$i]}" == "$1" ]] && { echo "$i"; return 0; }
-  done
-  echo -1
-}
-_reg_by_path() {
-  local i
-  for i in "${!REG_ID[@]}"; do
-    [[ -n "${REG_ID[$i]}" && "${REG_PATH[$i]}" == "$1" ]] && { echo "$i"; return 0; }
-  done
-  echo -1
-}
-
-# True when the entry no longer describes a live vault: the path is gone, or the ovm.yml there
-# no longer holds the recorded id
 # Whether <dir>/ovm.yml can be read within OVM_PROBE_SECONDS (3): a vault on a hung iCloud or
 # network mount blocks every read of it, so ovm looks once, in a process an alarm can end, and
 # leaves the vault alone after that. Remembered per path for the run.
@@ -246,19 +175,121 @@ _reachable() {
   [[ "${OVM_REACH[$dir]}" == yes ]]
 }
 
-# Unreachable is not stale: what cannot be read cannot be judged, and prune must not drop it
-_is_unreachable() { ! _reachable "${REG_PATH[$1]}"; }
+# --- The vaults: the entries of $OVM_VAULTS_HOME -------------------------------------------
+#
+# An entry (a directory, or a link to one) with an ovm.yml is a vault, named by the entry. There
+# is no other list: a vault stored elsewhere (iCloud) is a link there, declared by a package's
+# links: entry.
 
-_is_stale() {
-  ! _is_unreachable "$1" || return 1
-  [[ -d "${REG_PATH[$1]}" ]] || return 0
-  [[ "$(_cfg_id "${REG_PATH[$1]}")" != "${REG_ID[$1]}" ]]
+# The entry names of $OVM_VAULTS_HOME, one per line, hidden ones left out. Reads nothing in them.
+_entries() {
+  local e
+  for e in "$OVM_VAULTS_HOME"/*; do
+    [[ -e "$e" || -L "$e" ]] && printf '%s\n' "${e##*/}"
+  done
+  return 0
+}
+
+# Every entry, into parallel arrays: E_NAME, E_STATE (ok, unreachable, not a vault), E_ID and
+# E_ROOT (the vault's canonical root when ok; else the entry, or what its link points at)
+E_NAME=() E_STATE=() E_ID=() E_ROOT=()
+_vaults_load() {
+  local name e
+  E_NAME=() E_STATE=() E_ID=() E_ROOT=()
+  while IFS= read -r name; do
+    [[ -n "$name" ]] || continue
+    e="$OVM_VAULTS_HOME/$name"
+    E_NAME+=("$name")
+    if [[ -L "$e" && ! -e "$e" ]] || ! _reachable "$e"; then
+      E_STATE+=(unreachable) E_ID+=("")
+      if [[ -L "$e" ]]; then E_ROOT+=("$(readlink -- "$e")"); else E_ROOT+=("$e"); fi
+    elif [[ ! -d "$e" || ! -f "$e/$OVM_CONFIG" ]]; then
+      E_STATE+=("not a vault") E_ID+=("") E_ROOT+=("$e")
+    else
+      E_STATE+=(ok) E_ROOT+=("$(_canon "$e")") E_ID+=("$(_cfg_id "$e")")
+    fi
+  done < <(_entries)
+}
+
+# The name of the entry of $OVM_VAULTS_HOME that is the directory <root> (canonical), or return 1
+_entry_of() {
+  local root="$1" name e
+  # The common case first: the entry has the directory's name
+  e="$OVM_VAULTS_HOME/${root##*/}"
+  if [[ -d "$e" ]] && _reachable "$e" && [[ "$e" -ef "$root" ]]; then printf '%s\n' "${root##*/}"; return 0; fi
+  while IFS= read -r name; do
+    e="$OVM_VAULTS_HOME/$name"
+    [[ -d "$e" ]] && _reachable "$e" && [[ "$e" -ef "$root" ]] && { printf '%s\n' "$name"; return 0; }
+  done < <(_entries)
+  return 1
+}
+
+# The vault holding <dir>: VA_ROOT (its canonical root) and VA_NAME (its entry). Returns 1 when no
+# ovm.yml holds <dir>; fails when the one that does is not an entry of $OVM_VAULTS_HOME.
+VA_ROOT="" VA_NAME=""
+_vault_of() {
+  VA_ROOT=$(_find_root "$1") || return 1
+  VA_NAME=$(_entry_of "$VA_ROOT") ||
+    fail "$EX_NOTFOUND" "$(_display "$VA_ROOT") is not in $(_display "$OVM_VAULTS_HOME"): link it there (ln -s '$VA_ROOT' $(_display "$OVM_VAULTS_HOME")/<name>)"
+}
+
+# The vault you are in, or die
+_here() {
+  _vault_of "$PWD" || fail "$EX_NOTFOUND" "not inside a vault (no $OVM_CONFIG here or above): ovm new NAME, or name one"
+}
+
+# The entry <query> names, as V_I (index into E_*): its name, a vault id, or a unique id prefix of
+# 4 or more. Returns 1 for no match, 2 for more than one (the candidates are in V_MATCHES).
+V_I=-1 V_MATCHES=()
+_vault_resolve() {
+  local q="$1" i
+  V_I=-1 V_MATCHES=()
+  for i in "${!E_NAME[@]}"; do
+    [[ "${E_NAME[$i]}" == "$q" ]] && { V_I=$i; return 0; }
+  done
+  for i in "${!E_ID[@]}"; do
+    [[ -n "${E_ID[$i]}" && "${E_ID[$i]}" == "$q" ]] && { V_I=$i; return 0; }
+  done
+  if [[ ${#q} -ge 4 && "$q" =~ ^[a-z2-7]+$ ]]; then
+    for i in "${!E_ID[@]}"; do
+      [[ -n "${E_ID[$i]}" && "${E_ID[$i]}" == "$q"* ]] && V_MATCHES+=("$i")
+    done
+  fi
+  case ${#V_MATCHES[@]} in
+    0) return 1 ;;
+    1) V_I=${V_MATCHES[0]}; return 0 ;;
+    *) return 2 ;;
+  esac
+}
+
+_ambiguous() {
+  local i
+  warn "'$1' matches more than one vault:"
+  for i in "${V_MATCHES[@]}"; do
+    printf '  %s  %s  %s\n' "${E_ID[$i]}" "${E_NAME[$i]}" "$(_display "${E_ROOT[$i]}")" >&2
+  done
+  exit "$EX_AMBIGUOUS"
+}
+
+# The roots of the vaults that answer, into LIVE (parallel: LIVE_ID, LIVE_NAME)
+LIVE=() LIVE_ID=() LIVE_NAME=()
+_live_vaults() {
+  local i
+  LIVE=() LIVE_ID=() LIVE_NAME=()
+  _vaults_load
+  for i in "${!E_NAME[@]}"; do
+    case "${E_STATE[$i]}" in
+      ok) LIVE+=("${E_ROOT[$i]}") LIVE_ID+=("${E_ID[$i]}") LIVE_NAME+=("${E_NAME[$i]}") ;;
+      unreachable) warn "vault ${E_NAME[$i]} skipped: $(_display "${E_ROOT[$i]}") does not answer" ;;
+    esac
+  done
 }
 
 # --- Locking ------------------------------------------------------------------------------
 #
-# mkdir is the atomic step; the file inside records when, because a directory's mtime cannot be
-# read portably. Retry for 5s, then break a lock older than 60s: its holder is not coming back.
+# Guards the record of the links ovm made. mkdir is the atomic step; the file inside records
+# when, because a directory's mtime cannot be read portably. Retry for 5s, then break a lock
+# older than 60s: its holder is not coming back.
 
 OVM_LOCK_HELD=false
 
@@ -297,128 +328,16 @@ _lock_release() {
   rm -rf "$OVM_LOCK"
 }
 
-# --- register -----------------------------------------------------------------------------
-#
-# The one operation init, scan and auto-registration go through. In memory: the caller holds the
-# lock, loads the registry and writes it back, so scan batches a whole run into one write.
-# REG_STATUS says what happened: added, unchanged, updated (renamed, or a new id at a known
-# path) or moved (a known id at a new path; REG_OLD is where it was).
-
-REG_STATUS="" REG_OLD=""
-
-# Usage: _register <canonical root> <name> <id>
-_register() {
-  local root="$1" name="$2" id="$3" by_id by_path
-  REG_STATUS="" REG_OLD=""
-  by_id=$(_reg_by_id "$id")
-  by_path=$(_reg_by_path "$root")
-
-  if [[ $by_id -ge 0 && "${REG_PATH[$by_id]}" == "$root" ]]; then
-    if [[ "$name" != "${REG_NAME[$by_id]}" ]]; then
-      REG_NAME[by_id]="$name"
-      REG_STATUS=updated
-    else
-      REG_STATUS=unchanged
-    fi
-    return 0
-  fi
-  # The vault moved: keep when it was first seen, and drop whatever sat at the new path
-  if [[ $by_id -ge 0 ]]; then
-    REG_OLD="${REG_PATH[$by_id]}"
-    [[ $by_path -lt 0 ]] || REG_ID[by_path]=""
-    REG_PATH[by_id]="$root" REG_NAME[by_id]="$name"
-    REG_STATUS=moved
-    return 0
-  fi
-  # A new id where a vault was: its ovm.yml was replaced
-  if [[ $by_path -ge 0 ]]; then
-    REG_ID[by_path]="$id" REG_NAME[by_path]="$name" REG_ADDED[by_path]=$(_now)
-    REG_STATUS=updated
-    return 0
-  fi
-  REG_ID+=("$id") REG_NAME+=("$name") REG_ADDED+=("$(_now)") REG_PATH+=("$root")
-  REG_STATUS=added
-}
-
-_register_locked() {
-  _lock_acquire
-  _registry_load
-  _register "$1" "$2" "$3"
-  [[ "$REG_STATUS" == unchanged ]] || _registry_write
-  _lock_release
-}
-
-# Register the vault you are in when the registry does not have it as it is. Takes the lock only
-# when something has to change, so the common case is a read.
-_auto_register() {
-  local root id name i
-  root=$(_find_root "$PWD") || return 0
-  id=$(_cfg_id "$root")
-  [[ -n "$id" ]] || return 0
-  name=$(_cfg_name "$root")
-  _registry_load
-  i=$(_reg_by_id "$id")
-  [[ $i -ge 0 && "${REG_PATH[$i]}" == "$root" && "${REG_NAME[$i]}" == "$name" ]] && return 0
-  _register_locked "$root" "$name" "$id"
-  anfs_debug "registry: $REG_STATUS $name ($id) at $root${REG_OLD:+, was $REG_OLD}"
-}
-
-# The entry <query> names, as V_I (index into REG_*): an id, a unique id prefix of 4 or more, or
-# a name. Returns 1 for no match, 2 for more than one (the candidates are in V_MATCHES).
-V_I=-1 V_MATCHES=()
-_vault_resolve() {
-  local q="$1" i
-  V_I=-1 V_MATCHES=()
-  for i in "${!REG_ID[@]}"; do
-    [[ "${REG_ID[$i]}" == "$q" ]] && { V_I=$i; return 0; }
-  done
-  if [[ ${#q} -ge 4 && "$q" =~ ^[a-z2-7]+$ ]]; then
-    for i in "${!REG_ID[@]}"; do
-      [[ -n "${REG_ID[$i]}" && "${REG_ID[$i]}" == "$q"* ]] && V_MATCHES+=("$i")
-    done
-  fi
-  if [[ ${#V_MATCHES[@]} -eq 0 ]]; then
-    for i in "${!REG_ID[@]}"; do
-      [[ -n "${REG_ID[$i]}" && "${REG_NAME[$i]}" == "$q" ]] && V_MATCHES+=("$i")
-    done
-  fi
-  case ${#V_MATCHES[@]} in
-    0) return 1 ;;
-    1) V_I=${V_MATCHES[0]}; return 0 ;;
-    *) return 2 ;;
-  esac
-}
-
-_ambiguous() {
-  local i
-  warn "'$1' matches more than one vault:"
-  for i in "${V_MATCHES[@]}"; do
-    printf '  %s  %s  %s\n' "${REG_ID[$i]}" "${REG_NAME[$i]}" "$(_display "${REG_PATH[$i]}")" >&2
-  done
-  exit "$EX_AMBIGUOUS"
-}
-
-# The roots of the live vaults, into LIVE (parallel: LIVE_ID, LIVE_NAME)
-LIVE=() LIVE_ID=() LIVE_NAME=()
-_live_vaults() {
-  local i
-  LIVE=() LIVE_ID=() LIVE_NAME=()
-  _registry_load
-  for i in "${!REG_ID[@]}"; do
-    ! _is_unreachable "$i" || { warn "vault ${REG_NAME[$i]} skipped: $(_display "${REG_PATH[$i]}") does not answer"; continue; }
-    _is_stale "$i" && continue
-    LIVE+=("${REG_PATH[$i]}") LIVE_ID+=("${REG_ID[$i]}") LIVE_NAME+=("${REG_NAME[$i]}")
-  done
-}
-
-# --- init, new, ls, scan, forget, prune ---------------------------------------------------
+# --- init, new, list ----------------------------------------------------------------------
 
 cmd_init() {
-  local dir="${1:-}" name="${CLI_OPT[name]:-}"
+  local dir="${1:-}"
   _require_yq
-  local root parent id file made=false
+  local root parent id file name made=false
   root=$(_canon "${dir:-.}") || fail "$EX_NOTFOUND" "no such directory: ${dir:-.}"
   file="$root/$OVM_CONFIG"
+  name=$(_entry_of "$root") ||
+    fail "$EX_NOTFOUND" "$(_display "$root") is not in $(_display "$OVM_VAULTS_HOME"), where vaults are: ovm new NAME, or link it there (ln -s '$root' $(_display "$OVM_VAULTS_HOME")/<name>) and ovm init that"
   if [[ "$root" != / && "$root" != "$OVM_HOME" ]] && parent=$(_find_root "$(dirname -- "$root")"); then
     fail "$EX_EXISTS" "$(_display "$root") is inside the vault at $(_display "$parent"); a vault does not hold another"
   fi
@@ -431,13 +350,12 @@ cmd_init() {
       I="$id" yq -i '.id = strenv(I)' "$file"
       made=true
     fi
-    [[ -z "$name" ]] || N="$name" yq -i '.name = strenv(N)' "$file"
   else
     id=$(_new_id)
-    cat > "$file" <<EOF
-# An ovm vault (ovm help). The id is this vault's identity: do not change it.
+    cat > "$file" <<CFG
+# An ovm vault (ovm help). The id is this vault's identity: do not change it. The vault's name is
+# its entry in ~/vaults (OVM_VAULTS_HOME).
 id: $id
-name: ""
 # Directories linked into wsm spaces are recorded here: ovm link add DIR --to SPEC
 #links:
 #  - source: docs/product      # relative to this file
@@ -447,115 +365,33 @@ name: ""
 profile:
   required: [type, id]
   #types: [PRD, ADR, Note]    # allowed values of type; leave out to allow any
-EOF
-    # Set by yq, which quotes a name that needs it
-    N="${name:-${root##*/}}" yq -i '.name = strenv(N)' "$file"
+CFG
     made=true
   fi
-  name=$(_cfg_name "$root")
-  _register_locked "$root" "$name" "$id"
   if $made; then
     say "initialized vault $name ($id) at $(_display "$root")"
   else
-    say "$REG_STATUS vault $name ($id) at $(_display "$root")"
+    say "vault $name ($id) at $(_display "$root") is initialized already"
   fi
-  anfs_result id "$id" name "$name" path "$root" status "$REG_STATUS"
+  anfs_result id "$id" name "$name" path "$root" status "$($made && echo initialized || echo unchanged)"
 }
 
 cmd_new() {
-  local path="$1"
-  [[ ! -e "$path" ]] || fail "$EX_EXISTS" "already exists: $path (ovm init makes an existing directory a vault)"
-  mkdir -p -- "$path" || die "cannot create $path"
-  cmd_init "$path"
+  local name="$1" dir
+  [[ -n "$name" && "$name" != */* && "$name" != .* ]] ||
+    fail "$EX_USAGE" "a vault's name is an entry of $(_display "$OVM_VAULTS_HOME"), not a path: $name"
+  dir="$OVM_VAULTS_HOME/$name"
+  [[ ! -e "$dir" && ! -L "$dir" ]] || fail "$EX_EXISTS" "already exists: $(_display "$dir") (ovm init $(_display "$dir") makes it a vault)"
+  mkdir -p -- "$dir" || die "cannot create $dir"
+  cmd_init "$dir"
 }
 
 cmd_list() {
-  local stale=${CLI_OPT[stale]:-false} i state
-  _registry_load
-  for i in "${!REG_ID[@]}"; do
-    state=ok
-    if _is_unreachable "$i"; then state=unreachable
-    elif _is_stale "$i"; then state=stale
-    fi
-    # Stale entries only with --stale, where they are all that is listed; --json has both
-    if ! anfs_json_on; then
-      if $stale; then [[ "$state" == stale ]] || continue; else [[ "$state" != stale ]] || continue; fi
-    elif $stale && [[ "$state" != stale ]]; then
-      continue
-    fi
-    printf '%s\n' "${REG_NAME[$i]}$US${REG_ID[$i]}$US$state$US${REG_PATH[$i]}"
+  local i
+  _vaults_load
+  for i in "${!E_NAME[@]}"; do
+    printf '%s\n' "${E_NAME[$i]}$US${E_ID[$i]}$US${E_STATE[$i]}$US${E_ROOT[$i]}"
   done | anfs_table "NAME ID STATUS PATH" "name id status path"
-}
-
-cmd_scan() {
-  local arg root id name found=0 changed=0
-  local -a dirs=() files=()
-  for arg in "$@"; do
-    case "$arg" in
-      *) [[ -d "$arg" ]] || fail "$EX_NOTFOUND" "no such directory: $arg"; dirs+=("$arg") ;;
-    esac
-  done
-  [[ ${#dirs[@]} -gt 0 ]] || dirs=("$HOME")
-  _require_yq
-  # No symlinks followed, and nothing below what never holds a vault
-  mapfile -t files < <(find "${dirs[@]}" \( -name .git -o -name node_modules -o -name .Trash \
-    -o -name .cache -o -name Caches \) -prune -o -type f -name "$OVM_CONFIG" -print 2>/dev/null || true)
-  _lock_acquire
-  _registry_load
-  for arg in "${files[@]}"; do
-    root=$(_canon "$(dirname -- "$arg")") || continue
-    id=$(_cfg_id "$root")
-    if [[ -z "$id" ]]; then
-      warn "no id in $(_display "$arg"): ovm init $(_display "$root")"
-      continue
-    fi
-    name=$(_cfg_name "$root")
-    _register "$root" "$name" "$id"
-    found=$((found + 1))
-    [[ "$REG_STATUS" == unchanged ]] && continue
-    changed=$((changed + 1))
-    say "$REG_STATUS $name ($id) $(_display "$root")${REG_OLD:+ (was $(_display "$REG_OLD"))}"
-  done
-  [[ $changed -eq 0 ]] || _registry_write
-  _lock_release
-  say "$found vault(s) found, $changed change(s)"
-  anfs_result found "$found" changed "$changed"
-}
-
-cmd_remove() {
-  local rc=0 id name
-  _lock_acquire
-  _registry_load
-  _vault_resolve "$1" || rc=$?
-  [[ $rc -ne 2 ]] || _ambiguous "$1"
-  [[ $rc -eq 0 ]] || fail "$EX_NOTFOUND" "no vault matching '$1' (ovm ls, ovm ls --stale)"
-  id="${REG_ID[$V_I]}" name="${REG_NAME[$V_I]}"
-  anfs_confirm "remove drops $name from the registry (its files stay)" "Remove $name?"
-  REG_ID[V_I]=""
-  _registry_write
-  _lock_release
-  say "removed $name ($id) from the registry; its files are untouched"
-  anfs_result id "$id" name "$name"
-}
-
-cmd_prune() {
-  local dry=${CLI_OPT[dry-run]:-false} i n=0
-  _lock_acquire
-  _registry_load
-  if ! $dry; then
-    for i in "${!REG_ID[@]}"; do _is_stale "$i" && n=$((n + 1)); done
-    [[ $n -eq 0 ]] || anfs_confirm "prune drops $n stale registry entries" "Drop them?"
-    n=0
-  fi
-  for i in "${!REG_ID[@]}"; do
-    _is_stale "$i" || continue
-    n=$((n + 1))
-    say "$($dry && echo would drop || echo dropped) ${REG_NAME[$i]} (${REG_ID[$i]}) $(_display "${REG_PATH[$i]}")"
-    $dry || REG_ID[i]=""
-  done
-  $dry || [[ $n -eq 0 ]] || _registry_write
-  _lock_release
-  anfs_result pruned "$n" dry_run "$dry"
 }
 
 # --- Documents ----------------------------------------------------------------------------
@@ -667,19 +503,21 @@ cmd_cd() {
 }
 
 cmd_path() {
-  local rc=0 root
+  local rc=0 path
   if [[ $# -eq 0 ]]; then
-    root=$(_here)
-    if anfs_json_on; then anfs_result path "$root"; else printf '%s\n' "$root"; fi
+    _here
+    if anfs_json_on; then anfs_result path "$VA_ROOT"; else printf '%s\n' "$VA_ROOT"; fi
     return 0
   fi
-  _registry_load
+  _vaults_load
   _vault_resolve "$1" || rc=$?
   [[ $rc -ne 2 ]] || _ambiguous "$1"
   if [[ $rc -eq 0 ]]; then
-    if anfs_json_on; then anfs_result path "${REG_PATH[$V_I]}" kind vault; else printf '%s\n' "${REG_PATH[$V_I]}"; fi
-    if _is_stale "$V_I"; then
-      warn "${REG_NAME[$V_I]} is stale: its path is gone or its ovm.yml changed id (ovm scan, ovm prune)"
+    path="${E_ROOT[$V_I]}"
+    [[ "${E_STATE[$V_I]}" == ok ]] || path="$OVM_VAULTS_HOME/${E_NAME[$V_I]}"
+    if anfs_json_on; then anfs_result path "$path" kind vault; else printf '%s\n' "$path"; fi
+    if [[ "${E_STATE[$V_I]}" != ok ]]; then
+      warn "${E_NAME[$V_I]} is ${E_STATE[$V_I]} (ovm list)"
       return "$EX_STALE"
     fi
     return 0
@@ -701,10 +539,10 @@ cmd_docs() {
   local root dir v
   if [[ -n "$path" ]]; then
     dir=$(_canon "$path") || fail "$EX_NOTFOUND" "no such directory: $path"
-    root=$(_find_root "$dir") || fail "$EX_NOTFOUND" "$(_display "$dir") is not inside a vault"
-    roots=("$root") dirs=("$dir") names=("$(_cfg_name "$root")")
-  elif root=$(_find_root "$PWD"); then
-    roots=("$root") dirs=("$root") names=("$(_cfg_name "$root")")
+    _vault_of "$dir" || fail "$EX_NOTFOUND" "$(_display "$dir") is not inside a vault"
+    roots=("$VA_ROOT") dirs=("$dir") names=("$VA_NAME")
+  elif _vault_of "$PWD"; then
+    roots=("$VA_ROOT") dirs=("$VA_ROOT") names=("$VA_NAME")
   else
     _live_vaults
     roots=("${LIVE[@]}") dirs=("${LIVE[@]}") names=("${LIVE_NAME[@]}")
@@ -726,7 +564,7 @@ cmd_docs() {
 cmd_show() {
   local want="$1" body=${CLI_OPT[body]:-false}
   _require_yq
-  _doc_find "$want" || fail "$EX_NOTFOUND" "no document with the id '$want' in any registered vault (ovm docs)"
+  _doc_find "$want" || fail "$EX_NOTFOUND" "no document with the id '$want' in any vault (ovm docs)"
   if ! anfs_json_on; then
     if $body; then _doc_body "$D_PATH"; else cat -- "$D_PATH"; fi
     return 0
@@ -833,9 +671,10 @@ _points_at() {
   [[ -d "$1" && -d "$2" && "$(_canon "$1")" == "$(_canon "$2")" ]]
 }
 
-# The name a link gets when ovm.yml gives none: the directory's, or the vault's for its root
+# The name a link gets when ovm.yml gives none: the directory's, or the vault's (its entry in
+# ~/vaults) for its root
 _default_as() {
-  if [[ "$2" == . ]]; then _cfg_name "$1"; else printf '%s\n' "${2##*/}"; fi
+  if [[ "$2" == . ]]; then _entry_of "$1" || printf '%s\n' "${1##*/}"; else printf '%s\n' "${2##*/}"; fi
 }
 
 # A symlink in a cloned repo would show up there as an untracked file
@@ -881,7 +720,8 @@ LK_ROOT="" LK_SRC=""
 _link_dir() {
   local dir
   dir=$(_canon "${1:-.}") || fail "$EX_NOTFOUND" "no such directory: ${1:-.}"
-  LK_ROOT=$(_find_root "$dir") || fail "$EX_NOTFOUND" "$(_display "$dir") is not inside a vault"
+  _vault_of "$dir" || fail "$EX_NOTFOUND" "$(_display "$dir") is not inside a vault"
+  LK_ROOT="$VA_ROOT"
   LK_SRC=.
   [[ "$dir" == "$LK_ROOT" ]] || LK_SRC="${dir#"$LK_ROOT"/}"
 }
@@ -975,13 +815,13 @@ _link_rows() {
 cmd_link_list() {
   _require_yq
   local -a ROOTS=() NAMES=()
-  local root rel="" src tgt as state path vault
+  local rel="" src tgt as state path vault
   if [[ $# -eq 1 ]]; then
     _link_dir "$1"
-    ROOTS=("$LK_ROOT") NAMES=("$(_cfg_name "$LK_ROOT")")
+    ROOTS=("$LK_ROOT") NAMES=("$VA_NAME")
     [[ "$LK_SRC" == . ]] || rel="$LK_SRC"
-  elif root=$(_find_root "$PWD"); then
-    ROOTS=("$root") NAMES=("$(_cfg_name "$root")")
+  elif _vault_of "$PWD"; then
+    ROOTS=("$VA_ROOT") NAMES=("$VA_NAME")
   else
     _live_vaults
     ROOTS=("${LIVE[@]}") NAMES=("${LIVE_NAME[@]}")
@@ -1000,7 +840,7 @@ cmd_link_apply() {
   _require_yq
   local i v rc=0 vid root
   if [[ -z "$event" ]]; then
-    root=$(_here)
+    _here; root="$VA_ROOT"
     vid=$(_cfg_id "$root")
     [[ -n "$vid" ]] || die "$(_display "$root/$OVM_CONFIG") has no id: ovm init"
     _wsm_load
@@ -1102,11 +942,12 @@ cmd_validate() {
   if [[ -n "$path" ]]; then
     [[ -e "$path" ]] || fail "$EX_NOTFOUND" "no such file or directory: $path"
     if [[ -d "$path" ]]; then scope=$(_canon "$path"); else scope="$(_canon "$(dirname -- "$path")")/${path##*/}"; fi
-    root=$(_find_root "$( [[ -d "$scope" ]] && echo "$scope" || dirname -- "$scope")") ||
+    _vault_of "$( [[ -d "$scope" ]] && echo "$scope" || dirname -- "$scope")" ||
       fail "$EX_NOTFOUND" "$(_display "$scope") is not inside a vault"
+    root="$VA_ROOT"
   else
-    root=$(_here)
-    scope="$root"
+    _here
+    root="$VA_ROOT" scope="$VA_ROOT"
   fi
   file="$root/$OVM_CONFIG"
 
@@ -1183,12 +1024,12 @@ cmd_validate() {
 #
 # What cli.sh asks for on a tab press (complete_<kind>): one candidate per line, quickly. No yq.
 
+# The entries of ~/vaults, without looking inside them (a hung iCloud must not hang a tab press)
 complete_vault() {
-  local id name added path
-  [[ -f "$OVM_REGISTRY" ]] || return 0
-  while IFS=$'\t' read -r id name added path; do
-    [[ -n "$name" ]] && printf '%s\t%s\n' "$name" "$(anfs_display "$path")"
-  done < "$OVM_REGISTRY"
+  local name
+  while IFS= read -r name; do
+    printf '%s\t%s\n' "$name" "$(anfs_display "$OVM_VAULTS_HOME/$name")"
+  done < <(_entries)
 }
 complete_vault_or_doc() { complete_vault; }
 # A wsm space: wsm's to say
@@ -1198,14 +1039,5 @@ complete_spec() { command wsm __complete install "" 2>/dev/null | cut -f1; }
 
 cli_globals "$@"
 set -- "${CLI_ARGS[@]}"
-
-# A vault you are standing in is registered as a side effect of using it. Not for the commands
-# that manage the registry themselves, for a tab press, for the settings, nor for wsm's events,
-# which are about other directories.
-case "${1:-help}" in
-  help|-h|--help|--version|__complete|completion|config|init|new|scan|remove|rm|prune) ;;
-  link) [[ " $* " == *" --event "* ]] || { command -v yq >/dev/null 2>&1 && _auto_register; } ;;
-  *) command -v yq >/dev/null 2>&1 && _auto_register ;;
-esac
 
 cli_dispatch "$@"

@@ -59,7 +59,7 @@ On it: `ventoy`, `gem-local` (ruby), `tsm` (tailscale), `opm` (op), `remotefs`, 
 | `pikvm msd list` | `size`, `image` |
 | `ssh-key list` | `key` (the fingerprint), `status` (`local`, `agent`), `file`, `type`, `comment`, `public` |
 | `git account list` | `account` (`<host>/<user>`), `status` (`key on account`, `no key here`, `key not on account`, `unreachable`), `keys` (how many the account has), `host`, `user` |
-| `ovm list` | `name`, `id`, `status` (`ok`, `stale`, `unreachable`), `path` |
+| `ovm list` | `name`, `id`, `status` (`ok`, `unreachable`, `not a vault`), `path` (the entries of `~/vaults`) |
 | `ovm link list` | `source`, `target`, `as`, `status` (`ok`, `pending`, `missing`, `conflict`, `dangling`, `unknown`), `link`, `vault` |
 | `ovm docs` | `id`, `type`, `title`, `space`, `path`, `vault` |
 | `ovm validate` | `path`, `finding` |

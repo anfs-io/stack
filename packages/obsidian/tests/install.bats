@@ -21,7 +21,7 @@ hook() {
   run hook post_install
   [ "$status" -eq 0 ]
   [[ "${lines[0]}" == "register: wsm stack/obsidian ovm link apply --event" ]]
-  [[ "$output" == *"ovm init <dir>"* ]]
+  [[ "$output" == *"ovm new <name>"* ]]
   run hook post_remove
   [ "$status" -eq 0 ]
   [[ "${lines[0]}" == "unregister: wsm stack/obsidian" ]]

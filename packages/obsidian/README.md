@@ -5,20 +5,34 @@ aliases on macOS, and `ovm`, the Obsidian Vault Manager.
 
 ## ovm
 
-A vault is any directory of markdown documents with an `ovm.yml` at its root: an Obsidian vault,
-a plain tree, a git repo of docs. "Obsidian" is the name, not a restriction. Vaults live
-anywhere; the marker is the source of truth and carries the vault's id, and a registry
-(`$XDG_STATE_HOME/ovm/vaults`) indexes the ones this machine knows. `ovm scan` rebuilds it, and a
-vault you stand in is registered as you use it. A vault found at a new path is the same vault,
-moved. ovm's one setting, `OVM_PROBE_SECONDS`, is documented in `~/.config/ovm/ovm.env`; this
-machine's value goes in `ovm.local.env` beside it (`ovm config set OVM_PROBE_SECONDS=5`).
+A vault is a directory of markdown documents with an `ovm.yml` at its root: an Obsidian vault, a
+plain tree, a git repo of docs. "Obsidian" is the name, not a restriction. Vaults are the entries
+of `~/vaults` (`OVM_VAULTS_HOME`), as spaces are `~/spaces`': a directory there, or a link to one,
+with an `ovm.yml` (which carries the vault's id). `ls ~/vaults` is the list, and a vault is named
+by its entry. There is no registry and nothing to scan: removing a vault from ovm is removing its
+entry. A command run in a directory with an `ovm.yml` that is not in `~/vaults` says to link it
+there.
+
+A vault stored elsewhere (iCloud) is a link in `~/vaults`, declared in your repository's layer of
+this package (`<your repo>/packages/obsidian/package.yml`), so `ppm install obsidian` makes it:
+
+```yaml
+links:
+  - src: ~/Library/Mobile Documents/iCloud~md~obsidian/Documents/apex
+    dest: vaults/apex
+    platforms: [macos]
+```
+
+On a machine without that path the entry is `missing src` (`ppm show obsidian`), and a link whose
+target is gone is `unreachable` in `ovm list`, as is a vault that does not answer within
+`OVM_PROBE_SECONDS`. The settings (`OVM_VAULTS_HOME`, `OVM_PROBE_SECONDS`) are documented in
+`~/.config/ovm/ovm.env`; this machine's values go in `ovm.local.env` beside it
+(`ovm config set OVM_VAULTS_HOME=~/notes`).
 
 ```bash
-ovm init [dir] [--name NAME]          # make a directory a vault: ovm.yml, a new id, registered
-ovm new <dir>                         # create the directory and init it
-ovm list [--stale]                    # NAME ID STATUS PATH
-ovm scan [dir...]                     # find ovm.yml under the directories (default ~)
-ovm remove <vault>; ovm prune         # drop registry entries; the files are untouched
+ovm new <name>                        # create ~/vaults/<name> and init it
+ovm init [dir]                        # make an entry of ~/vaults a vault: ovm.yml, a new id
+ovm list                              # NAME ID STATUS (ok, unreachable, not a vault) PATH
 ovm path [--dir] [vault-or-doc]       # a vault's path, or a document's by id (--dir: its directory)
 ovm cd [vault-or-doc]                 # go there: a vault, or a document's directory
 ovm docs; ovm show <id>               # documents by their frontmatter id

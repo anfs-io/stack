@@ -22,21 +22,21 @@ need_anfs_sh() { [[ -f "$ANFS_SH" ]] || skip "core's sh/anfs.sh is not next to $
   [ "$status" -eq 1 ]
   [[ "$output" == *"ovm cd needs the ovm shell function (source ~/.config/sh/ovm.sh)"* ]]
   run ovm __complete cd ""
-  [ "$output" = "notes"$'\t'"~/notes" ]
+  [ "$output" = "notes"$'\t'"~/vaults/notes" ]
 }
 
 @test "path --dir: a vault's path as is, a document's directory" {
   vault notes
-  doc notes/prd/one.md aaaaaaaaaa PRD
+  doc vaults/notes/prd/one.md aaaaaaaaaa PRD
   run ovm path --dir notes
-  [ "$output" = "$HOME/notes" ]
+  [ "$output" = "$HOME/vaults/notes" ]
   run ovm path --dir aaaaaaaaaa
-  [ "$output" = "$HOME/notes/prd" ]
+  [ "$output" = "$HOME/vaults/notes/prd" ]
   run ovm path aaaaaaaaaa
-  [ "$output" = "$HOME/notes/prd/one.md" ]
-  cd notes/prd
+  [ "$output" = "$HOME/vaults/notes/prd/one.md" ]
+  cd vaults/notes/prd
   run ovm path --dir
-  [ "$output" = "$HOME/notes" ]
+  [ "$output" = "$HOME/vaults/notes" ]
 }
 
 # A stub ovm: `path --dir ARG` prints ok -> target (0), stale -> stale (3), else exits 4;
@@ -85,7 +85,7 @@ PROBE
 @test "bash, the real ovm: a vault, a document's directory, the vault you are in, none outside one" {
   need_anfs_sh
   vault notes
-  doc notes/prd/one.md aaaaaaaaaa PRD
+  doc vaults/notes/prd/one.md aaaaaaaaaa PRD
   mkdir -p "$BATS_TEST_TMPDIR/rbin" elsewhere
   ln -s "$OVM" "$BATS_TEST_TMPDIR/rbin/ovm"
   run bash --norc --noprofile -c "
@@ -93,12 +93,12 @@ PROBE
     . \"$OVM_SH\"; . \"$ANFS_SH\"
     try() { cd \"\$1\"; shift; \"\$@\" 2>/dev/null; echo \"\$? \$(pwd)\"; }
     try \"$HOME\" ovm cd notes; try \"$HOME\" ovm cd aaaaaaaaaa
-    try \"$HOME/notes/prd\" ovm cd; try \"$HOME/elsewhere\" ovm cd
+    try \"$HOME/vaults/notes/prd\" ovm cd; try \"$HOME/elsewhere\" ovm cd
     try \"$HOME\" ovm path notes"
   [ "$status" -eq 0 ]
-  [ "${lines[0]}" = "0 $HOME/notes" ]
-  [ "${lines[1]}" = "0 $HOME/notes/prd" ]
-  [ "${lines[2]}" = "0 $HOME/notes" ]
+  [ "${lines[0]}" = "0 $HOME/vaults/notes" ]
+  [ "${lines[1]}" = "0 $HOME/vaults/notes/prd" ]
+  [ "${lines[2]}" = "0 $HOME/vaults/notes" ]
   [ "${lines[3]}" = "1 $HOME/elsewhere" ]
-  [ "${lines[4]}" = "$HOME/notes" ]
+  [ "${lines[4]}" = "$HOME/vaults/notes" ]
 }

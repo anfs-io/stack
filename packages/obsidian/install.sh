@@ -10,12 +10,12 @@
 
 post_install() {
   anfs_callback_register wsm "$PPM_CURRENT_PACKAGE" "ovm link apply --event"
-  user_message "Make a directory of documents a vault: ovm init <dir>\n" \
+  user_message "Vaults are the entries of ~/vaults: ovm new <name>, or link a directory there and ovm init it\n" \
                "Link part of it into a space: ovm link add <dir> --to <source>/<ws>/<space>"
 }
 
 post_remove() {
   anfs_callback_unregister wsm "$PPM_CURRENT_PACKAGE"
-  user_message "Left in place: your vaults, their ovm.yml, and the links in your spaces.\n" \
-               "The registry is in \$XDG_STATE_HOME/ovm."
+  user_message "Left in place: ~/vaults, your vaults' ovm.yml, and the links in your spaces.\n" \
+               "The record of those links is in \$XDG_STATE_HOME/ovm."
 }

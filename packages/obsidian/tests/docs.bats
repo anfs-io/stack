@@ -7,24 +7,24 @@ load helper
 setup() {
   ovm_setup
   vault notes
-  doc notes/prd/one.md aaaaaaaaaa PRD "The first"
-  doc notes/prd/two.md bbbbbbbbbb PRD "The second"
-  doc notes/adr/why.md cccccccccc ADR "Why: a decision"
+  doc vaults/notes/prd/one.md aaaaaaaaaa PRD "The first"
+  doc vaults/notes/prd/two.md bbbbbbbbbb PRD "The second"
+  doc vaults/notes/adr/why.md cccccccccc ADR "Why: a decision"
 }
 
 @test "docs lists id, type, title, space and path for the vault you are in" {
-  cd notes
+  cd vaults/notes
   run ovm docs
   [ "$status" -eq 0 ]
   [ "${#lines[@]}" -eq 3 ]
-  [ "${lines[0]}" = "cccccccccc"$'\t'"ADR"$'\t'"Why: a decision"$'\t'"-"$'\t'"~/notes/adr/why.md"$'\t'"notes" ]
+  [ "${lines[0]}" = "cccccccccc"$'\t'"ADR"$'\t'"Why: a decision"$'\t'"-"$'\t'"~/vaults/notes/adr/why.md"$'\t'"notes" ]
   [[ "${lines[1]}" == "aaaaaaaaaa"$'\t'"PRD"$'\t'"The first"* ]]
 }
 
 @test "docs: PATH narrows it, --type filters, and outside a vault it is every vault" {
   vault other
-  doc other/x.md dddddddddd Note
-  run ovm docs notes/prd
+  doc vaults/other/x.md dddddddddd Note
+  run ovm docs vaults/notes/prd
   [ "${#lines[@]}" -eq 2 ]
   run ovm docs --type ADR
   [ "${#lines[@]}" -eq 1 ]
@@ -37,22 +37,22 @@ setup() {
 }
 
 @test "docs skips hidden directories, node_modules, index.md and log.md" {
-  doc notes/.obsidian/plugin.md eeeeeeeeee Note
-  doc notes/node_modules/pkg/readme.md ffffffffff Note
-  doc notes/index.md gggggggggg Note
-  doc notes/prd/log.md hhhhhhhhhh Note
-  run ovm docs notes
+  doc vaults/notes/.obsidian/plugin.md eeeeeeeeee Note
+  doc vaults/notes/node_modules/pkg/readme.md ffffffffff Note
+  doc vaults/notes/index.md gggggggggg Note
+  doc vaults/notes/prd/log.md hhhhhhhhhh Note
+  run ovm docs vaults/notes
   [ "${#lines[@]}" -eq 3 ]
 }
 
 @test "a document with frontmatter and no id is listed with an empty id; one with none is not" {
-  file notes/draft.md "---\ntype: Note\ntitle: Draft\n---\ntext\n"
-  file notes/plain.md "# Just markdown\n"
-  run ovm docs notes --json
+  file vaults/notes/draft.md "---\ntype: Note\ntitle: Draft\n---\ntext\n"
+  file vaults/notes/plain.md "# Just markdown\n"
+  run ovm docs vaults/notes --json
   [ "$status" -eq 0 ]
   run yq -p json -r '.[] | select(.title == "Draft") | .id' <<< "$output"
   [ "$output" = "null" ]
-  run ovm docs notes
+  run ovm docs vaults/notes
   [ "${#lines[@]}" -eq 4 ]
   [[ "$output" != *"plain.md"* ]]
 }
@@ -60,7 +60,7 @@ setup() {
 @test "the space of a document is the level of the link that holds it, the deepest when they nest" {
   level acme/main/tech
   level acme/main
-  cd notes
+  cd vaults/notes
   ovm link add prd --to acme/main/tech >/dev/null
   ovm link add . --to acme/main >/dev/null
   run ovm docs
@@ -71,18 +71,18 @@ setup() {
 }
 
 @test "quoted titles lose their quotes, and CRLF files read the same" {
-  file notes/q.md "---\r\nid: \"iiiiiiiiii\"\r\ntype: 'Note'\r\ntitle: \"Quoted: yes\"\r\n---\r\nbody\r\n"
-  run ovm docs notes --type Note
-  [ "$output" = "iiiiiiiiii"$'\t'"Note"$'\t'"Quoted: yes"$'\t'"-"$'\t'"~/notes/q.md"$'\t'"notes" ]
+  file vaults/notes/q.md "---\r\nid: \"iiiiiiiiii\"\r\ntype: 'Note'\r\ntitle: \"Quoted: yes\"\r\n---\r\nbody\r\n"
+  run ovm docs vaults/notes --type Note
+  [ "$output" = "iiiiiiiiii"$'\t'"Note"$'\t'"Quoted: yes"$'\t'"-"$'\t'"~/vaults/notes/q.md"$'\t'"notes" ]
 }
 
 @test "path and show find a document by id from anywhere, after it moved too" {
   run ovm path bbbbbbbbbb
-  [ "$output" = "$HOME/notes/prd/two.md" ]
-  mkdir notes/archive
-  mv notes/prd/two.md "notes/archive/renamed two.md"
+  [ "$output" = "$HOME/vaults/notes/prd/two.md" ]
+  mkdir vaults/notes/archive
+  mv vaults/notes/prd/two.md "vaults/notes/archive/renamed two.md"
   run ovm path bbbbbbbbbb
-  [ "$output" = "$HOME/notes/archive/renamed two.md" ]
+  [ "$output" = "$HOME/vaults/notes/archive/renamed two.md" ]
   run ovm show bbbbbbbbbb
   [ "$status" -eq 0 ]
   [ "${lines[0]}" = "---" ]
@@ -96,27 +96,27 @@ setup() {
   run ovm show zzzzzzzzzz
   [ "$status" -eq 1 ]
   vault other
-  doc other/copy.md aaaaaaaaaa PRD
+  doc vaults/other/copy.md aaaaaaaaaa PRD
   run ovm show aaaaaaaaaa
   [ "$status" -eq 2 ]
-  [[ "$output" == *"notes/prd/one.md"* && "$output" == *"other/copy.md"* ]]
+  [[ "$output" == *"vaults/notes/prd/one.md"* && "$output" == *"vaults/other/copy.md"* ]]
 }
 
 @test "an id only in a document's body is not that document's id" {
-  file notes/mention.md "---\nid: jjjjjjjjjj\ntype: Note\n---\nsee\nid: aaaaaaaaaa\n"
+  file vaults/notes/mention.md "---\nid: jjjjjjjjjj\ntype: Note\n---\nsee\nid: aaaaaaaaaa\n"
   run ovm path aaaaaaaaaa
-  [ "$output" = "$HOME/notes/prd/one.md" ]
+  [ "$output" = "$HOME/vaults/notes/prd/one.md" ]
 }
 
 @test "show --json: id, vault, path, space, the frontmatter as data, the body as text" {
   level acme/main
-  (cd notes && ovm link add prd --to acme/main >/dev/null)
-  file notes/prd/one.md "---\nid: aaaaaaaaaa\ntype: PRD\ntags: [a, b]\n---\nLine \"one\"\n\ttabbed\n"
+  (cd vaults/notes && ovm link add prd --to acme/main >/dev/null)
+  file vaults/notes/prd/one.md "---\nid: aaaaaaaaaa\ntype: PRD\ntags: [a, b]\n---\nLine \"one\"\n\ttabbed\n"
   run ovm show aaaaaaaaaa --json
   [ "$status" -eq 0 ]
   local json="$output"
   run yq -p json -r '[.id, .vault, .vault_id, .path, .space, .frontmatter.tags[1]] | join("|")' <<< "$json"
-  [ "$output" = "aaaaaaaaaa|notes|$VID|$HOME/notes/prd/one.md|acme/main|b" ]
+  [ "$output" = "aaaaaaaaaa|notes|$VID|$HOME/vaults/notes/prd/one.md|acme/main|b" ]
   run yq -p json -r '.body' <<< "$json"
   [ "${lines[0]}" = 'Line "one"' ]
   [ "${lines[1]}" = $'\ttabbed' ]
@@ -128,19 +128,19 @@ setup() {
 # --- validate -----------------------------------------------------------------------------
 
 @test "validate: a clean vault has no findings" {
-  cd notes
+  cd vaults/notes
   run ovm validate
   [ "$status" -eq 0 ]
   [ "$output" = "3 document(s), 0 finding(s)" ]
 }
 
 @test "validate reports no frontmatter, an open block, bad YAML, and missing required keys" {
-  file notes/plain.md "# No frontmatter\n"
-  file notes/open.md "---\nid: kkkkkkkkkk\ntype: Note\n\nnever closed\n"
-  file notes/bad.md "---\nid: llllllllll\ntype: [unclosed\n---\n"
-  file notes/empty.md "---\n---\nbody\n"
-  file notes/notype.md "---\nid: mmmmmmmmmm\ntype:\n---\n"
-  cd notes
+  file vaults/notes/plain.md "# No frontmatter\n"
+  file vaults/notes/open.md "---\nid: kkkkkkkkkk\ntype: Note\n\nnever closed\n"
+  file vaults/notes/bad.md "---\nid: llllllllll\ntype: [unclosed\n---\n"
+  file vaults/notes/empty.md "---\n---\nbody\n"
+  file vaults/notes/notype.md "---\nid: mmmmmmmmmm\ntype:\n---\n"
+  cd vaults/notes
   run ovm validate
   [ "$status" -eq 0 ]
   [[ "$output" == *"plain.md: no frontmatter"* ]]
@@ -153,18 +153,18 @@ setup() {
 }
 
 @test "validate --strict exits 1 on any finding, 0 on none" {
-  cd notes
+  cd vaults/notes
   run ovm validate --strict
   [ "$status" -eq 0 ]
-  file notes/plain.md "text\n"
+  file vaults/notes/plain.md "text\n"
   run ovm validate --strict
   [ "$status" -eq 1 ]
 }
 
 @test "validate checks the profile: its required keys and its allowed types" {
-  yq -i '.profile.required = ["type", "id", "status"] | .profile.types = ["PRD", "Note"]' notes/ovm.yml
-  file notes/full.md "---\nid: nnnnnnnnnn\ntype: Note\nstatus: draft\n---\n"
-  cd notes
+  yq -i '.profile.required = ["type", "id", "status"] | .profile.types = ["PRD", "Note"]' vaults/notes/ovm.yml
+  file vaults/notes/full.md "---\nid: nnnnnnnnnn\ntype: Note\nstatus: draft\n---\n"
+  cd vaults/notes
   run ovm validate
   [[ "$output" == *"adr/why.md: type 'ADR' is not one of: PRD Note"* ]]
   [[ "$output" == *"prd/one.md: missing required key: status"* ]]
@@ -172,8 +172,8 @@ setup() {
 }
 
 @test "validate reports an id used twice, on both, even when one is outside PATH" {
-  doc notes/adr/copy.md aaaaaaaaaa ADR
-  cd notes
+  doc vaults/notes/adr/copy.md aaaaaaaaaa ADR
+  cd vaults/notes
   run ovm validate
   [[ "$output" == *"adr/copy.md: duplicate id aaaaaaaaaa (also prd/one.md)"* || "$output" == *"prd/one.md: duplicate id aaaaaaaaaa (also adr/copy.md)"* ]]
   [[ "$output" == *"2 finding(s)"* ]]
@@ -183,10 +183,10 @@ setup() {
 }
 
 @test "validate --fix mints a missing id and changes nothing else" {
-  file notes/new.md "---\ntype: Note\ntitle: New\n---\n\nBody stays.\n"
-  file notes/blank.md "---\nid:\ntype: Note\n---\nBody.\n"
-  file notes/plain.md "no frontmatter\n"
-  cd notes
+  file vaults/notes/new.md "---\ntype: Note\ntitle: New\n---\n\nBody stays.\n"
+  file vaults/notes/blank.md "---\nid:\ntype: Note\n---\nBody.\n"
+  file vaults/notes/plain.md "no frontmatter\n"
+  cd vaults/notes
   run ovm validate --fix
   [ "$status" -eq 0 ]
   [[ "$output" == *"new.md: minted id "* ]]
@@ -213,14 +213,14 @@ setup() {
 }
 
 @test "validate takes one file, and --json lists the findings" {
-  file notes/plain.md "text\n"
-  run ovm validate notes/plain.md
+  file vaults/notes/plain.md "text\n"
+  run ovm validate vaults/notes/plain.md
   [ "$output" = "plain.md: no frontmatter"$'\n'"1 document(s), 1 finding(s)" ]
-  run ovm validate notes --json
+  run ovm validate vaults/notes --json
   [ "$status" -eq 0 ]
   run yq -p json -r '.[0] | .path + ": " + .finding' <<< "$output"
   [ "$output" = "plain.md: no frontmatter" ]
-  rm notes/plain.md
-  run ovm validate notes --json
+  rm vaults/notes/plain.md
+  run ovm validate vaults/notes --json
   [ "$output" = "[]" ]
 }
