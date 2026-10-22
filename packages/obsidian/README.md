@@ -41,6 +41,7 @@ ovm cd [vault-or-doc]                 # go there: a vault, or a document's direc
 ovm docs [vault | vault/space | DIR]  # documents by their frontmatter id
                                       # --space anfs: that vault space and below it (anfs/product)
                                       # --to <wsm space>: the vault spaces linked into it
+ovm tasks [vault | vault/space | DIR] # open `- [ ]` tasks: SPACE FILE LINE TEXT; --space, --to as docs
 ovm show <id>
 ovm validate [--fix] [--strict]       # documents against the vault's vocabulary
 ```
@@ -185,3 +186,32 @@ naming a vault not in `~/vaults`) or `orphan` (a link ovm made that no entry dec
 wsm tells ovm when a space is installed or removed: this package's `install.sh` registers
 `ovm space apply --event` as a wsm listener (`anfs callbacks wsm` lists it under
 `stack/obsidian`). wsm knows nothing about ovm or vaults.
+
+### Tasks
+
+`ovm tasks` lists the open tasks (`- [ ]`, `* [ ]`, `+ [ ]`, `1. [ ]`, `1) [ ]`, nested, in a
+callout) of every `.md` file the walk meets (the same walk as `docs`: hidden folders,
+`node_modules` and `exclude:` skipped; `index.md` and `log.md` are read). Done tasks (`[x]`) and
+any other box (`[-]`, `[/]`) are not listed. The scope is `docs`': the vault you are in, every
+vault, `<vault>`, `<vault>/<space>` (or `<space>` in the vault you are in), a DIR, or `--space
+<wsm space>` (every vault space `links.yml` links into it, across vaults; the wsm space need not
+be installed).
+
+`--json` is what `user/pjm` pulls (`[ovm, tasks, --json, --space, anfs-dev]` in its config), with
+exactly these keys, sorted by vault, file and line:
+
+| Key | Value |
+| --- | --- |
+| `vault_id`, `vault` | the vault's id and its entry in `~/vaults` |
+| `file`, `line` | the path from the vault's root, and the line (a string) |
+| `doc` | the file's frontmatter `id`, or null (always null for `index.md` and `log.md`) |
+| `space` | the vault space, `<vault>/<space>`, or null |
+| `section` | the nearest heading above (closing `#`s stripped), or null |
+| `parent` | the text of the enclosing task (open or done), or null |
+| `tags` | the text's `#tags`, without `#`, once each, not inside inline code: a list |
+| `text` | the line after the box, trimmed, tags left in |
+
+A key added here is a change to pjm's contract: agree it with pjm first. Fenced code (```` ``` ````
+and `~~~`) and the frontmatter are skipped; indented code blocks, `%% %%` and HTML comments and
+setext headings are not understood. A task reached by two sources (two `--space` whose links
+overlap) is pulled twice.

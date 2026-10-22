@@ -30,7 +30,7 @@ set -euo pipefail
 # A job's copy of this tool runs instead when ANFS_WORK names one (lib/anfs/work.sh)
 [ -z "${ANFS_WORK:-}" ] || [ ! -f "$HOME/.local/lib/anfs/work.sh" ] || . "$HOME/.local/lib/anfs/work.sh"
 
-OVM_VERSION=0.5.0
+OVM_VERSION=0.6.0
 
 # Paths, messages, the log and the command line come from anfs
 if [[ ! -f "$HOME/.local/lib/anfs/paths.sh" ]]; then
@@ -106,6 +106,9 @@ cli_cmd docs "List documents: id, type, title, space, path (of a vault, a vault 
   --opt "--type TYPE: Only that type" \
   --opt "--space VAULT-SPACE: Only that vault space (its path: anfs, anfs/product) and the folders below it" \
   --opt "--to SPEC: The documents of the vault spaces links.yml links into that wsm space" --arg "[vault-or-space]"
+cli_cmd tasks "List open tasks (- [ ] lines): space, file, line, text (of a vault, a vault space or a DIR)" \
+  --opt "--space VAULT-SPACE: Only that vault space (its path: anfs, anfs/product) and the folders below it" \
+  --opt "--to SPEC: The tasks of the vault spaces links.yml links into that wsm space" --arg "[vault-or-space]"
 cli_cmd show "Print a document by id" --opt "--body: Leave out the frontmatter" --arg "doc"
 cli_group space "Vault spaces (the folders under a vault's spaces_path) and the wsm spaces links.yml links them into"
 cli_cmd "space list" "The vault spaces (top-level, and linked deeper ones) and where each is linked: the vault you are in, VAULT, or every vault" --alias ls \
@@ -147,6 +150,13 @@ Templater's "Trigger Templater on new file creation". Shell commands lets a note
 this computer: read .obsidian/plugins/obsidian-shellcommands/data.json before turning plugins on in
 a vault you did not write. After ovm update, quit Obsidian or reload it (Command palette: Reload
 app without saving).
+
+ovm tasks lists the open tasks (a list item whose box is [ ], in a callout too) of every .md file
+the walk meets, index.md and log.md included; --json gives each its vault_id, vault, file (from the
+vault's root), line, doc (the frontmatter id), space (<vault>/<path>: the document's space, as ovm
+docs says it), section (the heading above), parent (the enclosing task), tags and text: what pjm
+pulls. Fenced code and the frontmatter are skipped; indented code blocks, %% %% and HTML comments
+and setext headings are not understood.
 EOF
 }
 
@@ -1119,11 +1129,12 @@ _space_opt() {
 }
 
 # The scope of docs and tasks, into S_ROOT, S_DIR and S_NAME (parallel): the vault spaces links.yml
-# links into <to>; else <arg>: a DIR (in its vault), a vault or <vault>/<space>; else the vault you
-# are in; else every vault. Then narrowed to the vault space <space> and below it, when given.
+# links into <to> (what is not here is warned about and skipped); else <arg>: a DIR (in its
+# vault), a vault, <vault>/<space>, or a name that is no vault while you stand in one (a space of
+# that vault); else the vault you are in; else every vault. Then narrowed to the vault space <space> and below it, when given.
 S_ROOT=() S_DIR=() S_NAME=()
 _scope() {
-  local arg="$1" to="$2" space="$3" dir i v
+  local arg="$1" to="$2" space="$3" dir i j v rc=0 found=false
   local -a roots=() dirs=() names=()
   [[ -z "$arg" || -z "$to" ]] || fail "$EX_USAGE" "a vault, a vault space or a DIR, or --to: not both"
   if [[ -n "$to" ]]; then
@@ -1131,15 +1142,30 @@ _scope() {
     _live_vaults
     local -A seen=()
     for i in "${!K_VAULT[@]}"; do
-      [[ "${K_TO[$i]}" == "$to" && -n "${LIVE_IX[${K_VAULT[$i]}]+x}" ]] || continue
+      [[ "${K_TO[$i]}" == "$to" ]] || continue
+      found=true
+      if [[ -z "${LIVE_IX[${K_VAULT[$i]}]+x}" ]]; then
+        # An unreachable vault was warned about by _live_vaults
+        for j in "${!E_NAME[@]}"; do [[ "${E_NAME[$j]}" != "${K_VAULT[$i]}" || "${E_STATE[$j]}" != unreachable ]] || continue 2; done
+        warn "${K_VAULT[$i]}/${K_SPACE[$i]} skipped: no vault ${K_VAULT[$i]} in $(_display "$OVM_VAULTS_HOME") ($(_display "${K_FILE[$i]}"))"
+        continue
+      fi
       v=${LIVE_IX[${K_VAULT[$i]}]}
       _vault_cfg "${LIVE[$v]}"
-      [[ -n "$VC_SPACES" ]] || continue
+      if [[ -z "$VC_SPACES" ]]; then
+        warn "${K_VAULT[$i]}/${K_SPACE[$i]} skipped: $(_display "${LIVE[$v]}/$OVM_CONFIG"): $VC_BAD"
+        continue
+      fi
       dir="${LIVE[$v]}/$VC_PFX${K_SPACE[$i]}"
-      [[ -d "$dir" && -z "${seen[$dir]:-}" ]] || continue
+      if [[ ! -d "$dir" ]]; then
+        warn "${K_VAULT[$i]}/${K_SPACE[$i]} skipped: no folder $(_display "$dir")"
+        continue
+      fi
+      [[ -z "${seen[$dir]:-}" ]] || continue
       seen[$dir]=1
       roots+=("${LIVE[$v]}") dirs+=("$dir") names+=("${LIVE_NAME[$v]}")
     done
+    $found || warn "no vault space is linked into $to ($(_display "$OVM_LINKS_YML")): ovm space link <vault>/<space> $to"
   elif [[ -n "$arg" ]]; then
     case "$arg" in
       /*|.*|"~"|"~/"*)
@@ -1153,8 +1179,16 @@ _scope() {
         roots=("$SP_ROOT") dirs=("$SP_DIR") names=("$SP_VAULT")
         ;;
       *)
-        _vault_named "$arg"
-        roots=("${E_ROOT[$V_I]}") dirs=("${E_ROOT[$V_I]}") names=("${E_NAME[$V_I]}")
+        # A name that is no vault, while you stand in one: a space of that vault
+        _vaults_load
+        _vault_resolve "$arg" || rc=$?
+        if [[ $rc -eq 1 ]] && _vault_of "$PWD"; then
+          _space_arg "$arg" folder
+          roots=("$SP_ROOT") dirs=("$SP_DIR") names=("$SP_VAULT")
+        else
+          _vault_named "$arg"
+          roots=("${E_ROOT[$V_I]}") dirs=("${E_ROOT[$V_I]}") names=("${E_NAME[$V_I]}")
+        fi
         ;;
     esac
   elif _vault_of "$PWD"; then
@@ -1223,6 +1257,137 @@ cmd_show() {
       "space": strenv(SPACE), "frontmatter": load(strenv(FM)), "body": load_str(strenv(BODY))
     } | (select(.space == "") | .space) = null' ||
     die "the frontmatter of $(_display "$D_PATH") does not parse (ovm validate)"
+}
+
+# --- Tasks --------------------------------------------------------------------------------
+#
+# A task is an open `- [ ]` line of any .md file the walk meets (index.md and log.md too). What
+# `ovm tasks --json` prints is user/pjm's source contract: exactly these ten keys, no more
+# (cmd_pull in pjm reads them; a new key is agreed with pjm first).
+
+# One row per open task of the files named, in their order: a sort key (vault, file, line), then
+# space (left empty: _tasks_scan fills it in), file, line, text, vault_id, vault, doc, section,
+# parent and tags (space-separated). From the environment: TR the vault's root, TV its name, TI
+# its id. Per file: the frontmatter (its id; an unclosed block is read as body), fenced code
+# skipped (``` or ~~~, closed by the same character at least as many times), ATX headings,
+# blockquote and callout markers stripped, and a stack of the list entries above for the parent.
+# Not handled: indented code blocks, %% %% and HTML comments, setext headings.
+# shellcheck disable=SC2016
+TASKS_AWK='
+function clean(s) { gsub(/[\001-\037\177]/, " ", s); sub(/^ +/, "", s); sub(/ +$/, "", s); return s }
+function fmval(s) {
+  sub(/^[^:]*:[ \t]*/, "", s); sub(/[ \t]+$/, "", s)
+  if (s ~ /^".*"$/ || s ~ /^\047.*\047$/) s = substr(s, 2, length(s) - 2)
+  return clean(s)
+}
+function tags(s,    t, out, seen, m) {
+  t = s; gsub(/`[^`]*`/, "", t); t = " " t; out = ""
+  while (match(t, /[ \t]#[A-Za-z][A-Za-z0-9_\/-]*/)) {
+    m = substr(t, RSTART + 2, RLENGTH - 2)
+    if (!(m in seen)) { seen[m] = 1; out = out (out == "" ? "" : " ") m }
+    t = substr(t, RSTART + RLENGTH)
+  }
+  return out
+}
+function startfile() {
+  rel = substr(FILENAME, length(ENVIRON["TR"]) + 2)
+  base = rel; sub(/.*\//, "", base)
+  nodoc = (base == "index.md" || base == "log.md")
+  doc = ""; section = ""; fence = ""; flen = 0; sp = 0; fm = 0; nbuf = 0
+}
+# A frontmatter block that never closed is not one: its lines are the body
+function endfile(    k) {
+  if (fm != 1) return
+  fm = 2; doc = ""
+  for (k = 1; k <= nbuf; k++) body(buf[k], k)
+}
+function body(s, n,    q, inq, ind, i, c, rest, m, fch, h, item, istask, ch, txt, par) {
+  q = s; inq = 0
+  while (match(q, /^[ \t]*>[ ]?/)) { q = substr(q, RLENGTH + 1); inq = 1 }
+  if (fence != "") {
+    if (q ~ /^[ \t]*(`+|~+)[ \t]*$/) {
+      m = q; gsub(/[ \t]/, "", m)
+      if (substr(m, 1, 1) == fence && length(m) >= flen) fence = ""
+    }
+    return
+  }
+  ind = 0
+  for (i = 1; i <= length(q); i++) {
+    c = substr(q, i, 1)
+    if (c == " ") ind++
+    else if (c == "\t") ind = ind - ind % 4 + 4
+    else break
+  }
+  rest = substr(q, i)
+  if (rest == "") return
+  while (sp > 0 && st_ind[sp] >= ind) sp--
+  if (match(rest, /^(```+|~~~+)/)) {
+    m = substr(rest, 1, RLENGTH); fch = substr(m, 1, 1)
+    if (!(fch == "`" && index(substr(rest, RLENGTH + 1), "`") > 0)) { fence = fch; flen = length(m); return }
+  }
+  if (!inq && ind < 4 && rest ~ /^##?#?#?#?#?([ \t]|$)/) {
+    h = rest; sub(/^#+[ \t]*/, "", h); sub(/[ \t]+$/, "", h)
+    if (h ~ /(^|[ \t])#+$/) { sub(/#+$/, "", h); sub(/[ \t]+$/, "", h) }
+    section = clean(h); sp = 0
+    return
+  }
+  if (!match(rest, /^([-*+]|[0-9]+[.)])( |$)/)) return
+  item = substr(rest, RLENGTH + 1); istask = 0; ch = ""; txt = ""
+  if (item ~ /^\[.\]( |$)/) { ch = substr(item, 2, 1); txt = clean(substr(item, 4)); istask = (txt != "") }
+  par = (sp > 0 && st_task[sp]) ? st_txt[sp] : ""
+  sp++; st_ind[sp] = ind; st_task[sp] = istask; st_txt[sp] = txt
+  if (!istask || ch != " ") return
+  printf "%s\001%s\001%010d\037%s\037%s\037%d\037%s\037%s\037%s\037%s\037%s\037%s\037%s\n", \
+    VAULT, rel, n, "", rel, n, txt, VID, VAULT, (nodoc ? "" : doc), section, par, tags(txt)
+}
+BEGIN { VAULT = ENVIRON["TV"]; VID = ENVIRON["TI"] }
+FNR == 1 { endfile(); startfile() }
+{ sub(/\r$/, "") }
+FNR == 1 {
+  t = $0; sub(/[ \t]+$/, "", t)
+  if (t == "---") { fm = 1; buf[++nbuf] = $0; next }
+  fm = 2
+}
+fm == 1 {
+  buf[++nbuf] = $0
+  t = $0; sub(/[ \t]+$/, "", t)
+  if (t == "---") { fm = 2; nbuf = 0; next }
+  if (!nodoc && $0 ~ /^id:/) doc = fmval($0)
+  next
+}
+{ body($0, FNR) }
+END { endfile() }
+'
+
+# The rows of TASKS_AWK for every file under <dir> of the vault at <root>: <root> <dir> <name> <id>.
+# The space of each file is _space_of's, as docs says it (once per file), as <vault>/<path>.
+_tasks_scan() {
+  local root="$1" name="$3" line key rest rel last="" sp=""
+  _vault_cfg "$root"
+  _linked_spaces "$name"
+  _walk "$root" "$2" | tr '\n' '\0' |
+    TR="$root" TV="$name" TI="$4" xargs -0 -r awk "$TASKS_AWK" |
+    while IFS= read -r line; do
+      key="${line%%"$US"*}" rest="${line#*"$US"}"
+      rest="${rest#*"$US"}" rel="${rest%%"$US"*}"
+      if [[ "$rel" != "$last" ]]; then
+        last="$rel"
+        _space_of "$root" "$rel" "$name"
+        sp="${REPLY:+$name/$REPLY}"
+      fi
+      printf '%s\n' "$key$US$sp$US$rest"
+    done
+}
+
+cmd_tasks() {
+  local v to="${CLI_OPT[to]:-}"
+  _require_yq
+  _space_opt
+  _scope "${1:-}" "${to%/}" "$REPLY"
+  for v in "${!S_ROOT[@]}"; do
+    _tasks_scan "${S_ROOT[$v]}" "${S_DIR[$v]}" "${S_NAME[$v]}" "$(_cfg_id "${S_ROOT[$v]}")"
+  done | anfs_sorted |
+    anfs_table "SPACE FILE LINE TEXT" "space file line text vault_id vault doc section parent tags[]"
 }
 
 # --- links.yml: where vault spaces are linked ---------------------------------------------
