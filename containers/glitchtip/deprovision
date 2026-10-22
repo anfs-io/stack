@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# deprovision — pcm dependency hook for glitchtip
+#
+# Run by pcm (from this directory) during `pcm remove <service>` for each service that
+# declares glitchtip in x-pcm.depends_on, after that service is down and while
+# glitchtip is running:
+#
+#   deprovision project=<slug> [org=<slug>] [platform=<name>]
+#
+# Same settings as provision (platform is accepted and ignored). Deletes the project
+# with its events, issues and client keys, synchronously (GlitchTip's own delete only
+# marks it and queues the cleanup). A project that isn't there is not an error.
+#
+# Never deletes the organization, its team or the admin user. GlitchTip records
+# nothing about who created an org, so whether provision created it, or someone
+# else uses it, isn't knowable; an empty org costs nothing and provision reuses it.
+#
+# pcm runs it under varlock, which sets the GLITCHTIP_* vars from .env.schema.
+# Output goes to stderr only.
+set -euo pipefail
+
+org=dev
+project=
+platform=ruby-rails
+
+for arg in "$@"; do
+  case "$arg" in
+    org=*) org="${arg#*=}" ;;
+    project=*) project="${arg#*=}" ;;
+    platform=*) platform="${arg#*=}" ;;
+    *) echo "deprovision: unknown setting '$arg'" >&2; exit 1 ;;
+  esac
+done
+
+if [[ -z "$project" ]]; then
+  echo "deprovision: project=<slug> is required" >&2
+  exit 1
+fi
+for pair in "org:$org" "project:$project" "platform:$platform"; do
+  if [[ ! "${pair#*:}" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+    echo "deprovision: invalid ${pair%%:*} '${pair#*:}' (want ^[a-z0-9][a-z0-9-]*\$)" >&2
+    exit 1
+  fi
+done
+
+container=$(podman ps \
+  --filter "label=com.docker.compose.project=${PCM_PROJECT:-glitchtip}" \
+  --filter "label=com.docker.compose.service=web" \
+  --format '{{.Names}}' | head -n1)
+if [[ -z "$container" ]]; then
+  echo "deprovision: glitchtip web container is not running" >&2
+  exit 1
+fi
+
+# Values come in through the environment, never interpolated into the source
+read -r -d '' py <<'PY' || true
+import os, sys
+from apps.organizations_ext.models import Organization
+from apps.projects.models import Project
+from apps.projects.tasks import delete_project
+
+org_slug, project_slug = os.environ["GT_ORG"], os.environ["GT_PROJECT"]
+dependent = os.environ.get("GT_DEPENDENT", "unknown")
+
+def log(msg):
+    print(f"deprovision: {msg}", file=sys.stderr)
+
+org = Organization.objects.filter(slug=org_slug).first()
+project = org and Project.objects.filter(organization=org, slug=project_slug).first()
+if not project:
+    log(f"no project '{org_slug}/{project_slug}'; nothing to delete for {dependent}")
+    sys.exit(0)
+
+# Mark it first, as GlitchTip's delete() does, so ingest stops; then run the
+# cleanup task inline instead of queueing it.
+Project.objects.filter(pk=project.pk).update(is_deleted=True)
+delete_project.call(project.pk)
+log(f"deleted project '{org_slug}/{project_slug}' (id {project.pk}) for {dependent}; "
+    f"organization '{org_slug}' kept")
+PY
+
+export GT_ORG="$org" GT_PROJECT="$project" GT_DEPENDENT="${PCM_DEPENDENT:-unknown}"
+podman exec -e GT_ORG -e GT_PROJECT -e GT_DEPENDENT \
+  "$container" ./manage.py shell --no-imports -c "$py" >&2

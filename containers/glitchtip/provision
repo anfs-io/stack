@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# provision — pcm dependency hook for glitchtip
+#
+# Run by pcm (from this directory) once glitchtip's web container is healthy, for
+# each service that declares it in x-pcm.depends_on:
+#
+#   provision project=<slug> [org=<slug>] [platform=<name>]
+#
+#   project   required. The GlitchTip project the dependent reports to.
+#   org       organization holding it (default: dev).
+#   platform  project platform as GlitchTip names it (default: ruby-rails).
+#   Slugs match ^[a-z0-9][a-z0-9-]*$; platform matches ^[a-z0-9][a-z0-9-]*$ too.
+#
+# Get-or-creates, through the Django ORM in the web container (no HTTP API, no
+# sign-up form):
+#   - the superuser GLITCHTIP_ADMIN_EMAIL / GLITCHTIP_ADMIN_PASSWORD. An existing
+#     user is left as it is: its password is never reset.
+#   - the organization, with the admin as an owner member
+#   - a team named after the org, with the admin in it (GlitchTip's UI shows a
+#     project to the members of its teams)
+#   - the project, on that team, and its client key (GlitchTip makes one with the
+#     project; the oldest active key is used)
+# Re-running changes nothing and prints the same DSN. A different platform= on an
+# existing project updates its platform.
+#
+# Prints KEY=VALUE; pcm exports each to the dependent as PCM_GLITCHTIP_<KEY>:
+#   DSN      http://<public key>@localhost:${GLITCHTIP_PORT}/<project id> — what the
+#            UI shows (it builds DSNs from GLITCHTIP_DOMAIN, which defaults to the
+#            same URL), for an app on the host. A credential: never logged.
+#   INTERNAL_DSN  the same key and project at http://<web container>:8000, for a
+#            dependent running in a pcm container (resolvable on pcm's shared network).
+#   ORG      the organization slug
+#   PROJECT  the project slug
+#   URL      the project's issues page in the UI
+#
+# pcm runs it under varlock, which sets the GLITCHTIP_* vars from .env.schema
+# (overridden by local.env and the environment). The admin credentials reach the
+# container through `podman exec -e NAME` (taken from this environment), never on
+# a command line.
+set -euo pipefail
+
+: "${GLITCHTIP_ADMIN_EMAIL:?not set; run via pcm (varlock resolves it from .env.schema)}"
+: "${GLITCHTIP_ADMIN_PASSWORD:?not set; run via pcm (varlock resolves it from .env.schema)}"
+port="${GLITCHTIP_PORT:?not set; run via pcm (varlock resolves it from .env.schema)}"
+
+org=dev
+project=
+platform=ruby-rails
+
+for arg in "$@"; do
+  case "$arg" in
+    org=*) org="${arg#*=}" ;;
+    project=*) project="${arg#*=}" ;;
+    platform=*) platform="${arg#*=}" ;;
+    *) echo "provision: unknown setting '$arg'" >&2; exit 1 ;;
+  esac
+done
+
+if [[ -z "$project" ]]; then
+  echo "provision: project=<slug> is required" >&2
+  exit 1
+fi
+for pair in "org:$org" "project:$project" "platform:$platform"; do
+  if [[ ! "${pair#*:}" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+    echo "provision: invalid ${pair%%:*} '${pair#*:}' (want ^[a-z0-9][a-z0-9-]*\$)" >&2
+    exit 1
+  fi
+done
+# GlitchTip's slug fields cap these lengths
+if (( ${#org} > 200 || ${#project} > 50 || ${#platform} > 64 )); then
+  echo "provision: org (200), project (50) or platform (64) too long" >&2
+  exit 1
+fi
+
+container=$(podman ps \
+  --filter "label=com.docker.compose.project=${PCM_PROJECT:-glitchtip}" \
+  --filter "label=com.docker.compose.service=web" \
+  --format '{{.Names}}' | head -n1)
+if [[ -z "$container" ]]; then
+  echo "provision: glitchtip web container is not running" >&2
+  exit 1
+fi
+
+# Values come in through the environment, never interpolated into the source.
+# Results go to stdout prefixed PCM-OUT; anything else Django prints goes to stderr.
+read -r -d '' py <<'PY' || true
+import os, sys
+from django.db import transaction
+from apps.organizations_ext.constants import OrganizationUserRole
+from apps.organizations_ext.models import Organization
+from apps.projects.models import Project, ProjectKey
+from apps.teams.models import Team
+from apps.users.models import User
+
+env = os.environ
+email, org_slug, project_slug, platform, port = (
+    env["GT_ADMIN_EMAIL"], env["GT_ORG"], env["GT_PROJECT"], env["GT_PLATFORM"], env["GT_PORT"])
+host = env["GT_HOST"]
+dependent = env.get("GT_DEPENDENT", "unknown")
+
+def log(msg):
+    print(f"provision: {msg}", file=sys.stderr)
+
+with transaction.atomic():
+    user = User.objects.filter(email__iexact=email).first()
+    if user is None:
+        user = User.objects.create_superuser(email, env["GT_ADMIN_PASSWORD"])
+        log(f"created superuser {email}")
+    elif not user.is_superuser:
+        log(f"{email} exists but is not a superuser; left unchanged")
+
+    org = Organization.objects.filter(slug=org_slug).first()
+    if org is None:
+        org = Organization.objects.create(name=org_slug, slug=org_slug)
+        if org.slug != org_slug:
+            sys.exit(f"provision: GlitchTip reserves the organization slug '{org_slug}'; pick another org=")
+        log(f"created organization '{org_slug}'")
+    if org.is_deleted:
+        sys.exit(f"provision: organization '{org_slug}' is being deleted; retry once it is gone")
+
+    org_user = org.organization_users.filter(user=user).first()
+    if org_user is None:
+        org_user = org.add_user(user, role=OrganizationUserRole.OWNER)
+        log(f"added {email} to '{org_slug}' as owner")
+
+    team, created = Team.objects.get_or_create(organization=org, slug=org_slug)
+    if created:
+        log(f"created team '{org_slug}'")
+    if not team.members.filter(pk=org_user.pk).exists():
+        team.members.add(org_user)
+
+    project = Project.objects.filter(organization=org, slug=project_slug).first()
+    if project is None:
+        project = Project.objects.create(
+            organization=org, name=project_slug, slug=project_slug, platform=platform)
+        if project.slug != project_slug:
+            sys.exit(f"provision: GlitchTip reserves the project slug '{project_slug}'; pick another project=")
+        log(f"created project '{org_slug}/{project_slug}' (id {project.id}) for {dependent}")
+    elif project.is_deleted:
+        sys.exit(f"provision: project '{org_slug}/{project_slug}' is being deleted; retry once it is gone")
+    elif project.platform != platform:
+        project.platform = platform
+        project.save(update_fields=["platform"])
+        log(f"set platform of '{org_slug}/{project_slug}' to {platform}")
+    if not project.teams.filter(pk=team.pk).exists():
+        project.teams.add(team)
+
+    key = ProjectKey.objects.filter(project=project, is_active=True).order_by("id").first()
+    if key is None:
+        key = ProjectKey.objects.create(project=project)
+        log(f"created a client key for '{org_slug}/{project_slug}'")
+
+dsn = f"http://{key.public_key_hex}@localhost:{port}/{project.id}"
+if key.get_dsn() != dsn:
+    log("GLITCHTIP_DOMAIN is not http://localhost:GLITCHTIP_PORT, so the UI shows a different DSN host")
+print(f"PCM-OUT DSN={dsn}")
+print(f"PCM-OUT INTERNAL_DSN=http://{key.public_key_hex}@{host}:8000/{project.id}")
+print(f"PCM-OUT ORG={org.slug}")
+print(f"PCM-OUT PROJECT={project.slug}")
+print(f"PCM-OUT URL=http://localhost:{port}/{org.slug}/issues?project={project.id}")
+PY
+
+export GT_ADMIN_EMAIL="$GLITCHTIP_ADMIN_EMAIL" GT_ADMIN_PASSWORD="$GLITCHTIP_ADMIN_PASSWORD" \
+  GT_ORG="$org" GT_PROJECT="$project" GT_PLATFORM="$platform" GT_PORT="$port" GT_HOST="$container" \
+  GT_DEPENDENT="${PCM_DEPENDENT:-unknown}"
+
+out=$(podman exec \
+  -e GT_ADMIN_EMAIL -e GT_ADMIN_PASSWORD -e GT_ORG -e GT_PROJECT -e GT_PLATFORM \
+  -e GT_PORT -e GT_HOST -e GT_DEPENDENT \
+  "$container" ./manage.py shell --no-imports -c "$py")
+
+result=$(grep '^PCM-OUT ' <<<"$out" | sed 's/^PCM-OUT //' || true)
+grep -v '^PCM-OUT ' <<<"$out" >&2 || true
+if [[ -z "$result" ]]; then
+  echo "provision: GlitchTip returned no DSN" >&2
+  exit 1
+fi
+printf '%s\n' "$result"

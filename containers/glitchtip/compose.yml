@@ -5,6 +5,9 @@
 # db and injects PCM_POSTGRES_URL and PCM_VALKEY_URL.
 # Every variable, with its default, lives in .env.schema.
 # Secrets ship with an insecure dev-only default — override them for anything shared.
+#
+# Dependents get a DSN with no sign-up: `provision` (run by pcm once `web` is healthy)
+# creates the admin, an org and a project, and prints the DSN. See README.md.
 
 x-pcm:
   depends_on:
@@ -33,3 +36,11 @@ services:
     volumes:
       # :U chowns the host dir to the image's non-root `app` user (rootless podman)
       - ${PCM_VOLUMES_HOME}/glitchtip/uploads:/code/uploads:U
+    # pcm waits on this before running provision. /_health/ only answers once the
+    # startup migrations are done and granian is serving; the script ships in the image.
+    healthcheck:
+      test: ["CMD", "python", "/code/healthcheck.py"]
+      interval: 10s
+      timeout: 6s
+      retries: 5
+      start_period: 120s
