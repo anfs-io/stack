@@ -83,7 +83,8 @@ Definitions: $REMOTEFS_CONFIG (~/.config/remotefs/mounts.yml)
 States: mounted, unmounted, and stale (mounted, but the remote is not answering: it comes
 back by itself when the host does, or `remotefs umount` clears it).
 
-Environment:
+Settings (~/.config/remotefs/remotefs.env documents them; this machine's in remotefs.local.env; the
+environment wins):
   REMOTEFS_MOUNT_HOME       Where mounts go by default (~/mnt)
   REMOTEFS_DEFAULT_OPTIONS  What every mount gets (reconnect ServerAliveInterval=15 ServerAliveCountMax=3)
   REMOTEFS_SSHFS            The sshfs to run (sshfs)

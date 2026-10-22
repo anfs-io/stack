@@ -4,7 +4,7 @@
 # up the tailscaled systemd service, none of which ppm's brew/cask/system vocabulary can
 # express. macOS gets the cask, declared in package.yml.
 
-TSM_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/tailscale/config.yml"
+TSM_CONFIG="${TSM_TAILSCALE_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/tailscale}/config.yml"
 
 pre_install() {
   local cyan='\033[0;36m' nc='\033[0m'
@@ -48,20 +48,20 @@ install_linux() {
     || user_message "Could not enable tailscaled. Run: sudo systemctl enable --now tailscaled"
 }
 
-# Joining is opt-in per machine. The signal is TSM_AUTOJOIN in ~/.config/ppm/ppm.local.conf
-# (uncommitted, machine-local) or ppm.conf; ppm sources every *.conf before dispatch and
-# hooks run in a subshell of that process, so the value is visible here without an export.
-#
-# Conf vars are NOT exported, so tsm — a child process — cannot see them. Anything it needs
-# is passed explicitly.
+# Joining is opt-in per machine. The signal is TSM_AUTOJOIN in ~/.config/tsm/tsm.local.env
+# (yours, machine-local; tsm.env beside it documents it). A hook runs inside ppm, which has loaded
+# only anfs's and ppm's settings, so tsm's are loaded here (lib/anfs/paths.sh); the environment
+# still wins.
 post_install() {
+  anfs_load_conf tsm
+
   if [[ ! -f "$TSM_CONFIG" ]]; then
     user_message "No tailnet config at $TSM_CONFIG — this host will not join.\nCopy the example to start:\n  cp ~/.config/tailscale/config.example.yml $TSM_CONFIG\nThen: tsm prereqs && tsm join"
     return 0
   fi
 
   if [[ -z "${TSM_AUTOJOIN:-}" ]]; then
-    user_message "Config found at $TSM_CONFIG. Join with:\n  tsm join\nTo join automatically on every install, add to ~/.config/ppm/ppm.local.conf:\n  TSM_AUTOJOIN=true"
+    user_message "Config found at $TSM_CONFIG. Join with:\n  tsm join\nTo join automatically on every install, add to ~/.config/tsm/tsm.local.env:\n  TSM_AUTOJOIN=true"
     return 0
   fi
 

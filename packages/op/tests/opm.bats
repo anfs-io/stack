@@ -4,13 +4,23 @@
 
 setup() {
   PROV="$BATS_TEST_DIRNAME/../home/.local/bin/opm"
+  # anfs's libraries: ANFS_TEST_LIB's (stack's convention: a core checkout's lib/anfs), else the
+  # installed ones, linked into a temp HOME
+  local lib="${ANFS_TEST_LIB:-$HOME/.local/lib/anfs}"
+  [[ -f "$lib/bash.sh" && -f "$lib/table.sh" ]] || skip "anfs's libraries are not installed at $lib"
+  mkdir -p "$BATS_TEST_TMPDIR/home/.local/lib"
+  ln -s "$(cd "$lib" && pwd -P)" "$BATS_TEST_TMPDIR/home/.local/lib/anfs"
+  export HOME=$(cd "$BATS_TEST_TMPDIR/home" && pwd -P)
+  export XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share"
+  export XDG_STATE_HOME="$HOME/.local/state" XDG_CACHE_HOME="$HOME/.cache"
+  unset OPM_CONFIG_HOME OPM_DATA_HOME OPM_STATE_HOME OPM_CACHE_HOME OPM_TAG OPM_PROVISION_TAG
   STUB="$BATS_TEST_TMPDIR/bin"
   mkdir -p "$STUB"
   export OPLOG="$BATS_TEST_TMPDIR"
   : > "$OPLOG/argv.log"
   : > "$OPLOG/stdin.log"
-  export OP_SA_CREDENTIALS_VAULT=Private
-  export OP_SHARED_VAULT=shared
+  export OPM_SA_CREDENTIALS_VAULT=Private
+  export OPM_SHARED_VAULT=shared
   export ANFS_LOG=off   # no log file from tests (lib/anfs/log.sh)
   # EXISTING lists what the fake account already has, so idempotence is testable.
   : > "$OPLOG/existing"
@@ -65,7 +75,7 @@ EOF
   grep -qx 'op service-account create lgat-sa --vault lgat:read_items --vault shared:read_items --format json' "$OPLOG/argv.log"
 }
 
-@test "--shared overrides OP_SHARED_VAULT" {
+@test "--shared overrides OPM_SHARED_VAULT" {
   run "$PROV" create lgat --shared ops --yes
   grep -q -- '--vault ops:read_items' "$OPLOG/argv.log"
 }
@@ -300,4 +310,33 @@ EOF
 @test "OPM_TAG overrides the marker tag" {
   OPM_TAG=mytag run "$PROV" create lgat --yes
   grep -q '"mytag"' "$OPLOG/stdin.log"
+}
+
+# --- settings (~/.config/opm/opm.env, opm.local.env) -------------------------
+
+@test "opm.local.env sets the defaults; the environment wins; the old OP_* names are not read" {
+  unset OPM_SHARED_VAULT OPM_SA_CREDENTIALS_VAULT
+  mkdir -p "$XDG_CONFIG_HOME/opm"
+  printf 'OPM_SHARED_VAULT=common\nOPM_SA_CREDENTIALS_VAULT=Tokens\n' > "$XDG_CONFIG_HOME/opm/opm.local.env"
+  run "$PROV" create lgat --yes
+  [ "$status" -eq 0 ]
+  grep -q -- '--vault common:read_items' "$OPLOG/argv.log"
+  grep -q -- 'item create .*--vault Tokens' "$OPLOG/argv.log"
+  : > "$OPLOG/argv.log"
+  OPM_SHARED_VAULT=fromenv run "$PROV" create lgat --yes
+  grep -q -- '--vault fromenv:read_items' "$OPLOG/argv.log"
+  : > "$OPLOG/argv.log"
+  rm "$XDG_CONFIG_HOME/opm/opm.local.env"
+  OP_SHARED_VAULT=old OP_SA_CREDENTIALS_VAULT=old run "$PROV" create lgat --yes
+  grep -q -- '--vault shared:read_items' "$OPLOG/argv.log"
+  ! grep -q 'old' "$OPLOG/argv.log"
+}
+
+@test "OPM_PROVISION_TAG names the tag; OP_PROVISION_TAG is not read" {
+  OPM_PROVISION_TAG=fromprov run "$PROV" create lgat --yes
+  grep -q 'fromprov' "$OPLOG/stdin.log"
+  : > "$OPLOG/stdin.log"
+  OP_PROVISION_TAG=old run "$PROV" create lgat --yes
+  ! grep -q 'old' "$OPLOG/stdin.log"
+  grep -q 'op-provision' "$OPLOG/stdin.log"
 }

@@ -1,4 +1,4 @@
-version: 0.1.0
+version: 0.1.1
 author: rjayroach
 categories: [utils]
 # sshfs, which remotefs drives. macOS: FUSE-T's, which needs no kernel extension (macFUSE does,

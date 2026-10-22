@@ -9,8 +9,17 @@ setup() {
   TSM="$PKG/home/.local/bin/tsm"
 
   export TMP="$BATS_TEST_TMPDIR"
+  # anfs's libraries: ANFS_TEST_LIB's (stack's convention: a core checkout's lib/anfs), else the
+  # installed ones, linked into a temp HOME
+  local lib="${ANFS_TEST_LIB:-$HOME/.local/lib/anfs}"
+  [[ -f "$lib/bash.sh" && -f "$lib/table.sh" ]] || skip "anfs's libraries are not installed at $lib"
+  mkdir -p "$TMP/home/.local/lib"
+  ln -s "$(cd "$lib" && pwd -P)" "$TMP/home/.local/lib/anfs"
+  export HOME=$(cd "$TMP/home" && pwd -P)
   export XDG_CONFIG_HOME="$TMP/config"
   export XDG_CACHE_HOME="$TMP/cache"
+  unset TSM_CONFIG_HOME TSM_DATA_HOME TSM_STATE_HOME TSM_CACHE_HOME TSM_TAILSCALE_HOME TSM_CONFIG TSM_CACHE
+  unset TSM_AUTHKEY_MODE TSM_AUTOJOIN TSM_IN_FNOX
   export TSM_LIB="$PKG/home/.local/lib/tsm"
   export ANFS_LOG=off   # no log file from tests (lib/anfs/log.sh)
   mkdir -p "$XDG_CONFIG_HOME/tailscale" "$TMP/bin"
@@ -274,4 +283,52 @@ ack() { "$TSM" join --yes </dev/null >/dev/null 2>&1 || true; }
   run "$TSM" status -- --json
   [ "$status" -eq 0 ]
   grep -qx "status --json" "$TMP/argv.log"
+}
+
+# --- settings and directories ----------------------------------------------
+
+@test "the tailnet config is under TSM_TAILSCALE_HOME; tsm's own cache under ~/.cache/tsm" {
+  run "$TSM" info
+  [[ "$output" == *"config:      $XDG_CONFIG_HOME/tailscale/config.yml"* ]]
+  [[ "$output" == *"cache:       $XDG_CACHE_HOME/tsm"* ]]
+  mkdir -p "$TMP/elsewhere"
+  write_config other
+  mv "$XDG_CONFIG_HOME/tailscale/config.yml" "$TMP/elsewhere/config.yml"
+  TSM_TAILSCALE_HOME="$TMP/elsewhere" run "$TSM" show
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"other"* ]]
+}
+
+@test "TSM_CONFIG_HOME is tsm's own: tsm.local.env there sets TSM_AUTHKEY_MODE" {
+  mkdir -p "$XDG_CONFIG_HOME/tsm"
+  printf 'TSM_AUTHKEY_MODE=argv\n' > "$XDG_CONFIG_HOME/tsm/tsm.local.env"
+  run "$TSM" info
+  [[ "$output" == *"(forced by TSM_AUTHKEY_MODE)"* ]]
+  rm "$XDG_CONFIG_HOME/tsm/tsm.local.env"
+  run "$TSM" info
+  [[ "$output" == *"(probed)"* ]]
+}
+
+# The package's post_install, sourced as ppm sources a hook: paths.sh loaded, ppm's two helpers
+hook() {
+  "$BASH" -c 'set -euo pipefail
+    source "$HOME/.local/lib/anfs/paths.sh"
+    user_message() { printf "MSG %b\n" "$*"; }
+    ppm_fail() { echo "FAIL $*"; }
+    source "$1"
+    post_install' _ "$PKG/install.sh"
+}
+
+@test "the install hook joins only when tsm.local.env says TSM_AUTOJOIN" {
+  mkdir -p "$HOME/.local/bin" "$XDG_CONFIG_HOME/tsm"
+  printf '#!/bin/sh\necho "tsm $*" >> "%s/tsm.log"\n' "$TMP" > "$HOME/.local/bin/tsm"
+  chmod +x "$HOME/.local/bin/tsm"
+  run hook
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"add to ~/.config/tsm/tsm.local.env"* ]]
+  [ ! -e "$TMP/tsm.log" ]
+  printf 'TSM_AUTOJOIN=true\n' > "$XDG_CONFIG_HOME/tsm/tsm.local.env"
+  run hook
+  [ "$status" -eq 0 ]
+  [ "$(cat "$TMP/tsm.log")" = "tsm join --yes" ]
 }

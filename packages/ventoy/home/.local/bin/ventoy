@@ -75,7 +75,8 @@ ever copied or removed.
 A disk image can be served to a PiKVM over NFS and presented to its host as a USB flash
 drive. Never change it while the PiKVM has it connected: pikvm msd with -- ventoy sync -y
 
-Environment:
+Settings (~/.config/ventoy/ventoy.env documents them; this machine's in ventoy.local.env; the
+environment wins):
   VENTOY_DISK     Default disk, e.g. /dev/disk/by-id/usb-... (stable across replugs, unlike /dev/sdX),
                   or a disk image, e.g. /srv/nfs/pikvm/ventoy.img
   VENTOY_IMAGE_SIZE  Size of images created by prepare (default 64G)

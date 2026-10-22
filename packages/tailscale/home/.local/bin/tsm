@@ -35,10 +35,12 @@ source "$ANFS_LIB/cli.sh"
 # shellcheck source=/dev/null
 source "$ANFS_LIB/table.sh"
 
-# The config is tailscale's, not tsm's own, so these are not anfs_tool_paths
-TSM_CONFIG_HOME="${TSM_CONFIG_HOME:-$XDG_CONFIG_HOME/tailscale}"
-TSM_CONFIG="${TSM_CONFIG:-$TSM_CONFIG_HOME/config.yml}"
-TSM_CACHE="${TSM_CACHE:-$XDG_CACHE_HOME/tsm}"
+# tsm's own directories and settings (~/.config/tsm/tsm.env, tsm.local.env)
+anfs_tool_paths tsm
+# The config is tailscale's, not tsm's own: it lives in tailscale's directory
+TSM_TAILSCALE_HOME="${TSM_TAILSCALE_HOME:-$XDG_CONFIG_HOME/tailscale}"
+TSM_CONFIG="${TSM_CONFIG:-$TSM_TAILSCALE_HOME/config.yml}"
+TSM_CACHE="${TSM_CACHE:-$TSM_CACHE_HOME}"
 
 # What the libraries read; cli_before_command fills them from the command's options
 DRY_RUN=false
@@ -70,11 +72,15 @@ different tailnet asks again.
 Config keys: hostname, tags, ssh, accept_dns, accept_routes, advertise_routes,
 advertise_exit_node, exit_node, operator. See config.example.yml for what each does.
 
+Settings (~/.config/tsm/tsm.env documents them; this machine's in tsm.local.env):
+  TSM_AUTHKEY_MODE    file|argv — how the key reaches tailscale (default: probed)
+  TSM_AUTOJOIN        true: the package's install joins the tailnet (tsm join --yes)
+
 Environment:
-  TSM_CONFIG          Config file (default ~/.config/tailscale/config.yml)
+  TSM_TAILSCALE_HOME  tailscale's config directory (default ~/.config/tailscale)
+  TSM_CONFIG          Config file (default $TSM_TAILSCALE_HOME/config.yml)
   TSM_CACHE           Cache dir  (default ~/.cache/tsm)
   TAILSCALE_BIN       Path to the tailscale CLI
-  TSM_AUTHKEY_MODE    file|argv — how the key reaches tailscale (default: probed)
 EOF
 }
 
@@ -139,7 +145,7 @@ load_libs() {
 # Same predicate and file names as stack/rpi-imager and stack/pcm.
 uses_fnox() {
   local d n
-  for d in "$TSM_CONFIG_HOME" "$PWD"; do
+  for d in "$TSM_TAILSCALE_HOME" "$PWD"; do
     for n in fnox.toml .fnox.toml fnox.local.toml; do
       [[ -f "$d/$n" ]] && { TSM_FNOX_DIR="$d"; return 0; }
     done

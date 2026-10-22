@@ -44,6 +44,9 @@ and selecting for the stick is `ventoy copy <iso>`.
 
 ## What goes on the stick
 
+ventoy's settings (`VENTOY_DISK`, `VENTOY_ISO_DIR`, `VENTOY_IMAGE_SIZE`) are documented in
+`~/.config/ventoy/ventoy.env`; this machine's go in `ventoy.local.env` beside it.
+
 `VENTOY_ISO_DIR` (default `~/.cache/ventoy/isos`) holds the selection: a link into the store for
 each ISO `ventoy copy <iso>` was given, and any file put there by hand. Delete one to drop it.
 

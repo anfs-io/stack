@@ -101,6 +101,21 @@ EOF
   grep -qx "connect kvm3" "$ARGV"
 }
 
+@test "PIKVM_HOST from pikvm.local.env, over pikvm.env; the environment wins" {
+  mkdir -p "$XDG_CONFIG_HOME/pikvm"
+  printf '#PIKVM_HOST=root@pikvm\nPIKVM_HOST=shipped@kvm\n' > "$XDG_CONFIG_HOME/pikvm/pikvm.env"
+  printf 'PIKVM_HOST=local@kvm\n' > "$XDG_CONFIG_HOME/pikvm/pikvm.local.env"
+  run "$PIKVM" status
+  [ "$(sed -n 1p "$ARGV")" = "connect local@kvm" ]
+  : > "$ARGV"
+  rm "$XDG_CONFIG_HOME/pikvm/pikvm.local.env"
+  run "$PIKVM" status
+  [ "$(sed -n 1p "$ARGV")" = "connect shipped@kvm" ]
+  : > "$ARGV"
+  PIKVM_HOST=env@kvm run "$PIKVM" status
+  [ "$(sed -n 1p "$ARGV")" = "connect env@kvm" ]
+}
+
 @test "a PiKVM that cannot be reached fails before anything runs" {
   SSH_RC=255 run "$PIKVM" status
   [ "$status" -eq 1 ]

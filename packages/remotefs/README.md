@@ -16,6 +16,9 @@ needs nothing else. A further path on the same host is `<host>-<what>`. Labels a
 letters, digits, `.`, `_` and `-`: a label is the config key, the directory under `~/mnt` and,
 on macOS, the volume's name in Finder.
 
+Settings (`REMOTEFS_MOUNT_HOME`, the default options, `REMOTEFS_SSHFS`, the three timeouts) are
+documented in `~/.config/remotefs/remotefs.env`; this machine's go in `remotefs.local.env` beside it.
+
 Definitions are in `~/.config/remotefs/mounts.yml` (`remotefs edit`):
 
 ```yaml

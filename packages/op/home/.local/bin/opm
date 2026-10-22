@@ -5,9 +5,9 @@
 # so this script encodes the conventions rather than leaving them to memory:
 #
 #   vault  <name>            a regular shared vault holding that scope's secrets
-#   vault  $OP_SHARED_VAULT  cross-cutting secrets every scope also needs
+#   vault  $OPM_SHARED_VAULT  cross-cutting secrets every scope also needs
 #   SA     <name>-sa         read-only on both of the above
-#   item   <name>-sa-token   the SA's token, saved in $OP_SA_CREDENTIALS_VAULT
+#   item   <name>-sa-token   the SA's token, saved in $OPM_SA_CREDENTIALS_VAULT
 #
 # 1Password refuses to grant a service account access to Personal or Private, so
 # the readable vaults must be regular shared vaults. The token item may live in
@@ -39,15 +39,17 @@ source "$ANFS_LIB/log.sh"
 source "$ANFS_LIB/cli.sh"
 # shellcheck source=/dev/null
 source "$ANFS_LIB/table.sh"
+# opm's directories and settings (~/.config/opm/opm.env, opm.local.env)
+anfs_tool_paths opm
 
-: "${OP_SA_CREDENTIALS_VAULT:=Private}"
-: "${OP_SHARED_VAULT:=shared}"
+: "${OPM_SA_CREDENTIALS_VAULT:=Private}"
+: "${OPM_SHARED_VAULT:=shared}"
 # Every token item this script writes carries this tag, which is what makes
 # `opm list` a single server-side query. Vaults and service accounts
 # cannot be tagged — `op vault create` takes only --description and --icon, and
 # service accounts are account members — so the token item is the index of what
 # has been provisioned, and it records the vault and account names as fields.
-: "${OPM_TAG:=${OP_PROVISION_TAG:-op-provision}}"
+: "${OPM_TAG:=${OPM_PROVISION_TAG:-op-provision}}"
 
 CLI_TOOL=opm
 
@@ -57,16 +59,16 @@ ASSUME_YES=0
 DRY_RUN=0
 FORCE=0
 NAME=""
-SHARED="$OP_SHARED_VAULT"
-TOKEN_VAULT="$OP_SA_CREDENTIALS_VAULT"
+SHARED="$OPM_SHARED_VAULT"
+TOKEN_VAULT="$OPM_SA_CREDENTIALS_VAULT"
 declare -a HOSTS=()
 
 # Input modes: --wizard walks through each decision with explanation, --prompt asks only for
 # values not supplied as options, neither is strict (a missing value is an error)
 _opm_mode=(--opt "--wizard: Walk through each decision with explanation"
            --opt "--prompt: Ask only for values not supplied as options")
-_opm_shared=(--opt "--shared VAULT: Cross-cutting vault every service account also reads (default: \$OP_SHARED_VAULT)")
-_opm_token=(--opt "--token-vault VAULT: Vault the token item is saved in (default: \$OP_SA_CREDENTIALS_VAULT)")
+_opm_shared=(--opt "--shared VAULT: Cross-cutting vault every service account also reads (default: \$OPM_SHARED_VAULT)")
+_opm_token=(--opt "--token-vault VAULT: Vault the token item is saved in (default: \$OPM_SA_CREDENTIALS_VAULT)")
 _opm_act=(--opt "-y --yes: Do not ask" --opt "-n --dry-run: Show the plan and change nothing")
 
 cli_cmd create "Vault + service account + token" \
@@ -92,10 +94,11 @@ A <name> is a scope: one vault plus one service account that can read it. Withou
 
 create, rotate, remove and link show a plan and confirm before touching 1Password.
 
-Environment:
-  OP_SA_CREDENTIALS_VAULT   default for --token-vault
-  OP_SHARED_VAULT           default for --shared
-  OPM_TAG                   tag marking items this script created (default: op-provision)
+Settings (~/.config/opm/opm.env documents them; this machine's in opm.local.env):
+  OPM_SA_CREDENTIALS_VAULT  default for --token-vault (Private)
+  OPM_SHARED_VAULT          default for --shared (shared)
+  OPM_TAG                   tag marking items this script created (default: OPM_PROVISION_TAG,
+                            else op-provision)
 EOF
 }
 
@@ -114,8 +117,8 @@ need() { anfs_require "$@"; }
 cli_before_command() {
   case "$CLI_COMMAND" in completion|help) return 0 ;; esac
   NAME="${CLI_POS[0]:-}"
-  SHARED="${CLI_OPT[shared]:-$OP_SHARED_VAULT}"
-  TOKEN_VAULT="${CLI_OPT[token-vault]:-$OP_SA_CREDENTIALS_VAULT}"
+  SHARED="${CLI_OPT[shared]:-$OPM_SHARED_VAULT}"
+  TOKEN_VAULT="${CLI_OPT[token-vault]:-$OPM_SA_CREDENTIALS_VAULT}"
   ! ${CLI_OPT[prompt]:-false} || MODE=prompt
   ! ${CLI_OPT[wizard]:-false} || MODE=wizard
   ! ${CLI_OPT[yes]:-false} || ASSUME_YES=1
@@ -226,12 +229,12 @@ the thing it serves — a space, a project, a client. It must be a regular share
 vault: 1Password will not grant a service account access to Personal or Private.")
   [[ -n $NAME ]] || die "a name is required"
 
-  SHARED=$(need_value "$SHARED" --shared "Shared vault for cross-cutting secrets" "$OP_SHARED_VAULT" \
+  SHARED=$(need_value "$SHARED" --shared "Shared vault for cross-cutting secrets" "$OPM_SHARED_VAULT" \
 "Secrets you need everywhere — a GitHub token, say — live in one shared vault
 instead of being copied into every scope. Each service account is granted read
 on its own vault and on this one, so a single forwarded token covers both.")
 
-  TOKEN_VAULT=$(need_value "$TOKEN_VAULT" --token-vault "Vault to save the SA token in" "$OP_SA_CREDENTIALS_VAULT" \
+  TOKEN_VAULT=$(need_value "$TOKEN_VAULT" --token-vault "Vault to save the SA token in" "$OPM_SA_CREDENTIALS_VAULT" \
 "The token is itself a credential and is stored as an item. It may live in
 Private, because you read it with desktop authentication; the service account
 never reads its own token.")

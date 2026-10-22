@@ -93,7 +93,8 @@ rather than blocking on a prompt nobody can answer.
 
 ## Joining automatically on install
 
-Opt in per machine, in `~/.config/ppm/ppm.local.conf` (uncommitted, machine-local):
+Opt in per machine, in `~/.config/tsm/tsm.local.env` (yours, machine-local; `~/.config/tsm/tsm.env`,
+shipped by this package, documents tsm's settings: `TSM_AUTOJOIN`, `TSM_AUTHKEY_MODE`):
 
 ```sh
 TSM_AUTOJOIN=true

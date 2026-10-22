@@ -54,9 +54,16 @@ ones without a second token.
 
 ## Setting up a scope
 
+The defaults are opm's settings, documented in `~/.config/opm/opm.env` (shipped); set this
+machine's in `~/.config/opm/opm.local.env`, or in the environment, which wins:
+
 ```bash
-export OP_SA_CREDENTIALS_VAULT=Private   # where token items are saved
-export OP_SHARED_VAULT=shared            # cross-cutting vault
+# ~/.config/opm/opm.local.env
+OPM_SA_CREDENTIALS_VAULT=Private   # where token items are saved
+OPM_SHARED_VAULT=shared            # cross-cutting vault
+```
+
+```bash
 
 opm create lgat          # vault + service account + token item
 cd ~/spaces/lgat
@@ -219,6 +226,7 @@ the forwarded token remotely.
 | `home/.config/zsh/op.zsh` | `op` completions |
 | `home/.config/zsh/ssh/op.zsh` | the ssh hook that forwards the token |
 | `home/.local/bin/opm` | vault and service account lifecycle |
+| `home/.config/opm/opm.env` | opm's settings, each with its default (`OPM_*`) |
 | `home/.ssh/config.d/99-op.conf` | `IdentityAgent` → 1Password SSH agent (macOS only: `links:` in `package.yml`) |
 | `home/.config/mise/conf.d/op.toml` | installs `op` on Linux (Linux only: `links:` in `package.yml`) |
 | `install.sh` | the sshd `AcceptEnv` drop-in |

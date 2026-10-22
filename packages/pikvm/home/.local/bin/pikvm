@@ -24,6 +24,8 @@ source "$ANFS_LIB/log.sh"
 source "$ANFS_LIB/cli.sh"
 # shellcheck source=/dev/null
 source "$ANFS_LIB/table.sh"
+# pikvm's directories and settings (~/.config/pikvm/pikvm.env, pikvm.local.env)
+anfs_tool_paths pikvm
 
 : "${PIKVM_HOST:=root@pikvm}"
 : "${PIKVM_SSH_OPTS:=}"
@@ -59,7 +61,8 @@ cli_help_epilogue() {
 msd talks to kvmd over its unix socket as root: kvmd's auth.usc.users must include root
 (e.g. /etc/kvmd/override.d/50-usc-root.yaml), so no web UI password is needed.
 
-Environment:
+Settings (~/.config/pikvm/pikvm.env documents them; this machine's in pikvm.local.env; the
+environment wins):
   PIKVM_HOST       Default target (root@pikvm)
   PIKVM_SSH_OPTS   Extra ssh options, e.g. "-p 2222 -o StrictHostKeyChecking=accept-new"
   PIKVM_MSD_IMAGE  Image for msd connect (default ventoy/ventoy.img: <storage dir>/<file>)
