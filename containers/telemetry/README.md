@@ -16,8 +16,9 @@ pcm down telemetry
 podman compose --pcm logs -f telemetry
 ```
 
-Grafana (<http://localhost:8080>) is anonymous admin with the Tempo datasource
-pre-wired. OTLP comes in on 4317 (gRPC) and 4318 (HTTP).
+Grafana (<http://localhost:8080>) has the Tempo datasource pre-wired. Anonymous
+visitors are Viewers who can also use Explore; sign in as `GRAFANA_ADMIN_USER` /
+`GRAFANA_ADMIN_PASSWORD` (`.env.schema`, insecure dev default) to edit dashboards. OTLP comes in on 4317 (gRPC) and 4318 (HTTP).
 
 ## Architecture (Tempo 3.0)
 
@@ -111,5 +112,5 @@ A `series` in the response proves the live-store metrics path with no Prometheus
 Config is mounted file by file: ppm stows files as relative symlinks, and a
 directory mount would pass those into the container unresolved.
 
-Everything here is local-dev only: anonymous Grafana admin, no TLS on in-network
+Everything here is local-dev only: anonymous Grafana viewers and a dev admin password, no TLS on in-network
 traffic, 1-hour trace retention.

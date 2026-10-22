@@ -35,14 +35,18 @@ services:
     depends_on: [tempo]
 
   # Viewer. Tempo datasource is provisioned on boot (no click-ops).
-  # Anonymous admin — local dev only.
+  # Anonymous viewers (Grafana only supports Viewer for anonymous users), who can
+  # also use Explore (viewers_can_edit); dashboards and settings need the admin
+  # login (GRAFANA_ADMIN_*). Local dev only.
   grafana:
     image: ${GRAFANA_IMAGE}:${GRAFANA_TAG}
     restart: unless-stopped
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
-      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      GF_USERS_VIEWERS_CAN_EDIT: "true"
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
       GF_FEATURE_TOGGLES_ENABLE: "traceqlEditor"
     volumes:
       # Mount files, not a directory: ppm stows files as relative symlinks, which a
