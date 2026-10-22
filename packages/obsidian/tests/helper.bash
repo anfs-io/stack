@@ -19,6 +19,7 @@ ovm_setup() {
   XDG_STATE_HOME="$HOME/.local/state" XDG_CACHE_HOME="$HOME/.cache"
   unset ANFS_CONFIG_HOME ANFS_DATA_HOME ANFS_CACHE_HOME ANFS_STATE_HOME ANFS_DEBUG
   unset OVM_CONFIG_HOME OVM_DATA_HOME OVM_STATE_HOME OVM_CACHE_HOME OVM_VAULTS_HOME OVM_PROBE_SECONDS
+  unset ANFS_WORK ANFS_WORK_SAID  # a person's ANFS_WORK never reaches a test (lib/anfs/work.sh)
   export HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
   export ANFS_LOG=off   # no log file from tests (lib/anfs/log.sh)
   mkdir -p "$HOME/.local/lib"

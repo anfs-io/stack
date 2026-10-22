@@ -5,6 +5,8 @@
 #
 #   bats packages/pikvm/tests/pikvm.bats
 
+unset ANFS_WORK ANFS_WORK_SAID  # a person's ANFS_WORK never reaches a test (lib/anfs/work.sh)
+
 setup() {
   PIKVM="$BATS_TEST_DIRNAME/../home/.local/bin/pikvm"
   local lib="${ANFS_TEST_LIB:-$HOME/.local/lib/anfs}"

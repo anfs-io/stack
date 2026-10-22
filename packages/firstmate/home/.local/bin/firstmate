@@ -5,6 +5,8 @@
 # in a "captain" workspace rooted at the Firstmate repo. Firstmate itself does the work; this is
 # only lifecycle and input plumbing over herdr and Firstmate's own bin/ scripts.
 set -euo pipefail
+# A job's copy of this tool runs instead when ANFS_WORK names one (lib/anfs/work.sh)
+[ -z "${ANFS_WORK:-}" ] || [ ! -f "$HOME/.local/lib/anfs/work.sh" ] || . "$HOME/.local/lib/anfs/work.sh"
 
 FM_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/firstmate/repo"
 export FM_HOME="${FM_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/firstmate/home}"

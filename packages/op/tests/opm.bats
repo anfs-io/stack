@@ -2,6 +2,8 @@
 # opm, against a stubbed `op`. No network, no 1Password account.
 # Run: bats packages/op/tests/opm.bats
 
+unset ANFS_WORK ANFS_WORK_SAID  # a person's ANFS_WORK never reaches a test (lib/anfs/work.sh)
+
 setup() {
   PROV="$BATS_TEST_DIRNAME/../home/.local/bin/opm"
   # anfs's libraries: ANFS_TEST_LIB's (stack's convention: a core checkout's lib/anfs), else the

@@ -4,6 +4,8 @@
 #
 #   bats packages/tailscale/tests/tsm.bats
 
+unset ANFS_WORK ANFS_WORK_SAID  # a person's ANFS_WORK never reaches a test (lib/anfs/work.sh)
+
 setup() {
   PKG="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   TSM="$PKG/home/.local/bin/tsm"

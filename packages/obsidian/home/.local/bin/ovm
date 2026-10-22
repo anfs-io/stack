@@ -24,32 +24,37 @@
 # Every command takes --json. Exit codes follow wsm: 1 not found, 2 ambiguous, 3 not a usable vault,
 # 64 usage, 69 unavailable, 73 exists, 75 lock.
 set -euo pipefail
+# A job's copy of this tool runs instead when ANFS_WORK names one (lib/anfs/work.sh)
+[ -z "${ANFS_WORK:-}" ] || [ ! -f "$HOME/.local/lib/anfs/work.sh" ] || . "$HOME/.local/lib/anfs/work.sh"
 
 OVM_VERSION=0.3.0
 
 # Paths, messages, the log and the command line come from anfs
-ANFS_LIB="$HOME/.local/lib/anfs"
-if [[ ! -f "$ANFS_LIB/bash.sh" || ! -f "$ANFS_LIB/table.sh" ]]; then
-  echo "ovm: $ANFS_LIB is missing or out of date; install core/anfs again" >&2
+if [[ ! -f "$HOME/.local/lib/anfs/paths.sh" ]]; then
+  echo "ovm: ~/.local/lib/anfs is missing or out of date; install core/anfs again" >&2
   exit 69
 fi
 # The bash floor, first: re-execs under bash 5 when this is macOS's 3.2
 # shellcheck source=/dev/null
-source "$ANFS_LIB/bash.sh"
+source "$HOME/.local/lib/anfs/bash.sh"
 # shellcheck source=/dev/null
-source "$ANFS_LIB/paths.sh"
+source "$HOME/.local/lib/anfs/paths.sh"
+if [[ ! -f "$ANFS_LIB_DIR/table.sh" ]]; then
+  echo "ovm: $ANFS_LIB_DIR is out of date; install core/anfs again" >&2
+  exit 69
+fi
 # shellcheck source=/dev/null
-source "$ANFS_LIB/log.sh"
+source "$ANFS_LIB_DIR/log.sh"
 # shellcheck source=/dev/null
-source "$ANFS_LIB/cli.sh"
+source "$ANFS_LIB_DIR/cli.sh"
 # shellcheck source=/dev/null
-source "$ANFS_LIB/table.sh"
+source "$ANFS_LIB_DIR/table.sh"
 # The config group (lib/anfs/config.sh), when core has it
 # shellcheck source=/dev/null
-if [[ -f "$ANFS_LIB/config.sh" ]]; then source "$ANFS_LIB/config.sh"; fi
+if [[ -f "$ANFS_LIB_DIR/config.sh" ]]; then source "$ANFS_LIB_DIR/config.sh"; fi
 # The links into vaults are made as every link the toolkit makes: relative (lib/anfs/link.sh)
 # shellcheck source=/dev/null
-source "$ANFS_LIB/link.sh"
+source "$ANFS_LIB_DIR/link.sh"
 
 anfs_tool_paths ovm
 OVM_VAULTS_HOME="${OVM_VAULTS_HOME:-$HOME/vaults}"

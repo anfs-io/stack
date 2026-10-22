@@ -22,6 +22,8 @@ fi
 unset RPI_IMAGER_BASH_REEXEC
 
 set -euo pipefail
+# A job's copy of this tool runs instead when ANFS_WORK names one (lib/anfs/work.sh)
+[ -z "${ANFS_WORK:-}" ] || [ ! -f "$HOME/.local/lib/anfs/work.sh" ] || . "$HOME/.local/lib/anfs/work.sh"
 
 # Captured before any shift, so the re-exec into the profile directory is byte-identical
 ARGV=("$@")
@@ -37,17 +39,18 @@ RPI_IMAGER_MOUNTED_BY_US=""
 is_macos() { [[ "$(uname -s)" == "Darwin" ]]; }
 is_linux() { [[ "$(uname -s)" == "Linux" ]]; }
 
-# Platform disk operations live in a sourced lib, picked by uname. Searched in the
-# stowed location first, then next to a checkout, so the script runs from the package
-# directory during development.
+# Platform disk operations live in a sourced lib, picked by uname. Searched next to the
+# script's real path first (installed, that is the source's lib/rpi-imager, the same files the
+# installed directory links to; a job's or a checkout's copy finds its own), then the installed
+# directory.
 load_platform_lib() {
   local os lib candidate here
   os="$(uname -s | tr '[:upper:]' '[:lower:]')"
   here="$(cd "$(dirname "$(resolve_link "$0")")" && pwd)"
   for candidate in "${RPI_IMAGER_LIB:-}" \
-                   "$HOME/.local/lib/rpi-imager" \
                    "$here/../lib/rpi-imager" \
-                   "$here/../../lib/rpi-imager"; do
+                   "$here/../../lib/rpi-imager" \
+                   "$HOME/.local/lib/rpi-imager"; do
     [[ -n "$candidate" && -f "$candidate/$os.sh" ]] || continue
     lib="$candidate/$os.sh"
     break
