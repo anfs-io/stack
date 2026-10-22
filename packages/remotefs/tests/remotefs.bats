@@ -68,6 +68,15 @@ stub() {
   [ "$output" = "[{\"label\":\"web1\",\"remote\":\"web1:\",\"mountpoint\":\"$HOME/mnt/web1\",\"state\":\"unmounted\"}]" ]
 }
 
+@test "REMOTEFS_MOUNT_HOME=~/remote in remotefs.local.env: the loader expands the ~" {
+  mkdir -p "$XDG_CONFIG_HOME/remotefs"
+  printf 'REMOTEFS_MOUNT_HOME=~/remote\n' > "$XDG_CONFIG_HOME/remotefs/remotefs.local.env"
+  run "$RFS" add web1
+  [ "$status" -eq 0 ]
+  run env -u ANFS_TABLE "$RFS" ls --json
+  [[ "$output" == *"\"mountpoint\":\"$HOME/remote/web1\""* ]]
+}
+
 @test "add: a remote, a mountpoint kept with its ~, options, no defaults" {
   run "$RFS" add web1-logs web1:/var/log "$HOME/logs" -o ro -o Port=2222 --no-defaults
   [ "$status" -eq 0 ]

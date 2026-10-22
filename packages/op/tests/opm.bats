@@ -13,7 +13,7 @@ setup() {
   export HOME=$(cd "$BATS_TEST_TMPDIR/home" && pwd -P)
   export XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share"
   export XDG_STATE_HOME="$HOME/.local/state" XDG_CACHE_HOME="$HOME/.cache"
-  unset OPM_CONFIG_HOME OPM_DATA_HOME OPM_STATE_HOME OPM_CACHE_HOME OPM_TAG OPM_PROVISION_TAG
+  unset OPM_CONFIG_HOME OPM_DATA_HOME OPM_STATE_HOME OPM_CACHE_HOME OPM_TAG
   STUB="$BATS_TEST_TMPDIR/bin"
   mkdir -p "$STUB"
   export OPLOG="$BATS_TEST_TMPDIR"
@@ -332,11 +332,14 @@ EOF
   ! grep -q 'old' "$OPLOG/argv.log"
 }
 
-@test "OPM_PROVISION_TAG names the tag; OP_PROVISION_TAG is not read" {
-  OPM_PROVISION_TAG=fromprov run "$PROV" create lgat --yes
-  grep -q 'fromprov' "$OPLOG/stdin.log"
+@test "OPM_TAG from opm.local.env names the tag; OP_PROVISION_TAG and OPM_PROVISION_TAG are not read" {
+  mkdir -p "$XDG_CONFIG_HOME/opm"
+  printf 'OPM_TAG=fromfile\n' > "$XDG_CONFIG_HOME/opm/opm.local.env"
+  run "$PROV" create lgat --yes
+  grep -q '"fromfile"' "$OPLOG/stdin.log"
   : > "$OPLOG/stdin.log"
-  OP_PROVISION_TAG=old run "$PROV" create lgat --yes
+  rm "$XDG_CONFIG_HOME/opm/opm.local.env"
+  OP_PROVISION_TAG=old OPM_PROVISION_TAG=old run "$PROV" create lgat --yes
   ! grep -q 'old' "$OPLOG/stdin.log"
   grep -q 'op-provision' "$OPLOG/stdin.log"
 }

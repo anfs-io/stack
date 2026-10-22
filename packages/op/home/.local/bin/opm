@@ -49,7 +49,7 @@ anfs_tool_paths opm
 # cannot be tagged — `op vault create` takes only --description and --icon, and
 # service accounts are account members — so the token item is the index of what
 # has been provisioned, and it records the vault and account names as fields.
-: "${OPM_TAG:=${OPM_PROVISION_TAG:-op-provision}}"
+: "${OPM_TAG:=op-provision}"
 
 CLI_TOOL=opm
 
@@ -97,8 +97,7 @@ create, rotate, remove and link show a plan and confirm before touching 1Passwor
 Settings (~/.config/opm/opm.env documents them; this machine's in opm.local.env):
   OPM_SA_CREDENTIALS_VAULT  default for --token-vault (Private)
   OPM_SHARED_VAULT          default for --shared (shared)
-  OPM_TAG                   tag marking items this script created (default: OPM_PROVISION_TAG,
-                            else op-provision)
+  OPM_TAG                   tag marking items this script created (default: op-provision)
 EOF
 }
 
