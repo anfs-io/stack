@@ -237,3 +237,17 @@ stub() {
   [ "${lines[1]}" = "$HOME/mnt" ]
   grep -qxF "$HOME/mnt/web1" "$MOUNTED"
 }
+
+@test "remotefs config: list, set and get on a temp home (core's lib/anfs/config.sh)" {
+  [[ -f "$HOME/.local/lib/anfs/config.sh" ]] || skip "this core's lib/anfs has no config.sh"
+  mkdir -p "$XDG_CONFIG_HOME/remotefs"
+  cp "$BATS_TEST_DIRNAME/../home/.config/remotefs/remotefs.env" "$XDG_CONFIG_HOME/remotefs/"
+  run "$RFS" config list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"REMOTEFS_SSHFS"$'\t'"sshfs"$'\t'"default"* ]]
+  run "$RFS" config set REMOTEFS_SSHFS=/opt/sshfs
+  [ "$status" -eq 0 ]
+  grep -qx "REMOTEFS_SSHFS=/opt/sshfs" "$XDG_CONFIG_HOME/remotefs/remotefs.local.env"
+  run "$RFS" config get REMOTEFS_SSHFS
+  [ "$output" = "/opt/sshfs" ]
+}

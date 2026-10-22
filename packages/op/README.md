@@ -55,12 +55,15 @@ ones without a second token.
 ## Setting up a scope
 
 The defaults are opm's settings, documented in `~/.config/opm/opm.env` (shipped); set this
-machine's in `~/.config/opm/opm.local.env`, or in the environment, which wins:
+machine's in `~/.config/opm/opm.local.env` (`opm config set NAME=value`), or in the environment,
+which wins:
 
 ```bash
 # ~/.config/opm/opm.local.env
-OPM_SA_CREDENTIALS_VAULT=Private   # where token items are saved
-OPM_SHARED_VAULT=shared            # cross-cutting vault
+# where token items are saved
+OPM_SA_CREDENTIALS_VAULT=Private
+# the cross-cutting vault
+OPM_SHARED_VAULT=shared
 ```
 
 ```bash

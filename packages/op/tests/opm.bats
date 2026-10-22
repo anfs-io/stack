@@ -343,3 +343,17 @@ EOF
   ! grep -q 'old' "$OPLOG/stdin.log"
   grep -q 'op-provision' "$OPLOG/stdin.log"
 }
+
+@test "opm config: list, set and get on a temp home (core's lib/anfs/config.sh)" {
+  [[ -f "$HOME/.local/lib/anfs/config.sh" ]] || skip "this core's lib/anfs has no config.sh"
+  mkdir -p "$XDG_CONFIG_HOME/opm"
+  cp "$BATS_TEST_DIRNAME/../home/.config/opm/opm.env" "$XDG_CONFIG_HOME/opm/"
+  run "$PROV" config list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"OPM_TAG"$'\t'"op-provision"$'\t'"default"* ]]
+  run "$PROV" config set OPM_TAG=x-tag
+  [ "$status" -eq 0 ]
+  grep -qx "OPM_TAG=x-tag" "$XDG_CONFIG_HOME/opm/opm.local.env"
+  run "$PROV" config get OPM_TAG
+  [ "$output" = "x-tag" ]
+}

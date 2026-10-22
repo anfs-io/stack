@@ -332,3 +332,17 @@ hook() {
   [ "$status" -eq 0 ]
   [ "$(cat "$TMP/tsm.log")" = "tsm join --yes" ]
 }
+
+@test "tsm config: list, set and get on a temp home (core's lib/anfs/config.sh)" {
+  [[ -f "$HOME/.local/lib/anfs/config.sh" ]] || skip "this core's lib/anfs has no config.sh"
+  mkdir -p "$XDG_CONFIG_HOME/tsm"
+  cp "$BATS_TEST_DIRNAME/../home/.config/tsm/tsm.env" "$XDG_CONFIG_HOME/tsm/"
+  run "$TSM" config list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"TSM_AUTHKEY_MODE"$'\t'"-"$'\t'"default"* ]]
+  run "$TSM" config set TSM_AUTHKEY_MODE=argv
+  [ "$status" -eq 0 ]
+  grep -qx "TSM_AUTHKEY_MODE=argv" "$XDG_CONFIG_HOME/tsm/tsm.local.env"
+  run "$TSM" config get TSM_AUTHKEY_MODE
+  [ "$output" = "argv" ]
+}

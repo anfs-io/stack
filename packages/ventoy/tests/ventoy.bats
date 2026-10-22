@@ -268,3 +268,17 @@ STUB
   [[ "$output" == *"is already attached as /dev/loop7"* ]]
   [ "$(cat "$HOME/losetup.log")" = "losetup -j $HOME/v.img" ]
 }
+
+@test "ventoy config: list, set and get on a temp home (core's lib/anfs/config.sh)" {
+  [[ -f "$HOME/.local/lib/anfs/config.sh" ]] || skip "this core's lib/anfs has no config.sh"
+  mkdir -p "$XDG_CONFIG_HOME/ventoy"
+  cp "$BATS_TEST_DIRNAME/../home/.config/ventoy/ventoy.env" "$XDG_CONFIG_HOME/ventoy/"
+  run "$VENTOY" config list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"VENTOY_IMAGE_SIZE"$'\t'"64G"$'\t'"default"* ]]
+  run "$VENTOY" config set VENTOY_IMAGE_SIZE=32G
+  [ "$status" -eq 0 ]
+  grep -qx "VENTOY_IMAGE_SIZE=32G" "$XDG_CONFIG_HOME/ventoy/ventoy.local.env"
+  run "$VENTOY" config get VENTOY_IMAGE_SIZE
+  [ "$output" = "32G" ]
+}

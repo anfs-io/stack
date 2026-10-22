@@ -34,6 +34,9 @@ source "$ANFS_LIB/log.sh"
 source "$ANFS_LIB/cli.sh"
 # shellcheck source=/dev/null
 source "$ANFS_LIB/table.sh"
+# The config group (lib/anfs/config.sh), when core has it
+# shellcheck source=/dev/null
+if [[ -f "$ANFS_LIB/config.sh" ]]; then source "$ANFS_LIB/config.sh"; fi
 
 # tsm's own directories and settings (~/.config/tsm/tsm.env, tsm.local.env)
 anfs_tool_paths tsm
@@ -59,6 +62,7 @@ cli_cmd status "Tailnet status for this node; what follows goes on to tailscale 
 cli_cmd show "Render the flags the config produces, secret masked"
 cli_cmd prereqs "The manual tailnet setup, plus what can be checked from here"
 cli_cmd info "Paths, binary, daemon state, credential and key-handoff mode"
+! declare -F anfs_config_declare >/dev/null || anfs_config_declare
 cli_standard
 
 cli_help_epilogue() {

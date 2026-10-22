@@ -44,6 +44,9 @@ source "$ANFS_LIB/log.sh"
 source "$ANFS_LIB/cli.sh"
 # shellcheck source=/dev/null
 source "$ANFS_LIB/table.sh"
+# The config group (lib/anfs/config.sh), when core has it
+# shellcheck source=/dev/null
+if [[ -f "$ANFS_LIB/config.sh" ]]; then source "$ANFS_LIB/config.sh"; fi
 # The links into vaults are made as every link the toolkit makes: relative (lib/anfs/link.sh)
 # shellcheck source=/dev/null
 source "$ANFS_LIB/link.sh"
@@ -101,6 +104,7 @@ cli_cmd "link apply" "Create this vault's links that are missing" \
 cli_cmd "link validate" "Every vault's links that are missing, dangling or in conflict" --arg "[spec]"
 cli_cmd validate "Check documents against the vault's profile" \
   --opt "--fix: Mint the ids that are missing" --opt "--strict: Exit 1 on any finding" --arg "[path]"
+! declare -F anfs_config_declare >/dev/null || anfs_config_declare
 cli_standard
 
 cli_help_epilogue() {
@@ -1196,10 +1200,10 @@ cli_globals "$@"
 set -- "${CLI_ARGS[@]}"
 
 # A vault you are standing in is registered as a side effect of using it. Not for the commands
-# that manage the registry themselves, for a tab press, nor for wsm's events, which are about
-# other directories.
+# that manage the registry themselves, for a tab press, for the settings, nor for wsm's events,
+# which are about other directories.
 case "${1:-help}" in
-  help|-h|--help|--version|__complete|completion|init|new|scan|remove|rm|prune) ;;
+  help|-h|--help|--version|__complete|completion|config|init|new|scan|remove|rm|prune) ;;
   link) [[ " $* " == *" --event "* ]] || { command -v yq >/dev/null 2>&1 && _auto_register; } ;;
   *) command -v yq >/dev/null 2>&1 && _auto_register ;;
 esac

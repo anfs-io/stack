@@ -248,3 +248,17 @@ EOF
   run "$PIKVM" __complete status -H ""
   [ "$output" = "kvm1"$'\n'"kvm2" ]
 }
+
+@test "pikvm config: list, set and get on a temp home (core's lib/anfs/config.sh)" {
+  [[ -f "$HOME/.local/lib/anfs/config.sh" ]] || skip "this core's lib/anfs has no config.sh"
+  mkdir -p "$XDG_CONFIG_HOME/pikvm"
+  cp "$BATS_TEST_DIRNAME/../home/.config/pikvm/pikvm.env" "$XDG_CONFIG_HOME/pikvm/"
+  run "$PIKVM" config list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"PIKVM_HOST"$'\t'"root@pikvm"$'\t'"default"* ]]
+  run "$PIKVM" config set PIKVM_HOST=root@kvm2
+  [ "$status" -eq 0 ]
+  grep -qx "PIKVM_HOST=root@kvm2" "$XDG_CONFIG_HOME/pikvm/pikvm.local.env"
+  run "$PIKVM" config get PIKVM_HOST
+  [ "$output" = "root@kvm2" ]
+}

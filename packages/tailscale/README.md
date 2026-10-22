@@ -94,7 +94,8 @@ rather than blocking on a prompt nobody can answer.
 ## Joining automatically on install
 
 Opt in per machine, in `~/.config/tsm/tsm.local.env` (yours, machine-local; `~/.config/tsm/tsm.env`,
-shipped by this package, documents tsm's settings: `TSM_AUTOJOIN`, `TSM_AUTHKEY_MODE`):
+shipped by this package, documents tsm's settings: `TSM_AUTOJOIN`, `TSM_AUTHKEY_MODE`; `tsm config
+list` shows them, `tsm config set` writes the local file):
 
 ```sh
 TSM_AUTOJOIN=true

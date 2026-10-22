@@ -24,6 +24,9 @@ source "$ANFS_LIB/log.sh"
 source "$ANFS_LIB/cli.sh"
 # shellcheck source=/dev/null
 source "$ANFS_LIB/table.sh"
+# The config group (lib/anfs/config.sh), when core has it
+# shellcheck source=/dev/null
+if [[ -f "$ANFS_LIB/config.sh" ]]; then source "$ANFS_LIB/config.sh"; fi
 # pikvm's directories and settings (~/.config/pikvm/pikvm.env, pikvm.local.env)
 anfs_tool_paths pikvm
 
@@ -54,6 +57,7 @@ partitioned disk images such as a Ventoy image boot)" "${_host[@]}" --arg "[imag
 cli_cmd "msd disconnect" "Unplug the drive from the host" "${_host[@]}"
 cli_cmd "msd with" "Disconnect, run a LOCAL command, reconnect (if it was connected), even when
 the command fails: pikvm msd with -- ventoy sync -y" "${_host[@]}" --passthrough --arg "word..."
+! declare -F anfs_config_declare >/dev/null || anfs_config_declare
 cli_standard
 
 cli_help_epilogue() {

@@ -28,7 +28,9 @@ of the line, completion (`zcomp <tool>` in the package's zsh file), `--json`, `-
 the log and the exit codes (64 usage, 69 missing) all come from there. A tool with settings calls
 `anfs_tool_paths <tool>` after `paths.sh` and ships `home/.config/<tool>/<tool>.env` documenting
 every one (`#NAME=default`, prefixed with the tool's name); a machine's values go in
-`<tool>.local.env` beside it (core's AGENTS.md, "Configuration"). remotefs, ventoy, pikvm, tsm,
+`<tool>.local.env` beside it (core's AGENTS.md, "Configuration"), and has the `config` group:
+it sources `config.sh` when core has it and calls `anfs_config_declare` before `cli_standard`
+(`! declare -F anfs_config_declare >/dev/null || anfs_config_declare`). remotefs, ventoy, pikvm, tsm,
 opm and ovm do. Core's AGENTS.md has the
 rules ("The Command Line", "Lists and --json", "Messages, Debugging and the Log");
 `packages/ventoy/home/.local/bin/ventoy` is the model, and each tool has `tests/*.bats`

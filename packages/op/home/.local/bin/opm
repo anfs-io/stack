@@ -39,6 +39,9 @@ source "$ANFS_LIB/log.sh"
 source "$ANFS_LIB/cli.sh"
 # shellcheck source=/dev/null
 source "$ANFS_LIB/table.sh"
+# The config group (lib/anfs/config.sh), when core has it
+# shellcheck source=/dev/null
+if [[ -f "$ANFS_LIB/config.sh" ]]; then source "$ANFS_LIB/config.sh"; fi
 # opm's directories and settings (~/.config/opm/opm.env, opm.local.env)
 anfs_tool_paths opm
 
@@ -85,6 +88,7 @@ cli_cmd link "Write ./fnox.toml for this directory" \
   "${_opm_token[@]}" --opt "--host HOST: Host to record in fnox.toml; may be repeated" \
   --opt "-f --force: Overwrite an existing fnox.toml" \
   "${_opm_mode[@]}" "${_opm_act[@]}" --arg "[name]"
+! declare -F anfs_config_declare >/dev/null || anfs_config_declare
 cli_standard
 
 cli_help_epilogue() {

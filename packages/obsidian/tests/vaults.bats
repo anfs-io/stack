@@ -275,3 +275,17 @@ setup() { ovm_setup; }
   (cd a && ovm __complete "" >/dev/null)
   [ ! -e "$REGISTRY" ]
 }
+
+@test "ovm config: list, set and get on a temp home (core's lib/anfs/config.sh)" {
+  [[ -f "$HOME/.local/lib/anfs/config.sh" ]] || skip "this core's lib/anfs has no config.sh"
+  mkdir -p "$XDG_CONFIG_HOME/ovm"
+  cp "$BATS_TEST_DIRNAME/../home/.config/ovm/ovm.env" "$XDG_CONFIG_HOME/ovm/"
+  run "$OVM" config list
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"OVM_PROBE_SECONDS"$'\t'"3"$'\t'"default"* ]]
+  run "$OVM" config set OVM_PROBE_SECONDS=9
+  [ "$status" -eq 0 ]
+  grep -qx "OVM_PROBE_SECONDS=9" "$XDG_CONFIG_HOME/ovm/ovm.local.env"
+  run "$OVM" config get OVM_PROBE_SECONDS
+  [ "$output" = "9" ]
+}

@@ -23,6 +23,9 @@ source "$ANFS_LIB/iso.sh"
 source "$ANFS_LIB/cli.sh"
 # shellcheck source=/dev/null
 source "$ANFS_LIB/table.sh"
+# The config group (lib/anfs/config.sh), when core has it
+# shellcheck source=/dev/null
+if [[ -f "$ANFS_LIB/config.sh" ]]; then source "$ANFS_LIB/config.sh"; fi
 
 anfs_tool_paths ventoy
 anfs_gitsrc_env
@@ -63,6 +66,7 @@ ISOs, remove all others (an empty dir removes every ISO)" \
 anfs_iso_cli
 cli_cmd info "Show paths, Ventoy version and the ISOs that would be copied"
 cli_cmd path "Print VENTOY_DISK, the default disk or disk image: pmm up <machine> --media \"\$(ventoy path)\""
+! declare -F anfs_config_declare >/dev/null || anfs_config_declare
 cli_standard
 
 cli_help_epilogue() {

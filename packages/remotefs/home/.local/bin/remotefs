@@ -28,6 +28,9 @@ source "$ANFS_LIB/log.sh"
 source "$ANFS_LIB/cli.sh"
 # shellcheck source=/dev/null
 source "$ANFS_LIB/table.sh"
+# The config group (lib/anfs/config.sh), when core has it
+# shellcheck source=/dev/null
+if [[ -f "$ANFS_LIB/config.sh" ]]; then source "$ANFS_LIB/config.sh"; fi
 
 anfs_tool_paths remotefs
 : "${REMOTEFS_CONFIG:=$REMOTEFS_CONFIG_HOME/mounts.yml}"
@@ -66,6 +69,7 @@ cli_cmd show "The definition, the sshfs command it makes, and its state" --arg "
 cli_cmd path "Print a mount's mountpoint, or where mounts go by default" --arg "[label]"
 cli_cmd cd "Change to a mountpoint, mounting it first; no label: where mounts go (requires\n~/.config/sh/remotefs.sh)" --arg "[label]"
 cli_cmd edit "Open the definitions in \$EDITOR"
+! declare -F anfs_config_declare >/dev/null || anfs_config_declare
 cli_standard
 
 cli_help_epilogue() {

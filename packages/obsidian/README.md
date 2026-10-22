@@ -11,7 +11,7 @@ anywhere; the marker is the source of truth and carries the vault's id, and a re
 (`$XDG_STATE_HOME/ovm/vaults`) indexes the ones this machine knows. `ovm scan` rebuilds it, and a
 vault you stand in is registered as you use it. A vault found at a new path is the same vault,
 moved. ovm's one setting, `OVM_PROBE_SECONDS`, is documented in `~/.config/ovm/ovm.env`; this
-machine's value goes in `ovm.local.env` beside it.
+machine's value goes in `ovm.local.env` beside it (`ovm config set OVM_PROBE_SECONDS=5`).
 
 ```bash
 ovm init [dir] [--name NAME]          # make a directory a vault: ovm.yml, a new id, registered

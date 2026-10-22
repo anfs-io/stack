@@ -17,7 +17,8 @@ letters, digits, `.`, `_` and `-`: a label is the config key, the directory unde
 on macOS, the volume's name in Finder.
 
 Settings (`REMOTEFS_MOUNT_HOME`, the default options, `REMOTEFS_SSHFS`, the three timeouts) are
-documented in `~/.config/remotefs/remotefs.env`; this machine's go in `remotefs.local.env` beside it.
+documented in `~/.config/remotefs/remotefs.env`; this machine's go in `remotefs.local.env` beside it
+(`remotefs config list` shows them, `remotefs config set NAME=value` writes).
 
 Definitions are in `~/.config/remotefs/mounts.yml` (`remotefs edit`):
 
