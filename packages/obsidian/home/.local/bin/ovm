@@ -6,8 +6,9 @@
 # the name, not a restriction. Vaults are the entries of ~/vaults ($OVM_VAULTS_HOME), as spaces
 # are ~/spaces': a directory there, or a link to one (a vault stored on iCloud is a link, declared
 # by a package's links: entry), with a vault.yml, which carries the vault's id. `ls ~/vaults` is
-# the list; a vault is named by its entry. A vault space is a folder directly under the vault's
-# spaces_path (vault.yml, default spaces): <vault>/<space>.
+# the list; a vault is named by its entry. A vault space is any folder under the vault's
+# spaces_path (vault.yml, default spaces; . is the vault's root), named by its path there:
+# <vault>/<path> (apex/anfs/product). A document's space is the deepest linked one holding it.
 #
 # ovm does three things with a vault:
 #
@@ -97,12 +98,13 @@ cli_cmd path "Print the path of a vault (default: the one you are in) or of a do
   --opt "--dir: A document's directory, not the file (what ovm cd goes to)" --arg "[vault-or-doc]"
 cli_cmd docs "List documents: id, type, title, space, path (of a vault, a vault space or a DIR)" \
   --opt "--type TYPE: Only that type" \
-  --opt "--space SPEC: The documents of the vault spaces links.yml links into that wsm space" --arg "[vault-or-space]"
+  --opt "--space VAULT-SPACE: Only that vault space (its path: anfs, anfs/product) and the folders below it" \
+  --opt "--to SPEC: The documents of the vault spaces links.yml links into that wsm space" --arg "[vault-or-space]"
 cli_cmd show "Print a document by id" --opt "--body: Leave out the frontmatter" --arg "doc"
 cli_group space "Vault spaces (the folders under a vault's spaces_path) and the wsm spaces links.yml links them into"
-cli_cmd "space list" "Each vault space and where it is linked: the vault you are in, VAULT, or every vault" --alias ls \
+cli_cmd "space list" "The vault spaces (top-level, and linked deeper ones) and where each is linked: the vault you are in, VAULT, or every vault" --alias ls \
   --opt "--problems: Only the rows that are not ok, pending or unlinked; exit 1 when there is one" --arg "[vault]"
-cli_cmd "space add" "Make a vault space: its folder under spaces_path" --arg "space"
+cli_cmd "space add" "Make a vault space: its folder (and those above it) under spaces_path" --arg "space"
 cli_cmd "space remove" "Unlink a vault space from every wsm space; its folder and its notes stay" --alias rm \
   --opt "-y --yes: Do not ask before removing the links" --arg "space"
 cli_cmd "space link" "Link a vault space into a wsm space, and declare it in links.yml" \
@@ -120,11 +122,14 @@ cli_help_epilogue() {
   cat <<EOF
 A vault is an entry of $(_display "$OVM_VAULTS_HOME") (OVM_VAULTS_HOME), a directory or a link to one,
 with a vault.yml; it is named by its entry, its id or a unique id prefix (4+ characters). A vault
-stored elsewhere is a link there. A vault space is a folder directly under the vault's spaces_path
-(vault.yml, default spaces), named <vault>/<space>, or <space> in the vault you are in. Which vault
+stored elsewhere is a link there. A vault space is any folder under the vault's spaces_path
+(vault.yml, default spaces; . is the vault's root), named by its path there: <vault>/<path>
+(apex/anfs/product: the first part is the vault), or <space> in the vault you are in. Which vault
 spaces are linked into which wsm spaces is declared in $(_display "$OVM_LINKS_YML") (links.local.yml
-beside it for this machine; ovm space link and unlink write them). SPEC is a wsm space (wsm ls): its
-id, the source and its path (lgat, lgat/tech/web).
+beside it for this machine; ovm space link and unlink write them); one may hold another (anfs and
+anfs/product) under different names. A document's space is the deepest linked vault space holding
+it, else the first folder under spaces_path. SPEC is a wsm space (wsm ls): its id, the source and
+its path (lgat, lgat/tech/web).
 EOF
 }
 
@@ -176,10 +181,11 @@ _cfg_id() {
 }
 
 # What the commands need of <root>/vault.yml, read once per vault per run: VC_SPACES (spaces_path,
-# default spaces; empty when it is not usable, and VC_BAD says why) and VC_EXCLUDE (the patterns,
-# without a leading ./ or a trailing /)
+# default spaces, . for the vault's root; empty when it is not usable, and VC_BAD says why),
+# VC_PFX (what a space's path is under, relative to the root: spaces/, or nothing for .) and
+# VC_EXCLUDE (the patterns, without a leading ./ or a trailing /)
 declare -A VCC_SPACES=() VCC_BAD=() VCC_EXCLUDE=()
-VC_SPACES="" VC_BAD="" VC_EXCLUDE=()
+VC_SPACES="" VC_BAD="" VC_EXCLUDE=() VC_PFX=""
 _vault_cfg() {
   local root="$1" sp p bad="" part
   local -a lines=() ex=()
@@ -187,10 +193,12 @@ _vault_cfg() {
     mapfile -t lines < <(yq -r '[((.spaces_path // "spaces") | tostring)] + ((.exclude // []) | [.] | flatten | map(tostring)) | .[]' \
       "$root/$OVM_CONFIG" 2>/dev/null || true)
     sp="${lines[0]:-spaces}"
-    while [[ "$sp" == ./* ]]; do sp="${sp#./}"; done
-    while [[ "$sp" == */ ]]; do sp="${sp%/}"; done
+    while [[ "$sp" == ./?* ]]; do sp="${sp#./}"; done
+    while [[ "$sp" == ?*/ ]]; do sp="${sp%/}"; done
     if [[ -z "$sp" || "$sp" == /* ]]; then
       bad="spaces_path is a folder relative to the vault's root: ${lines[0]:-}"
+    elif [[ "$sp" == . ]]; then
+      :   # the vault's root: its folders are the spaces
     else
       local IFS=/
       for part in $sp; do
@@ -209,35 +217,88 @@ _vault_cfg() {
     VCC_SPACES[$root]="$sp" VCC_BAD[$root]="$bad"
     VCC_EXCLUDE[$root]=$(IFS="$US"; printf '%s' "${ex[*]}")
   fi
-  VC_SPACES="${VCC_SPACES[$root]}" VC_BAD="${VCC_BAD[$root]}" VC_EXCLUDE=()
+  VC_SPACES="${VCC_SPACES[$root]}" VC_BAD="${VCC_BAD[$root]}" VC_EXCLUDE=() VC_PFX=""
+  [[ -z "$VC_SPACES" || "$VC_SPACES" == . ]] || VC_PFX="$VC_SPACES/"
   [[ -z "${VCC_EXCLUDE[$root]}" ]] || IFS="$US" read -ra VC_EXCLUDE <<< "${VCC_EXCLUDE[$root]}"
 }
 
-# The vault spaces of the vault at <root>: the folders directly under its spaces_path, hidden ones
-# and files left out, one name per line
+# The top-level vault spaces of the vault at <root>: the folders directly under its spaces_path,
+# hidden ones, files and what exclude: names left out, one name per line. A deeper folder is a
+# vault space too, named by its path (anfs/product); it is listed when links.yml links it.
 _space_dirs() {
-  local d
+  local d n p
   _vault_cfg "$1"
   [[ -n "$VC_SPACES" ]] || return 0
-  for d in "$1/$VC_SPACES"/*/; do
+  for d in "$1/$VC_PFX"*/; do
     [[ -d "$d" ]] || continue
-    d="${d%/}"
-    printf '%s\n' "${d##*/}"
+    d="${d%/}" n="${d##*/}"
+    for p in "${VC_EXCLUDE[@]}"; do
+      # shellcheck disable=SC2053
+      [[ "$VC_PFX$n" != $p ]] || continue 2
+    done
+    printf '%s\n' "$n"
   done
 }
 
-# The vault space a path relative to the root of the vault at <root> is in (the first part under
-# spaces_path), or nothing
-_space_of() {
-  local rel="$2" s
-  _vault_cfg "$1"
-  [[ -n "$VC_SPACES" && "$rel" == "$VC_SPACES"/*/* ]] || return 0
-  s="${rel#"$VC_SPACES"/}"
-  printf '%s\n' "${s%%/*}"
+# A vault space's path: relative to spaces_path, its parts folder names, none of them hidden, no ..
+_space_path_ok() {
+  local part
+  local -a parts=()
+  [[ -n "$1" && "$1" != /* && "$1" != */ && "$1" != *//* ]] || return 1
+  IFS=/ read -ra parts <<< "$1"
+  for part in "${parts[@]}"; do [[ "$part" != .* ]] || return 1; done
 }
 
-# A vault space's name: a folder's, without a /, not hidden
-_space_name_ok() { [[ -n "$1" && "$1" != */* && "$1" != .* ]]; }
+# The vault space paths links.yml links (any wsm space) in the vault <name>, deepest first, into
+# LINKED. links.yml is read once; one that does not read is warned about and taken as no links
+# here (the space commands and --to are where it is refused).
+declare -A LINKED_OF=()
+LINKED=() LINKED_TRIED=false
+_linked_spaces() {
+  local i
+  if ! $LINKED_TRIED; then
+    LINKED_TRIED=true
+    if ! $K_LOADED; then
+      local soft=$K_SOFT
+      K_SOFT=true
+      _pairs_load || K_VAULT=() K_SPACE=() K_TO=() K_AS=() K_FILE=()
+      K_SOFT=$soft
+    fi
+    local -A seen=()
+    for i in "${!K_VAULT[@]}"; do
+      [[ -z "${seen[${K_VAULT[$i]}|${K_SPACE[$i]}]:-}" ]] || continue
+      seen[${K_VAULT[$i]}|${K_SPACE[$i]}]=1
+      LINKED_OF[${K_VAULT[$i]}]+="${K_SPACE[$i]}$US"
+    done
+    for i in "${!LINKED_OF[@]}"; do
+      LINKED_OF[$i]=$(printf '%s' "${LINKED_OF[$i]}" | tr "$US" '\n' |
+        awk '{ print length($0) "\t" $0 }' | LC_ALL=C sort -k1,1nr -k2 | cut -f2- | tr '\n' "$US")
+    done
+  fi
+  LINKED=()
+  [[ -z "${LINKED_OF[$1]:-}" ]] || IFS="$US" read -ra LINKED <<< "${LINKED_OF[$1]}"
+}
+
+# The vault space of a document, into REPLY: for <rel> (a path relative to the root of the vault
+# at <root>, named <vault>), the deepest vault space links.yml links that holds it; when none
+# does, the first folder under spaces_path; nothing for a file directly in spaces_path or outside
+# it. docs, show and tasks all say it so.
+_space_of() {
+  local rel="$2" p
+  REPLY=""
+  _vault_cfg "$1"
+  [[ -n "$VC_SPACES" ]] || return 0
+  if [[ -n "$VC_PFX" ]]; then
+    [[ "$rel" == "$VC_PFX"* ]] || return 0
+    rel="${rel#"$VC_PFX"}"
+  fi
+  [[ "$rel" == */* ]] || return 0
+  _linked_spaces "$3"
+  for p in "${LINKED[@]}"; do
+    [[ "$rel" != "$p"/* ]] || { REPLY="$p"; return 0; }
+  done
+  REPLY="${rel%%/*}"
+}
 
 # The root of the vault containing <dir>, or return 1. Checks $HOME itself but never walks above
 # it, and stops at / for a start outside $HOME.
@@ -464,7 +525,7 @@ cmd_init() {
 # An ovm vault (ovm help). The id is this vault's identity: do not change it. The vault's name is
 # its entry in ~/vaults (OVM_VAULTS_HOME).
 id: $id
-spaces_path: spaces              # the folder whose subfolders are the vault spaces (ovm space add NAME)
+spaces_path: spaces              # the folder whose folders are the vault spaces (. the root; ovm space add PATH)
 exclude: [_templates]            # what docs and validate skip: path patterns (.obsidian/, .trash/ always)
 # The vocabulary \`ovm validate\` checks documents against; each key may also appear per space
 required: [type, id]             # keys every document's frontmatter must have
@@ -475,7 +536,7 @@ required: [type, id]             # keys every document's frontmatter must have
 #  status: [proposed, accepted, superseded]   # a list: one of these
 #  timestamp: datetime           # string, number, bool, date, datetime, list
 #tags: [idea, decision]          # allowed tags, frontmatter and inline; a/b is allowed by a
-#spaces:                         # per vault space: more vocabulary (where a space is linked: ovm space link)
+#spaces:                         # per vault space, by its path (anfs/product): more vocabulary
 #  product: {tags: [linker]}
 CFG
     made=true
@@ -629,25 +690,46 @@ cmd_path() {
   fail "$EX_NOTFOUND" "no vault or document matching '$1'"
 }
 
-cmd_docs() {
-  local arg="${1:-}" want_type="${CLI_OPT[type]:-}" want_space="${CLI_OPT[space]:-}"
-  want_space="${want_space%/}"
-  _require_yq
-  [[ -z "$arg" || -z "$want_space" ]] || fail "$EX_USAGE" "docs takes a vault, a vault space or a DIR, or --space: not both"
-  # Where to look: the vault spaces linked into --space; a DIR (in its vault), a vault or a vault
-  # space; else the vault you are in; else every vault
+# The part of <dir> (in the vault at <root>) that is vault space <path> or below it, into REPLY;
+# returns 1 when they do not meet or the folder is not there. What --space narrows a scope with.
+_space_narrow() {
+  local dir="$2" sd
+  _vault_cfg "$1"
+  [[ -n "$VC_SPACES" ]] || return 1
+  sd="$1/$VC_PFX$3"
+  if [[ "$dir" == "$sd" || "$dir" == "$sd"/* ]]; then REPLY="$dir"
+  elif [[ "$sd" == "$dir"/* ]]; then REPLY="$sd"
+  else return 1
+  fi
+  [[ -d "$REPLY" ]]
+}
+
+# --space PATH, checked, into REPLY (a trailing / dropped; empty when not given)
+_space_opt() {
+  REPLY="${CLI_OPT[space]:-}"
+  while [[ "$REPLY" == ?*/ ]]; do REPLY="${REPLY%/}"; done
+  [[ -z "$REPLY" ]] || _space_path_ok "$REPLY" ||
+    fail "$EX_USAGE" "--space is a vault space's path under spaces_path (anfs, anfs/product): $REPLY"
+}
+
+# The scope of docs and tasks, into S_ROOT, S_DIR and S_NAME (parallel): the vault spaces links.yml
+# links into <to>; else <arg>: a DIR (in its vault), a vault or <vault>/<space>; else the vault you
+# are in; else every vault. Then narrowed to the vault space <space> and below it, when given.
+S_ROOT=() S_DIR=() S_NAME=()
+_scope() {
+  local arg="$1" to="$2" space="$3" dir i v
   local -a roots=() dirs=() names=()
-  local dir i v
-  if [[ -n "$want_space" ]]; then
+  [[ -z "$arg" || -z "$to" ]] || fail "$EX_USAGE" "a vault, a vault space or a DIR, or --to: not both"
+  if [[ -n "$to" ]]; then
     _pairs_load
     _live_vaults
     local -A seen=()
     for i in "${!K_VAULT[@]}"; do
-      [[ "${K_TO[$i]}" == "$want_space" && -n "${LIVE_IX[${K_VAULT[$i]}]+x}" ]] || continue
+      [[ "${K_TO[$i]}" == "$to" && -n "${LIVE_IX[${K_VAULT[$i]}]+x}" ]] || continue
       v=${LIVE_IX[${K_VAULT[$i]}]}
       _vault_cfg "${LIVE[$v]}"
       [[ -n "$VC_SPACES" ]] || continue
-      dir="${LIVE[$v]}/$VC_SPACES/${K_SPACE[$i]}"
+      dir="${LIVE[$v]}/$VC_PFX${K_SPACE[$i]}"
       [[ -d "$dir" && -z "${seen[$dir]:-}" ]] || continue
       seen[$dir]=1
       roots+=("${LIVE[$v]}") dirs+=("$dir") names+=("${LIVE_NAME[$v]}")
@@ -675,6 +757,29 @@ cmd_docs() {
     _live_vaults
     roots=("${LIVE[@]}") dirs=("${LIVE[@]}") names=("${LIVE_NAME[@]}")
   fi
+  S_ROOT=() S_DIR=() S_NAME=()
+  for v in "${!roots[@]}"; do
+    if [[ -n "$space" ]]; then
+      if _space_narrow "${roots[$v]}" "${dirs[$v]}" "$space"; then dirs[$v]="$REPLY"; else dirs[$v]=""; fi
+    fi
+  done
+  # A folder inside another one in scope (nested links) is read once, with it
+  for v in "${!roots[@]}"; do
+    [[ -n "${dirs[$v]}" ]] || continue
+    for i in "${!dirs[@]}"; do
+      [[ $i -ne $v && -n "${dirs[$i]}" ]] || continue
+      if [[ "${dirs[$v]}" == "${dirs[$i]}"/* ]] || [[ "${dirs[$v]}" == "${dirs[$i]}" && $i -lt $v ]]; then continue 2; fi
+    done
+    S_ROOT+=("${roots[$v]}") S_DIR+=("${dirs[$v]}") S_NAME+=("${names[$v]}")
+  done
+}
+
+cmd_docs() {
+  local want_type="${CLI_OPT[type]:-}" to="${CLI_OPT[to]:-}" v
+  _require_yq
+  _space_opt
+  _scope "${1:-}" "${to%/}" "$REPLY"
+  local -a roots=("${S_ROOT[@]}") dirs=("${S_DIR[@]}") names=("${S_NAME[@]}")
 
   local file state id type title space
   for v in "${!roots[@]}"; do
@@ -682,8 +787,8 @@ cmd_docs() {
     while IFS="$US" read -r file state id type title; do
       [[ -n "$file" ]] || continue
       [[ -z "$want_type" || "$type" == "$want_type" ]] || continue
-      space=$(_space_of "${roots[$v]}" "${file#"${roots[$v]}"/}")
-      printf '%s\n' "$id$US$type$US$title$US$space$US$file$US${names[$v]}"
+      _space_of "${roots[$v]}" "${file#"${roots[$v]}"/}" "${names[$v]}"
+      printf '%s\n' "$id$US$type$US$title$US$REPLY$US$file$US${names[$v]}"
     done < <(_doc_scan "${roots[$v]}" "${dirs[$v]}")
   done | anfs_table "ID TYPE TITLE SPACE PATH VAULT" "id type title space path vault"
 }
@@ -704,7 +809,8 @@ cmd_show() {
   _fm_block "$D_PATH" > "$tmp/fm.yml"
   _doc_body "$D_PATH" > "$tmp/body"
   [[ -s "$tmp/fm.yml" ]] || echo '{}' > "$tmp/fm.yml"
-  space=$(_space_of "$D_ROOT" "${D_PATH#"$D_ROOT"/}")
+  _space_of "$D_ROOT" "${D_PATH#"$D_ROOT"/}" "$D_VAULT"
+  space="$REPLY"
   ID="$want" VAULT="$D_VAULT" VID="$D_VID" P="$D_PATH" SPACE="$space" FM="$tmp/fm.yml" BODY="$tmp/body" \
     yq -n -o=json '{
       "id": strenv(ID), "vault": strenv(VAULT), "vault_id": strenv(VID), "path": strenv(P),
@@ -722,8 +828,8 @@ cmd_show() {
 # missing, links.local.yml when links.yml is a link (shipped by a layer of the person's
 # repository, which is theirs to edit).
 
-# The declared pairs, one per (vault, space, wsm space): K_VAULT, K_SPACE, K_TO, K_AS (the
-# default, the space's name, filled in), K_FILE (where it is declared first). K_RO[vault|space|to]
+# The declared pairs, one per (vault, space, wsm space): K_VAULT, K_SPACE (its path under
+# spaces_path), K_TO, K_AS (the default, the last part of the space's path, filled in), K_FILE (where it is declared first). K_RO[vault|space|to]
 # is the shipped file (a link) that declares that pair, when one does.
 K_VAULT=() K_SPACE=() K_TO=() K_AS=() K_FILE=()
 declare -A K_RO=() K_SEEN=()
@@ -760,9 +866,10 @@ _pairs_read() {
     done
     [[ "${F[2]:-}" == "!!str" && -n "${F[3]:-}" && "${F[3]}" != */* ]] ||
       { _pairs_bad "$where: vault is the name of an entry of $(_display "$OVM_VAULTS_HOME")"; return 1; }
+    while [[ "${F[5]:-}" == ?*/ ]]; do F[5]="${F[5]%/}"; done
     where+=" (${F[3]}/${F[5]:-})"
-    [[ "${F[4]:-}" == "!!str" ]] && _space_name_ok "${F[5]:-}" ||
-      { _pairs_bad "$where: space is a folder's name under the vault's spaces_path"; return 1; }
+    [[ "${F[4]:-}" == "!!str" ]] && _space_path_ok "${F[5]:-}" ||
+      { _pairs_bad "$where: space is a folder's path under the vault's spaces_path (product, anfs/product)"; return 1; }
     case "${F[6]:-}" in
       "!!null") ;;
       "!!str") [[ -n "${F[7]:-}" && "${F[7]}" != */* && "${F[7]}" != .* ]] ||
@@ -791,7 +898,7 @@ _pairs_read() {
     [[ ! -L "$f" ]] || K_RO[$key]="$f"
     [[ -z "${K_SEEN[$key]:-}" ]] || continue
     K_SEEN[$key]=1
-    K_VAULT+=("${v[$k]}") K_SPACE+=("${s[$k]}") K_TO+=("${to[$k]}") K_AS+=("${as[$k]:-${s[$k]}}") K_FILE+=("$f")
+    K_VAULT+=("${v[$k]}") K_SPACE+=("${s[$k]}") K_TO+=("${to[$k]}") K_AS+=("${as[$k]:-${s[$k]##*/}}") K_FILE+=("$f")
   done
 }
 
@@ -822,9 +929,9 @@ _links_add() {
 # Which vault spaces ovm links into which wsm spaces (ovm help). Written by ovm space link, unlink
 # and remove; ovm space apply makes what is missing on a machine.
 #- vault: apex                 # an entry of ~/vaults
-#  space: product              # a folder under that vault's spaces_path
+#  space: anfs/product         # a folder under that vault's spaces_path, by its path
 #  to: [anfs-dev, lgat/tech]   # wsm space ids (wsm ls)
-#  as: apex                    # optional: the link's name in each wsm space (default: the space's)
+#  as: apex                    # optional: the link's name in each wsm space (default: product)
 EOF
   fi
   # shellcheck disable=SC2016
@@ -992,13 +1099,15 @@ _link_drop() {
 
 # --- ovm space ----------------------------------------------------------------------------
 
-# The vault space an argument names: <vault>/<space>, or <space> in the vault you are in. Sets
-# SP_VAULT (the entry's name), SP_SPACE, and when the vault is usable SP_ROOT, SP_VID, SP_REL (the
+# The vault space an argument names: <vault>/<path> (the first part is always the vault: apex/anfs/
+# product is anfs/product in apex), or a one-part <space> in the vault you are in. Sets
+# SP_VAULT (the entry's name), SP_SPACE (its path), and when the vault is usable SP_ROOT, SP_VID, SP_REL (the
 # folder, relative to the root) and SP_DIR. <need>: vault (it must be usable), folder (and the
 # folder there), or nothing (a vault no longer in ~/vaults is still named).
 SP_VAULT="" SP_SPACE="" SP_ROOT="" SP_VID="" SP_REL="" SP_DIR=""
 _space_arg() {
-  local arg="${1%/}" need="${2:-}" rc=0
+  local arg="$1" need="${2:-}" rc=0
+  while [[ "$arg" == ?*/ ]]; do arg="${arg%/}"; done
   if [[ "$arg" == */* ]]; then
     SP_VAULT="${arg%%/*}" SP_SPACE="${arg#*/}"
   elif _vault_of "$PWD"; then
@@ -1006,8 +1115,8 @@ _space_arg() {
   else
     fail "$EX_USAGE" "name the vault: <vault>/$arg (you are not in one)"
   fi
-  [[ -n "$SP_VAULT" && "$SP_VAULT" != .* ]] && _space_name_ok "$SP_SPACE" ||
-    fail "$EX_USAGE" "a vault space is <vault>/<space>, a folder directly under the vault's spaces_path: $arg"
+  [[ -n "$SP_VAULT" && "$SP_VAULT" != .* ]] && _space_path_ok "$SP_SPACE" ||
+    fail "$EX_USAGE" "a vault space is <vault>/<path>, a folder under the vault's spaces_path (apex/anfs/product): $arg"
   SP_ROOT="" SP_VID="" SP_REL="" SP_DIR=""
   _vaults_load
   _vault_resolve "$SP_VAULT" || rc=$?
@@ -1016,7 +1125,7 @@ _space_arg() {
     SP_VAULT="${E_NAME[$V_I]}" SP_ROOT="${E_ROOT[$V_I]}" SP_VID="${E_ID[$V_I]}"
     _vault_cfg "$SP_ROOT"
     if [[ -n "$VC_SPACES" ]]; then
-      SP_REL="$VC_SPACES/$SP_SPACE" SP_DIR="$SP_ROOT/$SP_REL"
+      SP_REL="$VC_PFX$SP_SPACE" SP_DIR="$SP_ROOT/$SP_REL"
     elif [[ -n "$need" ]]; then
       fail "$EX_STALE" "$(_display "$SP_ROOT/$OVM_CONFIG"): $VC_BAD"
     fi
@@ -1066,27 +1175,28 @@ cmd_space_list() {
     mine[v${LIVE_ID[$v]}]=1
     _vault_cfg "$root"
     [[ -z "$VC_BAD" ]] || warn "$(_display "$root/$OVM_CONFIG"): $VC_BAD"
-    # The folders, each with its links, then the links whose folder is not there
+    # The top-level folders and every space path links.yml declares in this vault, in order:
+    # each with its links, or unlinked
+    local -a paths=()
     while IFS= read -r s; do
-      [[ -n "$s" ]] || continue
-      shown[$s]=1
+      [[ -n "$s" && -z "${shown[$s]:-}" ]] || continue
+      shown[$s]=1 paths+=("$s")
+    done < <(_space_dirs "$root"
+             for i in "${!K_VAULT[@]}"; do [[ "${K_VAULT[$i]}" != "$name" ]] || printf '%s\n' "${K_SPACE[$i]}"; done)
+    if [[ ${#paths[@]} -gt 0 ]]; then mapfile -t paths < <(printf '%s\n' "${paths[@]}" | LC_ALL=C sort); fi
+    for s in "${paths[@]}"; do
       local any=false
       for i in "${!K_VAULT[@]}"; do
         [[ "${K_VAULT[$i]}" == "$name" && "${K_SPACE[$i]}" == "$s" ]] || continue
         any=true
-        _link_state "$root" "$VC_SPACES/$s" "${K_TO[$i]}" "${K_AS[$i]}"
+        if [[ -n "$VC_SPACES" ]]; then
+          _link_state "$root" "$VC_PFX$s" "${K_TO[$i]}" "${K_AS[$i]}"
+        else
+          LS_STATE="no folder" LS_PATH="" LS_DEST=""
+        fi
         rows+=("$(_space_row "$s" "${K_TO[$i]}" "${K_AS[$i]}" "$LS_STATE" "$LS_PATH" "$name" "$LS_DEST")")
       done
-      $any || rows+=("$(_space_row "$s" "" "" unlinked "" "$name" "$root/$VC_SPACES/$s")")
-    done < <(_space_dirs "$root")
-    for i in "${!K_VAULT[@]}"; do
-      [[ "${K_VAULT[$i]}" == "$name" && -z "${shown[${K_SPACE[$i]}]:-}" ]] || continue
-      if [[ -n "$VC_SPACES" ]]; then
-        _link_state "$root" "$VC_SPACES/${K_SPACE[$i]}" "${K_TO[$i]}" "${K_AS[$i]}"
-      else
-        LS_STATE="no folder" LS_PATH="" LS_DEST=""
-      fi
-      rows+=("$(_space_row "${K_SPACE[$i]}" "${K_TO[$i]}" "${K_AS[$i]}" "$LS_STATE" "$LS_PATH" "$name" "$LS_DEST")")
+      $any || rows+=("$(_space_row "$s" "" "" unlinked "" "$name" "$root/$VC_PFX$s")")
     done
     shown=()
   done
@@ -1103,8 +1213,13 @@ cmd_space_list() {
   for i in "${!R_PATH[@]}"; do
     [[ -z "${declared[${R_PATH[$i]}]:-}" && -L "${R_PATH[$i]}" ]] || continue
     $all || [[ -n "${mine[v${R_VID[$i]}]:-}" ]] || continue
-    rows+=("$(_space_row "${R_DEST[$i]##*/}" "${R_TGT[$i]}" "${R_PATH[$i]##*/}" orphan "${R_PATH[$i]}" \
-      "${vid_name[v${R_VID[$i]}]:-}" "${R_DEST[$i]}")")
+    s="${R_DEST[$i]##*/}" name="${vid_name[v${R_VID[$i]}]:-}"
+    if [[ -n "$name" ]]; then
+      root="${LIVE[${LIVE_IX[$name]}]}"
+      _vault_cfg "$root"
+      [[ -z "$VC_SPACES" || "${R_DEST[$i]}" != "$root/$VC_PFX"?* ]] || s="${R_DEST[$i]#"$root/$VC_PFX"}"
+    fi
+    rows+=("$(_space_row "$s" "${R_TGT[$i]}" "${R_PATH[$i]##*/}" orphan "${R_PATH[$i]}" "$name" "${R_DEST[$i]}")")
   done
 
   local -a out=()
@@ -1149,8 +1264,8 @@ cmd_space_link() {
   _wsm_load
   [[ -n "${WSM_KNOWN[$to]:-}" ]] || fail "$EX_NOTFOUND" "no wsm space '$to' (wsm ls)"
   [[ -n "$SP_VID" ]] || die "$(_display "$SP_ROOT/$OVM_CONFIG") has no id: ovm init $(_display "$SP_ROOT")"
-  [[ "$as" != "$SP_SPACE" ]] || as=""
-  local name="${as:-$SP_SPACE}" label="$SP_VAULT/$SP_SPACE" key="$SP_VAULT|$SP_SPACE|$to" i old="" declared=false
+  [[ "$as" != "${SP_SPACE##*/}" ]] || as=""
+  local name="${as:-${SP_SPACE##*/}}" label="$SP_VAULT/$SP_SPACE" key="$SP_VAULT|$SP_SPACE|$to" i old="" declared=false
   for i in "${!K_VAULT[@]}"; do
     [[ "${K_VAULT[$i]}|${K_SPACE[$i]}|${K_TO[$i]}" == "$key" ]] || continue
     declared=true old="${K_AS[$i]}"
@@ -1262,9 +1377,9 @@ cmd_space_apply() {
       [[ -n "${LIVE_IX[${K_VAULT[$i]}]+x}" ]] || continue
       v=${LIVE_IX[${K_VAULT[$i]}]}
       _vault_cfg "${LIVE[$v]}"
-      [[ -n "$VC_SPACES" && -d "${LIVE[$v]}/$VC_SPACES/${K_SPACE[$i]}" ]] || continue
+      [[ -n "$VC_SPACES" && -d "${LIVE[$v]}/$VC_PFX${K_SPACE[$i]}" ]] || continue
       made=$((made + 1))
-      _link_make "${LIVE[$v]}" "${LIVE_ID[$v]}" "$VC_SPACES/${K_SPACE[$i]}" "${K_TO[$i]}" "${K_AS[$i]}" \
+      _link_make "${LIVE[$v]}" "${LIVE_ID[$v]}" "$VC_PFX${K_SPACE[$i]}" "${K_TO[$i]}" "${K_AS[$i]}" \
         "${K_VAULT[$i]}/${K_SPACE[$i]}" || rc=1
     done
     [[ ${#K_VAULT[@]} -gt 0 ]] || say "no links in $(_display "$OVM_LINKS_YML") (ovm space link <vault>/<space> <spec>)"
@@ -1287,7 +1402,7 @@ cmd_space_apply() {
         v=${LIVE_IX[${K_VAULT[$i]}]}
         _vault_cfg "${LIVE[$v]}"
         [[ -n "$VC_SPACES" ]] || continue
-        _link_make "${LIVE[$v]}" "${LIVE_ID[$v]}" "$VC_SPACES/${K_SPACE[$i]}" "${K_TO[$i]}" "${K_AS[$i]}" \
+        _link_make "${LIVE[$v]}" "${LIVE_ID[$v]}" "$VC_PFX${K_SPACE[$i]}" "${K_TO[$i]}" "${K_AS[$i]}" \
           "${K_VAULT[$i]}/${K_SPACE[$i]}" || true
       done
       ;;
@@ -1308,7 +1423,8 @@ cmd_space_apply() {
 # --- validate -----------------------------------------------------------------------------
 #
 # A document is checked against the vocabulary of vault.yml: its own keys (required, kinds,
-# fields, tags), merged with those of the vault space it is in (spaces.<name>): required and tags
+# fields, tags), merged with those of the deepest vault space holding it that has an entry
+# (spaces.<path>: anfs, or anfs/product): required and tags
 # are the union, kinds and fields the vault's with the space's entries replacing the same names.
 
 # Put `id: <id>` into a document's frontmatter: on its empty id line, else as its last line
@@ -1376,9 +1492,13 @@ _vocab_load() {
     if [[ "${P[0]}" == spaces ]]; then
       sc="${P[1]}"
       if [[ ${#P[@]} -eq 2 ]]; then
+        if ! _space_path_ok "$sc"; then
+          V_FINDINGS+=("spaces.$sc: a vault space is a folder's path under spaces_path (product, anfs/product)")
+          continue
+        fi
         V_SPACE[$sc]=1
-        [[ -n "$VC_SPACES" && -d "$root/$VC_SPACES/$sc" ]] ||
-          V_FINDINGS+=("spaces.$sc: no folder ${VC_SPACES:-spaces}/$sc (ovm space add $sc)")
+        [[ -n "$VC_SPACES" && -d "$root/$VC_PFX$sc" ]] ||
+          V_FINDINGS+=("spaces.$sc: no folder ${VC_PFX:-./}$sc (ovm space add $sc)")
         continue
       fi
       rest=("${P[@]:2}")
@@ -1543,9 +1663,13 @@ cmd_validate() {
       minted=$((minted + 1))
       say "$rel: minted id $new"
     fi
-    # The scope: the vault space it is in when vault.yml says more of that space, else the vault's
-    sc=$(_space_of "$root" "$rel")
-    [[ -n "$sc" && -n "${V_SPACE[$sc]:-}" ]] || sc=.
+    # The scope: the deepest vault space holding it that vault.yml says more of, else the vault's
+    sc=.
+    if [[ -n "$VC_SPACES" && "$rel" == "$VC_PFX"*/* ]]; then
+      for key in "${!V_SPACE[@]}"; do
+        if [[ "${rel#"$VC_PFX"}" == "$key"/* ]] && [[ "$sc" == . || ${#key} -gt ${#sc} ]]; then sc="$key"; fi
+      done
+    fi
     # required: the vault's and the space's
     IFS="$US" read -ra reqs <<< "${V_REQ[.]:-}${V_REQ[$sc]:-}"
     asked=()
@@ -1653,14 +1777,35 @@ _complete_spaces_path() {
 _complete_spaces_of() {
   local d
   _complete_spaces_path "$1"
-  for d in "$1/$REPLY"/*/; do
+  [[ "$REPLY" != . ]] || REPLY=""
+  for d in "$1/${REPLY:+$REPLY/}"*/; do
     [[ -d "$d" ]] || continue
     d="${d%/}"
     printf '%s%s\n' "$2" "${d##*/}"
   done
 }
-# A vault space: the bare names of the vault you are in, then <vault>/<space> for every entry of
-# ~/vaults that answers (directory listings, and one line of its vault.yml)
+# The deeper vault spaces links.yml and links.local.yml link: <vault>/<path> per line, read in
+# bash from their block entries (`- vault: x`, `space: a/b`), as ovm writes them
+_complete_linked() {
+  local f line vault="" space="" re='^(-[[:space:]]+|[[:space:]]+)(vault|space):[[:space:]]*["'\'']?([^"'\''#[:space:]]+)'
+  for f in "$OVM_LINKS_YML" "$OVM_LINKS_LOCAL"; do
+    [[ -r "$f" ]] || continue
+    vault="" space=""
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      if [[ "$line" == -* ]]; then
+        [[ -z "$vault" || "$space" != */* ]] || printf '%s/%s\n' "$vault" "${space%/}"
+        vault="" space=""
+      fi
+      if [[ "$line" =~ $re ]]; then
+        if [[ "${BASH_REMATCH[2]}" == vault ]]; then vault="${BASH_REMATCH[3]}"; else space="${BASH_REMATCH[3]}"; fi
+      fi
+    done < "$f"
+    [[ -z "$vault" || "$space" != */* ]] || printf '%s/%s\n' "$vault" "${space%/}"
+  done | LC_ALL=C sort -u
+}
+# A vault space: the top-level ones of the vault you are in, then <vault>/<space> for every entry
+# of ~/vaults that answers (directory listings, and one line of its vault.yml), then the deeper
+# ones links.yml links
 complete_space() {
   local name root
   if root=$(_find_root "$PWD" 2>/dev/null); then _complete_spaces_of "$root" ""; fi
@@ -1668,8 +1813,24 @@ complete_space() {
     [[ -d "$OVM_VAULTS_HOME/$name" ]] && _reachable "$OVM_VAULTS_HOME/$name" || continue
     _complete_spaces_of "$OVM_VAULTS_HOME/$name" "$name/"
   done < <(_entries)
+  _complete_linked
 }
 complete_vault_or_space() { complete_vault; complete_space; }
+# --space's value, a vault space's path: the top-level ones and the deeper linked ones, of the
+# vault you are in, else of every vault
+complete_vault_space() {
+  local root here line
+  if root=$(_find_root "$PWD" 2>/dev/null); then
+    _complete_spaces_of "$root" ""
+    here=$(_entry_of "$root" 2>/dev/null) || return 0
+    while IFS= read -r line; do
+      [[ "${line%%/*}" != "$here" ]] || printf '%s\n' "${line#*/}"
+    done < <(_complete_linked)
+  else
+    complete_space | awk '{ sub(/^[^\/]*\//, ""); print }' | LC_ALL=C sort -u
+  fi
+}
+
 # A wsm space: wsm's to say
 complete_spec() { command wsm __complete install "" 2>/dev/null | cut -f1; }
 

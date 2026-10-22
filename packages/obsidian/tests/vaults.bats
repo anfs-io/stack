@@ -290,6 +290,15 @@ YML
   [ "$output" = "a/journal"$'\n'"a/product"$'\n'"b/home" ]
   run bash -c 'cd vaults/a && "$1" __complete space link ""' _ "$OVM"
   [ "$output" = "journal"$'\n'"product"$'\n'"a/journal"$'\n'"a/product"$'\n'"b/home" ]
+  # A deeper vault space links.yml links; --space's value is a path
+  mkdir -p vaults/a/spaces/product/deep
+  links "# mine\n- vault: a\n  space: product/deep\n  to: [x]\n- vault: b\n  space: home\n  to: x\n"
+  run ovm __complete space unlink ""
+  [ "$output" = "a/journal"$'\n'"a/product"$'\n'"b/home"$'\n'"a/product/deep" ]
+  run bash -c 'cd vaults/a && "$1" __complete docs --space ""' _ "$OVM"
+  [ "$output" = "journal"$'\n'"product"$'\n'"product/deep" ]
+  run ovm __complete docs --space ""
+  [ "$output" = "home"$'\n'"journal"$'\n'"product"$'\n'"product/deep" ]
   run ovm __complete space link "-"
   [[ "$output" == *"--as"$'\t'* ]]
   run ovm __complete space list ""

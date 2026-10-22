@@ -64,10 +64,20 @@ declared() { yq -r '.[] | .vault + "/" + .space + ">" + ([.to] | flatten | join(
   [ "$status" -eq 0 ]
   [[ "$output" == *"already a space"* ]]
   cmp vault.yml "$BATS_TEST_TMPDIR/before"
+  # A path: the folders above it made too; the first part is always the vault
+  run ovm space add notes/area/deep/er
+  [ "$status" -eq 0 ]
+  [ -d spaces/area/deep/er ]
   run ovm space add a/b/c
-  [ "$status" -eq 64 ]
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no vault 'a'"* ]]
   run ovm space add .hidden
   [ "$status" -eq 64 ]
+  for bad in notes/../x notes/a/.b notes/a//b; do
+    run ovm space add "$bad"
+    [ "$status" -eq 64 ]
+  done
+  [ ! -e ../x ]
   cd "$HOME"
   run ovm space add journal
   [ "$status" -eq 64 ]
@@ -242,10 +252,10 @@ declared() { yq -r '.[] | .vault + "/" + .space + ">" + ([.to] | flatten | join(
   [ ! -e "$HOME/spaces/acme/main/infra" ]
 }
 
-@test "an invalid links.yml: every space command is 64, docs --space too, and nothing is linked" {
+@test "an invalid links.yml: every space command is 64, docs --to too, and nothing is linked" {
   local bad
   for bad in "- vault: notes\n  space: product\n" "- vault: notes\n  space: product\n  to: [acme]\n  source: x\n" \
-             "vault: notes\n" "- just a string\n" "- vault: notes\n  space: a/b\n  to: acme\n" "- vault: notes\n  space: product\n  to: []\n"; do
+             "vault: notes\n" "- just a string\n" "- vault: notes\n  space: a/../b\n  to: acme\n" "- vault: notes\n  space: /abs\n  to: acme\n" "- vault: notes\n  space: product\n  to: []\n"; do
     links "$bad"
     run ovm space link notes/infra acme/main
     [ "$status" -eq 64 ]
@@ -256,8 +266,11 @@ declared() { yq -r '.[] | .vault + "/" + .space + ">" + ([.to] | flatten | join(
     [ "$status" -eq 64 ]
     run ovm space add notes/x
     [ "$status" -eq 64 ]
-    run ovm docs --space acme
+    run ovm docs --to acme
     [ "$status" -eq 64 ]
+    # Elsewhere a document's space is only the first folder: said, not refused
+    run ovm docs notes
+    [ "$status" -eq 0 ]
   done
   links "- vault: notes\n  space: product\n  to: [acme]\n  source: x\n"
   run ovm space list
@@ -284,6 +297,68 @@ declared() { yq -r '.[] | .vault + "/" + .space + ">" + ([.to] | flatten | join(
   [ -z "$(declared)" ]
   run ovm space remove -y notes/product
   [ "$status" -eq 1 ]
+}
+
+@test "nested vault spaces: a deeper folder links by its path; nested links into one wsm space need different names" {
+  mkdir -p vaults/notes/spaces/anfs/product vaults/notes/spaces/anfs/inbox
+  run ovm space link notes/anfs/product acme/main/tech --as apex
+  [ "$status" -eq 0 ]
+  points "$HOME/spaces/acme/main/tech/apex" "$HOME/vaults/notes/spaces/anfs/product"
+  [ "$(declared)" = "notes/anfs/product>acme/main/tech@apex" ]
+  # The space holding it, into the same wsm space: the same name is a conflict, another is fine
+  run ovm space link notes/anfs acme/main/tech --as apex
+  [ "$status" -eq 73 ]
+  run ovm space link notes/anfs acme/main/tech
+  [ "$status" -eq 0 ]
+  points "$HOME/spaces/acme/main/tech/anfs" "$HOME/vaults/notes/spaces/anfs"
+  # A deeper space's default name is its folder's
+  run ovm space link notes/anfs/product acme/main
+  [ "$status" -eq 0 ]
+  points "$HOME/spaces/acme/main/product" "$HOME/vaults/notes/spaces/anfs/product"
+  # --as equal to the folder's name is no as
+  [[ "$(declared)" == *"notes/anfs/product>acme/main"$'\n'* || "$(declared)" == *"notes/anfs/product>acme/main" ]]
+  # list: the top-level folders and the linked deeper one, by path; an unlinked deeper one is not
+  run ovm space list notes
+  [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 5 ]
+  [ "${lines[0]}" = "anfs"$'\t'"acme/main/tech"$'\t'"anfs"$'\t'"ok"$'\t'"~/spaces/acme/main/tech/anfs"$'\t'"notes" ]
+  [[ "$output" == *"anfs/product"$'\t'"acme/main/tech"$'\t'"apex"$'\t'"ok"* ]]
+  [[ "$output" == *"anfs/product"$'\t'"acme/main"$'\t'"product"$'\t'"ok"* ]]
+  [[ "$output" != *"anfs/inbox"* ]]
+  # Unlinking the outer one leaves the inner one's links
+  run ovm space unlink notes/anfs
+  [ "$status" -eq 0 ]
+  [ ! -e "$HOME/spaces/acme/main/tech/anfs" ]
+  points "$HOME/spaces/acme/main/tech/apex" "$HOME/vaults/notes/spaces/anfs/product"
+  run ovm space remove notes/anfs/product -y
+  [ "$status" -eq 0 ]
+  [ ! -e "$HOME/spaces/acme/main/tech/apex" ] && [ ! -e "$HOME/spaces/acme/main/product" ]
+  [ -d vaults/notes/spaces/anfs/product ]
+  # apply makes a declared deeper one
+  links "- vault: notes\n  space: anfs/product/\n  to: acme\n"
+  run ovm space apply
+  [ "$status" -eq 0 ]
+  points "$HOME/spaces/acme/product" "$HOME/vaults/notes/spaces/anfs/product"
+}
+
+@test "spaces_path: . makes the folders at the vault's root its spaces" {
+  yq -i '.spaces_path = "."' vaults/notes/vault.yml
+  mkdir -p vaults/notes/journal vaults/notes/_templates vaults/notes/.obsidian
+  cd vaults/notes
+  run ovm space list
+  [ "$status" -eq 0 ]
+  [ "$output" = "journal"$'\t'"-"$'\t'"-"$'\t'"unlinked"$'\t'"-"$'\t'"notes"$'\n'"spaces"$'\t'"-"$'\t'"-"$'\t'"unlinked"$'\t'"-"$'\t'"notes" ]
+  run ovm space add work
+  [ "$status" -eq 0 ]
+  [ -d work ]
+  run ovm space link notes/spaces/product acme/main/tech
+  [ "$status" -eq 0 ]
+  points "$LINK" "$PRODUCT"
+  run ovm space list --json
+  run yq -p json -r '.[] | select(.space == "spaces/product") | .status + " " + .path' <<< "$output"
+  [ "$output" = "ok $PRODUCT" ]
+  run ovm validate
+  [[ "$output" != *"spaces_path"* ]]
 }
 
 @test "space list: no vault, no folder, orphan, pending, conflict, dangling, missing; --problems" {

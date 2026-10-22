@@ -91,7 +91,7 @@ setup() {
   [[ "$output" == *"dddddddddd"*$'\t'"-"$'\t'* ]]
 }
 
-@test "docs --space: the vault spaces links.yml links into a wsm space, across vaults" {
+@test "docs --to: the vault spaces links.yml links into a wsm space, across vaults" {
   vault other
   mkdir -p vaults/notes/spaces/product vaults/other/spaces/product vaults/other/spaces/misc
   doc vaults/notes/spaces/product/a.md dddddddddd Note
@@ -99,19 +99,96 @@ setup() {
   doc vaults/other/spaces/misc/c.md ffffffffff Note
   links "- vault: notes\n  space: product\n  to: [anfs-dev]\n- vault: other\n  space: product\n  to: anfs-dev\n  as: other\n- vault: other\n  space: misc\n  to: [lgat]\n"
   cd vaults/notes
-  run ovm docs --space anfs-dev
+  run ovm docs --to anfs-dev
   [ "$status" -eq 0 ]
   [ "${#lines[@]}" -eq 2 ]
   [[ "${lines[0]}" == "dddddddddd"$'\t'*$'\t'"product"$'\t'*$'\t'"notes" ]]
   [[ "${lines[1]}" == "eeeeeeeeee"$'\t'*$'\t'"product"$'\t'*$'\t'"other" ]]
-  run ovm docs --space lgat/
+  run ovm docs --to lgat/
   [ "${#lines[@]}" -eq 1 ]
-  run ovm docs --space nowhere
+  run ovm docs --to nowhere
   [ "$status" -eq 0 ]
   [ -z "$output" ]
-  # A place and --space together is a usage error
-  run ovm docs notes --space anfs-dev
+  # A place and --to together is a usage error
+  run ovm docs notes --to anfs-dev
   [ "$status" -eq 64 ]
+}
+
+@test "a document's space is the deepest linked vault space holding it; --space takes a path and what is below it" {
+  vault other
+  mkdir -p vaults/notes/spaces/anfs/product/deep vaults/notes/spaces/anfs/inbox vaults/notes/spaces/ops vaults/other/spaces/anfs
+  doc vaults/notes/spaces/anfs/product/p.md pppppppppp Note
+  doc vaults/notes/spaces/anfs/product/deep/q.md qqqqqqqqqq Note
+  doc vaults/notes/spaces/anfs/inbox/i.md iiiiiiiiii Note
+  doc vaults/notes/spaces/anfs/a.md kkkkkkkkkk Note
+  doc vaults/notes/spaces/ops/o.md oooooooooo Note
+  doc vaults/other/spaces/anfs/x.md xxxxxxxxxx Note
+  # space <id>: what docs says of it
+  sp() { ovm docs --json "$@" | yq -p json -r '.[] | .id + " " + (.space // "-")' | sort | tr '\n' ' '; }
+  # Nothing linked: the first folder under spaces/
+  [ "$(sp notes --type Note)" = "iiiiiiiiii anfs kkkkkkkkkk anfs oooooooooo ops pppppppppp anfs qqqqqqqqqq anfs " ]
+  # anfs/product linked (anywhere): it and what is below it
+  links "- vault: notes\n  space: anfs/product\n  to: [nowhere]\n"
+  [ "$(sp notes --type Note)" = "iiiiiiiiii anfs kkkkkkkkkk anfs oooooooooo ops pppppppppp anfs/product qqqqqqqqqq anfs/product " ]
+  # The deepest linked wins; another vault's links are not this one's
+  links "- vault: notes\n  space: anfs/product\n  to: [nowhere]\n- vault: notes\n  space: anfs/product/deep\n  to: x\n- vault: other\n  space: anfs/inbox\n  to: x\n"
+  [ "$(sp notes --type Note)" = "iiiiiiiiii anfs kkkkkkkkkk anfs oooooooooo ops pppppppppp anfs/product qqqqqqqqqq anfs/product/deep " ]
+  run ovm show qqqqqqqqqq --json
+  run yq -p json -r .space <<< "$output"
+  [ "$output" = "anfs/product/deep" ]
+  # --space: the path and everything below it, by whole parts
+  [ "$(sp notes --space anfs)" = "iiiiiiiiii anfs kkkkkkkkkk anfs pppppppppp anfs/product qqqqqqqqqq anfs/product/deep " ]
+  [ "$(sp notes --space anfs/product/)" = "pppppppppp anfs/product qqqqqqqqqq anfs/product/deep " ]
+  [ "$(sp notes --space anfs/prod)" = "" ]
+  # Across vaults outside one; in the vault you are in; with a DIR
+  [ "$(sp --space anfs --type Note | wc -w | tr -d ' ')" = 10 ]
+  cd vaults/notes
+  [ "$(sp --space ops)" = "oooooooooo ops " ]
+  [ "$(sp ./spaces/anfs/product/deep --space anfs)" = "qqqqqqqqqq anfs/product/deep " ]
+  [ "$(sp ./spaces/ops --space anfs)" = "" ]
+  run ovm docs --space ../x
+  [ "$status" -eq 64 ]
+  run ovm docs --space .hidden
+  [ "$status" -eq 64 ]
+  # A vault space by its path as the argument
+  [ "$(sp notes/anfs/product)" = "pppppppppp anfs/product qqqqqqqqqq anfs/product/deep " ]
+  # --to and --space together: the linked spaces, narrowed
+  links "- vault: notes\n  space: anfs\n  to: [acme]\n- vault: notes\n  space: anfs/product\n  to: [acme]\n  as: apex\n"
+  [ "$(sp --to acme --space anfs/product)" = "pppppppppp anfs/product qqqqqqqqqq anfs/product " ]
+  [ "$(sp --to acme | wc -w | tr -d ' ')" = 8 ]
+}
+
+@test "spaces_path: . — the first folder at the root is a document's space; a file at the root has none" {
+  yq -i '.spaces_path = "."' vaults/notes/vault.yml
+  doc vaults/notes/top.md tttttttttt Note
+  cd vaults/notes
+  run ovm docs
+  [[ "$output" == *"aaaaaaaaaa"$'\t'"PRD"$'\t'"The first"$'\t'"prd"$'\t'* ]]
+  [[ "$output" == *"tttttttttt"$'\t'"Note"$'\t'"A title"$'\t'"-"$'\t'* ]]
+  run ovm docs --space adr
+  [ "${#lines[@]}" -eq 1 ]
+  [[ "$output" == "cccccccccc"* ]]
+  run ovm docs notes/prd
+  [ "${#lines[@]}" -eq 2 ]
+  # The vocabulary of a space at the root
+  yq -i '.spaces.prd.required = ["owner"]' vault.yml
+  run ovm validate
+  [[ "$output" == *"prd/one.md: missing required key: owner"* ]]
+  [[ "$output" != *"adr/why.md: missing required key: owner"* ]]
+  [[ "$output" != *"vault.yml:"* ]]
+}
+
+@test "validate: a deeper vault space's vocabulary, the deepest entry of spaces: holding the document" {
+  mkdir -p vaults/notes/spaces/anfs/product vaults/notes/spaces/anfs/inbox
+  file vaults/notes/spaces/anfs/product/p.md "---\nid: pppppppppp\ntype: Note\n---\n"
+  file vaults/notes/spaces/anfs/inbox/i.md "---\nid: iiiiiiiiii\ntype: Note\n---\n"
+  yq -i '.spaces.anfs.required = ["area"] | .spaces["anfs/product"].required = ["owner"] | .spaces["a/../b"] = {}' vaults/notes/vault.yml
+  cd vaults/notes
+  run ovm validate
+  [[ "$output" == *"spaces/anfs/product/p.md: missing required key: owner"* ]]
+  [[ "$output" != *"spaces/anfs/product/p.md: missing required key: area"* ]]
+  [[ "$output" == *"spaces/anfs/inbox/i.md: missing required key: area"* ]]
+  [[ "$output" == *"vault.yml: spaces.a/../b: a vault space is a folder's path"* ]]
 }
 
 @test "docs skips what vault.yml's exclude: names: a directory, a pattern across /, a file pattern" {

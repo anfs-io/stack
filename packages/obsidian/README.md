@@ -35,7 +35,9 @@ ovm init [dir]                        # make an entry of ~/vaults a vault: vault
 ovm list                              # NAME ID STATUS (ok, unreachable, not a vault) PATH
 ovm path [--dir] [vault-or-doc]       # a vault's path, or a document's by id (--dir: its directory)
 ovm cd [vault-or-doc]                 # go there: a vault, or a document's directory
-ovm docs [vault | vault/space | DIR]  # documents by their frontmatter id; --space <wsm space>
+ovm docs [vault | vault/space | DIR]  # documents by their frontmatter id
+                                      # --space anfs: that vault space and below it (anfs/product)
+                                      # --to <wsm space>: the vault spaces linked into it
 ovm show <id>
 ovm validate [--fix] [--strict]       # documents against the vault's vocabulary
 ```
@@ -52,7 +54,7 @@ never rewrites one beyond minting a missing id.
 
 ```yaml
 id: fl24qptnnh                   # the vault's identity: do not change it
-spaces_path: spaces              # the folder whose subfolders are the vault spaces (default spaces)
+spaces_path: spaces              # the folder whose folders are the vault spaces (default spaces; . the root)
 exclude: [_templates, "*/drafts"] # what docs and validate skip (.obsidian/, .trash/ always)
 required: [type, id]             # keys every document's frontmatter must have (default [type, id])
 kinds:                           # allowed values of `type`; each may require more keys
@@ -62,15 +64,17 @@ fields:                          # the value type of a frontmatter key
   status: [proposed, accepted, superseded]   # a list: one of these
   timestamp: datetime            # string, number, bool, date, datetime, list
 tags: [idea, decision, go]       # allowed tags, frontmatter and inline; a/b is allowed by a
-spaces:                          # per vault space: more of the same vocabulary
+spaces:                          # per vault space (by its path): more of the same vocabulary
   product: {tags: [linker, wsm]}
+  anfs/product: {required: [owner]}
 ```
 
 - `exclude:` patterns are matched against each path relative to the vault's root, as bash's
   `[[ $path == $pattern ]]` (so `*` crosses `/`); a matching directory is skipped whole. Hidden
   names and `node_modules` are always skipped.
-- For a document in vault space S, `required` and `tags` are the vault's and S's together; `kinds`
-  and `fields` are the vault's with S's entries replacing those of the same name.
+- For a document under vault space S (the deepest `spaces:` entry holding it: `anfs/product`
+  before `anfs`), `required` and `tags` are the vault's and S's together; `kinds` and `fields`
+  are the vault's with S's entries replacing those of the same name.
 - `ovm validate` reports, per document: no or unclosed frontmatter, YAML that does not parse, a
   missing required key, a `type` that is not one of `kinds` (when there are any) or lacks what
   its kind requires, a field whose value is not of its type (`string`: any single value; `number`;
@@ -83,17 +87,22 @@ spaces:                          # per vault space: more of the same vocabulary
 
 ### Vault spaces and links.yml
 
-A vault space is a folder directly under `spaces_path`: `<vault>/<space>`, or `<space>` in the
-vault you are in. Which vault spaces show up in which wsm spaces is neither the vault's business
+A vault space is any folder under `spaces_path`, named by its path there: `<vault>/<path>`
+(`apex/anfs/product`: the first part is always the vault), or `<space>` in the vault you are in.
+`spaces_path: .` makes the folders at the vault's root the spaces. A space may hold another
+(`anfs` and `anfs/product`), and both may be linked, into one wsm space too under different names.
+A document's space (`ovm docs`' SPACE, `ovm tasks`' `space`) is the deepest vault space
+links.yml links that holds it, else the first folder under `spaces_path`; a file directly in
+`spaces_path` has none. Which vault spaces show up in which wsm spaces is neither the vault's business
 nor wsm's: it is yours, in `~/.config/ovm/links.yml`. Your repository's layer of this package can
 ship it; one machine's additions go in `links.local.yml` beside it (it adds links, it cannot take
 one away).
 
 ```yaml
 - vault: apex                 # an entry of ~/vaults
-  space: product              # a folder under that vault's spaces_path
+  space: anfs/product         # a folder under that vault's spaces_path, by its path
   to: [anfs-dev, lgat/tech]   # wsm space ids (wsm ls)
-  as: apex                    # optional: the link's name in each wsm space (default: the space's)
+  as: apex                    # optional: the link's name in each wsm space (default: product)
 ```
 
 ovm reads each wsm space's directory from `wsm ls --json` and puts a relative symlink there
@@ -101,11 +110,13 @@ ovm reads each wsm space's directory from `wsm ls --json` and puts a relative sy
 `unlink` and `remove` are what write the files: `links.yml` when it is a file of its own (or
 missing), `links.local.yml` when `links.yml` is a link (shipped), and they say so. A pair only the
 shipped file declares is edited there. A file that does not read (an entry without `to`, an
-unknown key) stops every `ovm space` command with 64, naming the entry.
+unknown key) stops every `ovm space` command and `docs --to` with 64, naming the entry; elsewhere
+it is warned about and a document's space is then its first folder.
 
 ```bash
-ovm space list [vault]                # SPACE TO AS STATUS LINK VAULT; --problems: exit 1 on any
-ovm space add <space>                 # make the folder (never writes vault.yml)
+ovm space list [vault]                # the top-level spaces and the linked deeper ones:
+                                      # SPACE TO AS STATUS LINK VAULT; --problems: exit 1 on any
+ovm space add <space>                 # make the folder, and those above it (never writes vault.yml)
 ovm space link <space> <wsm-space> [--as NAME]
 ovm space unlink <space> [<wsm-space>]
 ovm space remove <space>              # unlink it everywhere; the folder and its notes stay
