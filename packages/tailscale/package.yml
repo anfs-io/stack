@@ -1,4 +1,4 @@
-version: 0.1.2
+version: 0.1.3
 author: rjayroach
 categories: [utils]
 
@@ -12,6 +12,9 @@ categories: [utils]
 # which ppm's brew/cask/system vocabulary can express.
 cask:
   macos: [tailscale-app]
+
+# ~/.local/lib/tsm is one link: a library added upstream is there after a pull
+links: [.local/lib/tsm/]
 
 depends:
   # tsm resolves the join credential with `fnox get`; without it the join is manual.

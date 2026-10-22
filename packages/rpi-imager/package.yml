@@ -1,4 +1,4 @@
-version: 0.2.1
+version: 0.2.2
 author: rjayroach
 categories: [utils]
 
@@ -15,3 +15,5 @@ cask:
 # rpi-eeprom: `rpi-imager bootorder` reads and writes BOOT_ORDER.
 system:
   debian: [xz-utils, util-linux, parted, rpi-eeprom]
+# ~/.local/lib/rpi-imager is one link: a library added upstream is there after a pull
+links: [.local/lib/rpi-imager/]

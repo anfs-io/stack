@@ -1,8 +1,9 @@
 # bash
 
 # bash's rc paths are fixed, so a distro's own ~/.bashrc (Debian and Fedora both ship one) sits
-# exactly where this package stows. Move it aside instead of letting stow abort the install or
-# `-f` delete it: the user keeps the file and can copy anything they want into their own repo.
+# exactly where this package links. Move it aside, beside it as .pre-ppm: otherwise the install
+# stops on it as a conflict, and -f would only move it to ppm's backup. The user keeps the file
+# and can copy anything they want into their own repo.
 # ~/.profile is left alone, but note that shipping ~/.bash_profile stops bash login shells from
 # reading it — .bashrc sets the base env (PATH, brew, XDG) itself for that reason.
 pre_install() {

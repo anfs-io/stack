@@ -7,6 +7,8 @@ post_install() {
     curl -fsSL -o "$HOME/.ssh/authorized_keys" "$PPM_SSH_AUTHORIZED_KEYS_URL"
     chmod 600 "$HOME/.ssh/authorized_keys"
   fi
+  # A line in your own ~/.ssh/config, neither a link nor a copy (a package.yml's links: and files:
+  # cannot say it): a candidate for a setup: key later
   add_to_file "$HOME/.ssh/config" "Include config.d/*.conf"
 }
 

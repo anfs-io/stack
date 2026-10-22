@@ -17,8 +17,8 @@ agent, and forwards a service account token to remote hosts.
 home/.config/zsh/op.zsh          zcomp op — completions, nothing else
 home/.config/zsh/ssh/op.zsh      ssh hook: forwards the token
 home/.local/bin/opm              vault / service account lifecycle (bash)
-macos/.ssh/config.d/99-op.conf   IdentityAgent -> 1Password agent socket
-linux/.config/mise/conf.d/op.toml
+home/.ssh/config.d/99-op.conf    IdentityAgent -> 1Password agent socket (macOS only: links: in package.yml)
+home/.config/mise/conf.d/op.toml installs op on Linux (Linux only: links: in package.yml)
 install.sh                       sshd AcceptEnv drop-in
 ```
 

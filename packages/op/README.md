@@ -219,8 +219,8 @@ the forwarded token remotely.
 | `home/.config/zsh/op.zsh` | `op` completions |
 | `home/.config/zsh/ssh/op.zsh` | the ssh hook that forwards the token |
 | `home/.local/bin/opm` | vault and service account lifecycle |
-| `macos/.ssh/config.d/99-op.conf` | `IdentityAgent` → 1Password SSH agent |
-| `linux/.config/mise/conf.d/op.toml` | installs `op` on Linux |
+| `home/.ssh/config.d/99-op.conf` | `IdentityAgent` → 1Password SSH agent (macOS only: `links:` in `package.yml`) |
+| `home/.config/mise/conf.d/op.toml` | installs `op` on Linux (Linux only: `links:` in `package.yml`) |
 | `install.sh` | the sshd `AcceptEnv` drop-in |
 
 ## Testing
