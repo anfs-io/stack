@@ -23,45 +23,86 @@ the `authentik` database and passes the connection details in as
 nor the defaults from `.env.schema`, so use pcm (or `--pcm`).
 
 Web UI: <http://localhost:9000> (HTTPS on <https://localhost:9443>). The first
-start runs migrations and takes a minute or two.
+start runs migrations and takes a minute or two; the `ak healthcheck` checks on
+server and worker hold dependents back until it is done.
 
-First-run setup wizard: <http://localhost:9000/if/flow/initial-setup/> — this is
-where you set the `akadmin` password.
+### Admin login (bootstrap)
+
+On its first start against an empty database authentik creates `akadmin` from
+`AUTHENTIK_BOOTSTRAP_PASSWORD` and `AUTHENTIK_BOOTSTRAP_EMAIL`, so there is no setup
+wizard. The defaults (`dev-insecure-akadmin`, `akadmin@localhost`) are INSECURE
+dev values; override them in `local.env` before the first start for anything shared.
+Both are read only on that first start: afterwards change the password in authentik.
+
+The database lives in the shared postgres, not under this definition's data dir, so
+an `authentik` database that already existed keeps its admin (bootstrap is skipped).
+If that admin has no password (the wizard was never finished), set one with
+`pcm exec -s worker authentik -- ak changepassword akadmin`.
 
 ## Register an application (OIDC)
 
-To let your app authenticate against this authentik, register it as an OIDC
-client. Log in as `akadmin`, open the **admin interface**, and go to
-**Applications → Applications → Create with wizard** to launch the *New
-application* flow. Its five steps:
+### From a dependent: the provision hook
 
-**1. Application** — how the app appears in authentik.
-- **Application Name** *(required)* — display name on the user dashboard, e.g.
-  `Rails Dev`.
-- **Slug** *(required)* — internal name used in URLs; it becomes part of the
-  OIDC endpoints (`/application/o/<slug>/…`), so keep it stable, e.g. `rails-dev`.
-- **Group** *(optional)* — apps sharing a group are shown grouped on the dashboard.
-- **Policy engine mode** *(required)* — how bound access policies combine:
-  **ANY** (any matching policy grants access) or **ALL** (every policy must
-  pass). Leave **ANY** for dev.
+A definition that depends on authentik gets an OAuth2/OpenID client registered on
+`pcm up`, and it is removed again on `pcm remove`:
 
-**2. Choose a Provider** — pick **OAuth2/OpenID Provider** for OIDC (or **SAML
-Provider** if your app speaks SAML).
+```yaml
+x-pcm:
+  depends_on:
+    authentik:
+      slug: shop                        # required: app slug and client_id
+      redirect: http://localhost:3000/auth/callback   # required
+      name: Shop                        # optional, default: slug
+      # client_type: public             # default; confidential is not supported yet
+```
 
-**3. Configure Provider** — the OIDC client settings:
-- **Authorization flow** — `default-provider-authorization-explicit-consent`, or
-  the `…-implicit-consent` variant to skip the consent screen in dev.
-- **Client type** — **Confidential** for a server-side app like Rails (you get a
-  client ID *and* secret); **Public** only for SPAs/native apps that can't keep a
-  secret.
-- **Redirect URIs** — your app's callback, e.g.
-  `http://localhost:3000/auth/authentik/callback`. Matched exactly by default.
-- Note the generated **Client ID** and **Client Secret** — your app needs both.
+| Setting | |
+|---|---|
+| `slug` | Required. Application slug and OIDC `client_id`; a DNS label (`[a-z0-9][a-z0-9-]*`) |
+| `redirect` | Required. Strict-match redirect URI(s): repeat `redirect=` as args, or give a comma-separated list (the only form a YAML map can hold) |
+| `name` | Display name, default the slug |
+| `client_type` | `public` (default: PKCE, no secret). `confidential` fails with "not yet supported" |
 
-**4. Configure Bindings** *(optional)* — bind policies/groups that gate who may
-use the app. Skip for open dev access; add a group binding later to restrict it.
+It prints, and pcm injects as `PCM_AUTHENTIK_<KEY>`:
 
-**5. Review and Submit** — confirm and create.
+| Key | Value |
+|---|---|
+| `ISSUER` | `http://localhost:${AUTHENTIK_HTTP_PORT}/application/o/<slug>/` |
+| `CLIENT_ID` | `<slug>` |
+| `CLIENT_TYPE` | `public` |
+
+The issuer is the host's `localhost` URL: the intended consumer is an app run on
+the host (e.g. a Rails dev server), and the issuer in tokens follows the host the
+browser used.
+
+An app that isn't a pcm definition calls the same hooks through pcm:
+
+```sh
+pcm provision --as partitia/shop authentik slug=shop \
+  redirect=http://localhost:3000/auth/callback redirect=http://127.0.0.1:3000/auth/callback
+pcm provision --json authentik slug=shop redirect=...    # the keys as a JSON object
+pcm deprovision --as partitia/shop authentik slug=shop
+```
+
+How it works: `provision` writes the blueprint `pcm-<slug>.yaml` into
+`${PCM_VOLUMES_HOME}/authentik/blueprints/` (mounted on the worker at
+`/blueprints/custom`) and applies it synchronously with
+`podman exec <worker> ak apply_blueprint custom/pcm-<slug>.yaml`. The blueprint
+defines a public OAuth2/OpenID provider (`client_id` = slug, strict redirect URIs,
+the built-in self-signed signing key, the implicit-consent authorization flow, the
+default invalidation flow, the openid/email/profile scopes, grant types
+`authorization_code` and `refresh_token`) and the application bound to it. It is
+labelled `instantiate: "false"`, so the worker's file discovery leaves it alone and
+only the hooks apply it. Applying is idempotent; every `pcm up` re-applies it, which
+also puts back anything edited in the UI. `deprovision` rewrites the file with
+`state: absent`, applies it, checks the app and provider are gone, then deletes it.
+
+### By hand
+
+Log in as `akadmin`, open the admin interface and use **Applications →
+Applications → Create with wizard**: an **OAuth2/OpenID Provider**, client type
+**Public** (PKCE) or **Confidential**, your callback as a strict redirect URI, and
+in 2026.x make sure the authorization-code grant type is enabled on the provider.
 
 ### Connect your app
 
@@ -94,8 +135,9 @@ on first run. To override, put the lines in `~/.config/pcm/containers/authentik/
 `.env` is shipped. Real secrets belong in fnox: a `fnox.toml` in this directory, with
 providers in `../fnox.toml`.
 
-> **Secret:** `AUTHENTIK_SECRET_KEY` ships with an insecure dev default. Set a
-> real one (`openssl rand -hex 32`) before exposing authentik beyond localhost.
+> **Secrets:** `AUTHENTIK_SECRET_KEY` and `AUTHENTIK_BOOTSTRAP_PASSWORD` ship with
+> insecure dev defaults. Set real ones (`openssl rand -hex 32`) before exposing
+> authentik beyond localhost.
 
 ### Embedded outposts (off)
 

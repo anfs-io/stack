@@ -19,6 +19,19 @@ x-authentik-env: &authentik-env
   AUTHENTIK_POSTGRESQL__USER: ${PCM_POSTGRES_USER}
   AUTHENTIK_POSTGRESQL__PASSWORD: ${PCM_POSTGRES_PASSWORD}
   AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+  # First start only (an empty database): creates akadmin with this password and
+  # email, so the initial-setup wizard is not needed. Ignored once akadmin exists.
+  AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD}
+  AUTHENTIK_BOOTSTRAP_EMAIL: ${AUTHENTIK_BOOTSTRAP_EMAIL}
+
+# `ak healthcheck` checks the process the container runs (server or worker).
+# start_period covers the first start, when migrations take a minute or two.
+x-authentik-healthcheck: &authentik-healthcheck
+  test: ["CMD", "ak", "healthcheck"]
+  interval: 10s
+  timeout: 10s
+  retries: 5
+  start_period: 180s
 
 services:
   server:
@@ -35,6 +48,7 @@ services:
       # :U chowns the host dirs to the image's non-root user (uid 1000, rootless podman)
       - ${PCM_VOLUMES_HOME}/authentik/data:/data:U
       - ${PCM_VOLUMES_HOME}/authentik/custom-templates:/templates:U
+    healthcheck: *authentik-healthcheck
 
   worker:
     image: ${AUTHENTIK_IMAGE}:${AUTHENTIK_TAG}
@@ -50,3 +64,8 @@ services:
       - ${PCM_VOLUMES_HOME}/authentik/data:/data:U
       - ${PCM_VOLUMES_HOME}/authentik/certs:/certs:U
       - ${PCM_VOLUMES_HOME}/authentik/custom-templates:/templates:U
+      # Written by the provision hook (pcm-<slug>.yaml) and applied with
+      # `ak apply_blueprint custom/<file>` here: the worker is what applies
+      # blueprints (paths are relative to /blueprints), the server never reads them.
+      - ${PCM_VOLUMES_HOME}/authentik/blueprints:/blueprints/custom:U
+    healthcheck: *authentik-healthcheck
