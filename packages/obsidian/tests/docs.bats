@@ -108,7 +108,7 @@ setup() {
   [ "${#lines[@]}" -eq 1 ]
   run ovm docs --to nowhere
   [ "$status" -eq 0 ]
-  [ -z "$output" ]
+  [ "$output" = "ovm: no vault space is linked into nowhere (~/.config/ovm/links.yml): ovm space link <vault>/<space> nowhere" ] || [[ "$output" == *"no vault space is linked into nowhere"* && "${#lines[@]}" -eq 1 ]]
   # A place and --to together is a usage error
   run ovm docs notes --to anfs-dev
   [ "$status" -eq 64 ]
@@ -391,6 +391,18 @@ setup() {
   file vaults/notes/d.md "---\nid: qqqqqqqqqq\ntype: Note\n---\n#linker\n"
   run ovm validate
   [[ "$output" == *"d.md: tag 'linker' is not in the vocabulary"* ]]
+}
+
+@test "validate: go is a built-in tag, allowed whether vault.yml lists it or not; go/x is not" {
+  yq -i '.tags = ["idea"]' vaults/notes/vault.yml
+  file vaults/notes/a.md "---\nid: nnnnnnnnnn\ntype: Note\ntags: [go]\n---\n- [ ] ship it #go #idea\n#go/x\n"
+  cd vaults/notes
+  run ovm validate --strict
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"tag 'go' "* ]]
+  [[ "$output" == *"a.md: tag 'go/x' is not in the vocabulary"* ]]
+  [[ "$output" == *"1 finding(s)"* ]]
+  ovm help | grep -q "ovm validate always allows the tag go"
 }
 
 @test "validate: vault.yml's own findings, the old keys with what replaced them" {

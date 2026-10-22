@@ -179,7 +179,7 @@ EOF
   [ "$output" = "[]" ]
 }
 
-@test "--space: the vault spaces links.yml links into a wsm space, across vaults; one space in two" {
+@test "--to: the vault spaces links.yml links into a wsm space, across vaults; one space in two" {
   vault other
   mkdir -p vaults/notes/spaces/product vaults/other/spaces/product vaults/other/spaces/misc
   printf -- '- [ ] n product\n' | put vaults/notes/spaces/product/a.md
@@ -187,30 +187,68 @@ EOF
   printf -- '- [ ] o misc\n' | put vaults/other/spaces/misc/c.md
   printf -- '- [ ] n root\n' | put vaults/notes/d.md
   links "- vault: notes\n  space: product\n  to: [anfs-dev, lgat]\n- vault: other\n  space: product\n  to: anfs-dev\n  as: other\n- vault: other\n  space: misc\n  to: [lgat]\n"
-  run tj 'map([.space, .text])' --space anfs-dev
+  run tj 'map([.space, .text])' --to anfs-dev
   [ "$status" -eq 0 ]
   [ "$output" = '[["notes/product","n product"],["other/product","o product"]]' ]
-  run tj 'map([.space, .text])' --space lgat/
+  run tj 'map([.space, .text])' --to lgat/
   [ "$output" = '[["notes/product","n product"],["other/misc","o misc"]]' ]
   # The wsm space need not be installed (links.yml is read, not wsm)
   [ ! -s "$WSM_LEVELS" ]
 }
 
-@test "--space: no entry is 0, empty, and a warning naming ovm space link; missing vault or folder warned and skipped; with an argument 64" {
+@test "--to: no entry is 0, empty, and a warning naming ovm space link; missing vault or folder warned and skipped; with an argument 64" {
   mkdir -p vaults/notes/spaces/product
   printf -- '- [ ] n product\n' | put vaults/notes/spaces/product/a.md
   links "- vault: notes\n  space: product\n  to: [anfs-dev]\n- vault: gone\n  space: x\n  to: [anfs-dev]\n- vault: notes\n  space: nofolder\n  to: [anfs-dev]\n"
-  run ovm tasks --space nowhere --json
+  run ovm tasks --to nowhere --json
   [ "$status" -eq 0 ]
   [[ "$output" == *"no vault space is linked into nowhere"*"ovm space link <vault>/<space> nowhere"* ]]
   [ "${lines[-1]}" = "[]" ]
-  run ovm tasks --space anfs-dev
+  run ovm tasks --to anfs-dev
   [ "$status" -eq 0 ]
   [[ "$output" == *"gone/x skipped: no vault gone"* ]]
   [[ "$output" == *"notes/nofolder skipped: no folder"* ]]
   [[ "$output" == *"n product"* ]]
-  run ovm tasks notes --space anfs-dev
+  run ovm tasks notes --to anfs-dev
   [ "$status" -eq 64 ]
+}
+
+@test "space: the deepest linked vault space holding the file, as docs says it; --space takes a path and what is below it" {
+  vault other
+  printf -- '- [ ] p\n' | put vaults/notes/spaces/anfs/product/p.md
+  printf -- '- [ ] q\n' | put vaults/notes/spaces/anfs/product/deep/q.md
+  printf -- '- [ ] i\n' | put vaults/notes/spaces/anfs/inbox/i.md
+  printf -- '- [ ] o\n' | put vaults/notes/spaces/ops/o.md
+  printf -- '- [ ] x\n' | put vaults/other/spaces/anfs/product/x.md
+  run tj 'map([.space, .text])' notes
+  [ "$output" = '[["notes/anfs","i"],["notes/anfs","q"],["notes/anfs","p"],["notes/ops","o"]]' ]
+  # anfs and anfs/product linked (nested, one wsm space): the deepest wins; other's not linked
+  links "- vault: notes\n  space: anfs\n  to: [anfs-dev]\n- vault: notes\n  space: anfs/product\n  to: [anfs-dev]\n  as: apex\n"
+  run tj 'map([.space, .text])' notes
+  [ "$output" = '[["notes/anfs","i"],["notes/anfs/product","q"],["notes/anfs/product","p"],["notes/ops","o"]]' ]
+  # The same as docs' SPACE
+  printf -- '---\nid: qqqqqqqqqq\ntype: Note\n---\n- [ ] q\n' | put vaults/notes/spaces/anfs/product/deep/q.md
+  run ovm docs notes --json
+  [ "$(yq -p json -r '.[] | select(.id == "qqqqqqqqqq") | .space' <<< "$output")" = anfs/product ]
+  # --to over nested links: each task once
+  run tj 'map(.text)' --to anfs-dev
+  [ "$output" = '["i","q","p"]' ]
+  # --space: the path and below it, by whole parts; across vaults outside one
+  run tj 'map(.text)' notes --space anfs/product
+  [ "$output" = '["q","p"]' ]
+  run tj 'map(.text)' --space anfs/product
+  [ "$output" = '["q","p","x"]' ]
+  run tj 'map(.text)' notes --space anfs/prod
+  [ "$output" = '[]' ]
+  run tj 'map(.text)' --to anfs-dev --space anfs/inbox
+  [ "$output" = '["i"]' ]
+  run ovm tasks --space ../x
+  [ "$status" -eq 64 ]
+  # spaces_path: . : the first folder at the root; a file at the root has none
+  yq -i '.spaces_path = "."' vaults/other/vault.yml
+  printf -- '- [ ] r\n' | put vaults/other/r.md
+  run tj 'map([.space, .text])' other
+  [ "$output" = '[["other/spaces","x"],[null,"r"]]' ] || [ "$output" = '[[null,"r"],["other/spaces","x"]]' ]
 }
 
 @test "exclude: a pruned directory's tasks are not listed; .obsidian and .trash never are" {

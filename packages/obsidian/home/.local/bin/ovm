@@ -157,6 +157,7 @@ vault's root), line, doc (the frontmatter id), space (<vault>/<path>: the docume
 docs says it), section (the heading above), parent (the enclosing task), tags and text: what pjm
 pulls. Fenced code and the frontmatter are skipped; indented code blocks, %% %% and HTML comments
 and setext headings are not understood.
+#go marks a task for pjm; ovm validate always allows the tag go, listed in vault.yml or not.
 EOF
 }
 
@@ -2134,9 +2135,12 @@ _type_ok() {
   esac
 }
 
-# Whether the tag <t> is allowed in vault space <sc>: listed, or a listed ancestor (a allows a/b)
+# Whether the tag <t> is allowed in vault space <sc>: built in (go: what ovm tasks and pjm give a
+# meaning), listed, or a listed ancestor (a allows a/b)
+OVM_BUILTIN_TAGS=" go "
 _tag_ok() {
   local sc="$1" t="$2"
+  [[ "$OVM_BUILTIN_TAGS" != *" $t "* ]] || return 0
   while :; do
     [[ -n "${V_TAG[.|$t]:-}" || -n "${V_TAG[$sc|$t]:-}" ]] && return 0
     [[ "$t" == */* ]] || return 1

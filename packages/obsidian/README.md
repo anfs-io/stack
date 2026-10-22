@@ -118,7 +118,7 @@ kinds:                           # allowed values of `type`; each may require mo
 fields:                          # the value type of a frontmatter key
   status: [proposed, accepted, superseded]   # a list: one of these
   timestamp: datetime            # string, number, bool, date, datetime, list
-tags: [idea, decision, go]       # allowed tags, frontmatter and inline; a/b is allowed by a
+tags: [idea, decision]           # allowed tags, frontmatter and inline; a/b is allowed by a (go always)
 spaces:                          # per vault space (by its path): more of the same vocabulary
   product: {tags: [linker, wsm]}
   anfs/product: {required: [owner]}
@@ -135,7 +135,8 @@ spaces:                          # per vault space (by its path): more of the sa
   its kind requires, a field whose value is not of its type (`string`: any single value; `number`;
   `bool`; `date`, `YYYY-MM-DD`; `datetime`, ISO 8601 with a time; `list`; or one of a list of
   values), a tag in `tags:` or inline (`#tag`, outside code) that is not listed and has no listed
-  ancestor (when any tag is listed; `#go` is a tag like any other), and a duplicate id. And on
+  ancestor (when any tag is listed; `go` is built in, always allowed, since `ovm tasks` and pjm
+  give `#go` a meaning), and a duplicate id. And on
   `vault.yml` itself: an unknown key (the old `links:`, `profile:` and `items:` say what replaced
   them), a `spaces:` entry with no folder, an unknown field type, a `spaces_path` that is absolute,
   hidden or leaves the vault.
