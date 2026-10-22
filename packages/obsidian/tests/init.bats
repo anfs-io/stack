@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 # ovm init makes a vault workflow ready: the pinned plugins placed as files (downloaded once into
-# the cache, sha256-checked), their settings and our templates copied where missing. curl is the
+# the cache, sha256-checked), their settings and our templates copied into a fresh vault. ovm sync
+# places the missing plugins, ovm update brings them to the pins (psm's convention). curl is the
 # helper's stub, serving fixture releases; the pins are the helper's fixture plugins.yml beside
 # the package's real vault/ skeleton.
 
@@ -52,23 +53,56 @@ curl_calls() { grep -c . "$CURL_LOG" || true; }
   [ -z "$(find "$XDG_CACHE_HOME/ovm" -name '*.part')" ]
 }
 
-@test "copy-if-missing: edited settings and templates survive, a deleted one comes back, nothing is downloaded again" {
+@test "settings and templates only into a fresh vault: edited ones survive, a deleted one never comes back" {
   ovm new notes >/dev/null
   local v="$VAULTS/notes"
   printf 'mine\n' > "$v/_templates/note.md"
   printf '{"templates_folder": "Mine"}\n' > "$v/.obsidian/plugins/templater-obsidian/data.json"
-  rm "$v/_templates/task-list.md"
+  rm "$v/_templates/task-list.md" "$v/.obsidian/plugins/obsidian-meta-bind-plugin/data.json"
   : > "$CURL_LOG"
   run ovm init "$v"
   [ "$status" -eq 0 ]
   [ "$(cat "$v/_templates/note.md")" = mine ]
   [ "$(cat "$v/.obsidian/plugins/templater-obsidian/data.json")" = '{"templates_folder": "Mine"}' ]
-  cmp "$SHIPPED/_templates/task-list.md" "$v/_templates/task-list.md"
-  [[ "$output" == *"copied _templates/task-list.md"* ]]
-  [[ "$output" == *"kept 4 files that are yours"* ]]
-  [[ "$output" != *placed* ]]
+  [ ! -e "$v/_templates/task-list.md" ] && [ ! -e "$v/.obsidian/plugins/obsidian-meta-bind-plugin/data.json" ]
+  [[ "$output" == *"settings and templates: not copied (.obsidian/ is there"* ]]
+  [[ "$output" != *"copied _"* && "$output" != *"copied ."* && "$output" != *placed* ]]
   [[ "$output" == *"templater-obsidian 1.0.0 is there"* ]]
+  run ovm sync notes
+  [ "$status" -eq 0 ]
+  [ ! -e "$v/_templates/task-list.md" ]
   [ "$(curl_calls)" -eq 0 ]
+  # An existing vault Obsidian opened (.obsidian/ there): no settings, no templates, the plugins
+  mkdir -p "$VAULTS/old/.obsidian"
+  run ovm init "$VAULTS/old"
+  [ "$status" -eq 0 ]
+  [ ! -e "$VAULTS/old/_templates" ] && [ ! -e "$VAULTS/old/.obsidian/plugins/templater-obsidian/data.json" ]
+  [ -f "$VAULTS/old/.obsidian/plugins/templater-obsidian/main.js" ]
+}
+
+@test "sync places the missing plugins and enables them in every vault, or those named; touches nothing there" {
+  ovm new a --no-plugins >/dev/null
+  ovm new b --no-plugins >/dev/null
+  plugin_at a templater-obsidian 0.9.0
+  printf '{"mine": true}\n' > "$VAULTS/a/.obsidian/plugins/templater-obsidian/data.json"
+  cp "$VAULTS/a/vault.yml" "$BATS_TEST_TMPDIR/vault.yml"
+  run ovm sync a
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"templater-obsidian 0.9.0 is there: left as it is (the pin is 1.0.0; ovm update brings an older one to it)"* ]]
+  [[ "$output" == *"placed obsidian-shellcommands 1.0.0"* && "$output" == *"placed obsidian-meta-bind-plugin 1.0.0"* ]]
+  grep -q 0.9.0 "$VAULTS/a/.obsidian/plugins/templater-obsidian/main.js"
+  [ "$(cat "$VAULTS/a/.obsidian/plugins/templater-obsidian/data.json")" = '{"mine": true}' ]
+  cmp "$VAULTS/a/vault.yml" "$BATS_TEST_TMPDIR/vault.yml"
+  run yq -p json -o tsv '.' "$VAULTS/a/.obsidian/community-plugins.json"
+  [ "$output" = "obsidian-shellcommands	obsidian-meta-bind-plugin" ]
+  [ -z "$(find "$VAULTS/b" -name main.js)" ]
+  # No vault named: every vault
+  run ovm sync --json
+  [ "$status" -eq 0 ]
+  [ "$(yq -p json -r '.[] | .vault + ":" + (.placed | join(","))' <<< "$output" | tr '\n' ' ')" = "a: b:templater-obsidian,obsidian-shellcommands,obsidian-meta-bind-plugin " ]
+  [ -f "$VAULTS/b/.obsidian/plugins/obsidian-meta-bind-plugin/main.js" ]
+  run ovm sync nope
+  [ "$status" -eq 1 ]
 }
 
 @test "community-plugins.json: another plugin and its order kept, ours not added twice; invalid JSON not written" {
@@ -95,7 +129,7 @@ curl_calls() { grep -c . "$CURL_LOG" || true; }
   [ -f "$VAULTS/b/.obsidian/plugins/templater-obsidian/main.js" ]
 }
 
-@test "a plugin already there is left by init; --update brings an older one to the pin, leaves a newer one, names an absent one" {
+@test "a plugin already there is left by init; update brings an older one to the pin, leaves a newer one, names an absent one" {
   mkdir -p "$VAULTS/v"
   plugin_at v templater-obsidian 0.9.0
   printf '{"mine": true}\n' > "$VAULTS/v/.obsidian/plugins/templater-obsidian/data.json"
@@ -109,8 +143,8 @@ curl_calls() { grep -c . "$CURL_LOG" || true; }
 
   local cp="$VAULTS/v/.obsidian/community-plugins.json" before a
   before=$(cat "$cp")
-  rm -r "$VAULTS/v/.obsidian/plugins/obsidian-meta-bind-plugin" "$VAULTS/v/_templates/note.md"
-  run ovm init --update "$VAULTS/v"
+  rm -r "$VAULTS/v/.obsidian/plugins/obsidian-meta-bind-plugin"
+  run ovm update v
   [ "$status" -eq 0 ]
   for a in main.js manifest.json styles.css; do
     cmp "$(served templater-obsidian "$a")" "$VAULTS/v/.obsidian/plugins/templater-obsidian/$a"
@@ -120,19 +154,23 @@ curl_calls() { grep -c . "$CURL_LOG" || true; }
   [ "$(cat "$VAULTS/v/.obsidian/plugins/templater-obsidian/data.json")" = '{"mine": true}' ]
   [[ "$output" == *"obsidian-shellcommands 2.0.0 is newer than the pin (1.0.0): left as it is"* ]]
   grep -q 2.0.0 "$VAULTS/v/.obsidian/plugins/obsidian-shellcommands/main.js"
-  [[ "$output" == *"obsidian-meta-bind-plugin is not in this vault: ovm init places it"* ]]
+  [[ "$output" == *"obsidian-meta-bind-plugin is not in this vault: ovm sync places it"* ]]
   [ ! -e "$VAULTS/v/.obsidian/plugins/obsidian-meta-bind-plugin" ]
   # Nothing else is touched
   [ "$(cat "$cp")" = "$before" ]
   [ ! -e "$VAULTS/v/_templates/note.md" ]
-  # At the pin: nothing to do
-  run ovm init --update "$VAULTS/v"
+  # At the pin: nothing to do; no vault named: every vault
+  ovm new w --no-plugins >/dev/null
+  plugin_at w templater-obsidian 0.5.0
+  run ovm update
+  [ "$status" -eq 0 ]
   [[ "$output" == *"templater-obsidian 1.0.0 is at the pin"* ]]
-  # The command line
-  run ovm init --update --no-plugins "$VAULTS/v"
+  [[ "$output" == *"updated templater-obsidian 0.5.0 -> 1.0.0"* ]]
+  # The command line: init has no --update; update needs a vault
+  run ovm init --update "$VAULTS/v"
   [ "$status" -eq 64 ]
   mkdir "$VAULTS/plain"
-  run ovm init --update "$VAULTS/plain"
+  run ovm update plain
   [ "$status" -eq 3 ]
   [ ! -e "$VAULTS/plain/vault.yml" ]
 }
@@ -265,17 +303,17 @@ curl_calls() { grep -c . "$CURL_LOG" || true; }
   [ "$(yq -p json -r '.excludedFolders[0]' "$SHIPPED/.obsidian/plugins/obsidian-meta-bind-plugin/data.json")" = _templates ]
 }
 
-@test "--json: placed, updated, kept, copied, steps_left" {
+@test "--json: placed, kept, copied, steps_left; update's per vault" {
   run ovm new j --json
   [ "$status" -eq 0 ]
   [ "$(yq -p json -r .placed <<< "$output")" = "templater-obsidian obsidian-shellcommands obsidian-meta-bind-plugin" ]
-  [ "$(yq -p json -r .updated <<< "$output")" = "" ]
   [ "$(yq -p json -r .kept <<< "$output")" = "" ]
   [[ "$(yq -p json -r .copied <<< "$output")" == *"_templates/note.md"* ]]
   [ "$(yq -p json -r .steps_left <<< "$output")" = "turn-on-community-plugins templater-trigger-on-new-file" ]
   [ "$(yq -p json -r .status <<< "$output")" = initialized ]
   plugin_at j templater-obsidian 0.1.0
-  run ovm init --update "$VAULTS/j" --json
-  [ "$(yq -p json -r .updated <<< "$output")" = templater-obsidian ]
-  [ "$(yq -p json -r .kept <<< "$output")" = "obsidian-shellcommands obsidian-meta-bind-plugin" ]
+  run ovm update j --json
+  [ "$(yq -p json -r '.[0].updated | join(" ")' <<< "$output")" = templater-obsidian ]
+  [ "$(yq -p json -r '.[0].kept | join(" ")' <<< "$output")" = "obsidian-shellcommands obsidian-meta-bind-plugin" ]
+  [ "$(yq -p json -r '.[0].vault' <<< "$output")" = j ]
 }

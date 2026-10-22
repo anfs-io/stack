@@ -89,11 +89,14 @@ US="$ANFS_US"
 RS=$'\x1e'
 
 CLI_VERSION="$OVM_VERSION"
-cli_cmd init "Make an entry of ~/vaults (default .) a vault: vault.yml, the pinned plugins, their settings and our templates (each only where missing)" \
-  --opt "--update: Bring the plugins already in the vault to the pinned versions; nothing else" \
+cli_cmd init "Make an entry of ~/vaults (default .) a vault: vault.yml; in a fresh one (no .obsidian/) our plugin settings and templates; then what sync does" \
   --opt "--no-plugins: vault.yml, the settings and the templates only (nothing downloaded)" --arg "[dir]"
 cli_cmd new "Create ~/vaults/NAME and init it" \
   --opt "--no-plugins: vault.yml, the settings and the templates only (nothing downloaded)" --arg "name"
+cli_cmd sync "Place the pinned plugins a vault is missing and enable them; nothing there is touched (every vault if none given)" \
+  --arg "[vault...]"
+cli_cmd update "Bring the plugins in a vault to the pinned versions; nothing else (every vault if none given)" \
+  --arg "[vault...]"
 cli_cmd list "The entries of ~/vaults: the vaults" --alias ls
 cli_cmd cd "Change to a vault (default: the one you are in) or a document's directory (requires the ovm shell function)" \
   --arg "[vault-or-doc]"
@@ -134,13 +137,16 @@ anfs/product) under different names. A document's space is the deepest linked va
 it, else the first folder under spaces_path. SPEC is a wsm space (wsm ls): its id, the source and
 its path (lgat, lgat/tech/web).
 
-ovm init places the Obsidian plugins ~/.local/lib/ovm/plugins.yml pins (downloaded once into
-$(_display "$OVM_CACHE_HOME/plugins"), sha256-checked) and copies the settings and templates of
-~/.local/lib/ovm/vault/ where they are missing, never over a file that is there. What no file can
-do, once per device: turn on community plugins, and Templater's "Trigger Templater on new file
-creation". Shell commands lets a note run commands on this computer: read
-.obsidian/plugins/obsidian-shellcommands/data.json before turning plugins on in a vault you did not
-write. After init --update, quit Obsidian or reload it (Command palette: Reload app without saving).
+The Obsidian plugins ~/.local/lib/ovm/plugins.yml pins are downloaded once into
+$(_display "$OVM_CACHE_HOME/plugins"), sha256-checked. As psm does it: ovm sync places the ones a
+vault is missing and enables them, never touching a plugin, a setting, a template or vault.yml that
+is there; ovm update brings the plugins there to the pins. ovm init copies the settings and
+templates of ~/.local/lib/ovm/vault/ only into a fresh vault (no .obsidian/ yet): one deleted later
+does not come back. What no file can do, once per device: turn on community plugins, and
+Templater's "Trigger Templater on new file creation". Shell commands lets a note run commands on
+this computer: read .obsidian/plugins/obsidian-shellcommands/data.json before turning plugins on in
+a vault you did not write. After ovm update, quit Obsidian or reload it (Command palette: Reload
+app without saving).
 EOF
 }
 
@@ -511,11 +517,12 @@ _lock_release() {
 # --- The workflow: plugins, their settings and our templates (init) -----------------------
 #
 # ~/.local/lib/ovm (this package's links: entry) holds plugins.yml, the pins, and vault/, the
-# skeleton. Every file of the skeleton is copied into a vault where it is missing and never again
-# (lib/anfs/files.sh: a package's files: semantics), so once there it is the person's. A plugin is
-# its release's files in .obsidian/plugins/<id>/, downloaded once into $OVM_CACHE_HOME/plugins
-# (CACHE: rebuildable) and checked against its pinned sha256s; one already in the vault is left
-# as it is (init --update brings it to the pin). These are ovm's only network calls.
+# skeleton. The skeleton is copied by init into a fresh vault only (no .obsidian/ yet), each file
+# where it is missing (lib/anfs/files.sh), so once there it is the person's and a deleted one does
+# not come back. A plugin is its release's files in .obsidian/plugins/<id>/, downloaded once into
+# $OVM_CACHE_HOME/plugins (CACHE: rebuildable) and checked against its pinned sha256s. psm's
+# convention: sync places the missing ones and leaves the rest as they are; update brings the
+# ones there to the pin. These are ovm's only network calls.
 
 OVM_SHELLCMD_DATA=.obsidian/plugins/obsidian-shellcommands/data.json
 OVM_SHELLCMD="PATH=\"\$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:\$PATH\" ovm validate"
@@ -684,8 +691,8 @@ _skeleton_apply() {
   local -a inway=()
   if ! declare -F anfs_files_apply >/dev/null; then
     # shellcheck source=/dev/null
-    [[ -f "$ANFS_LIB/files.sh" ]] && source "$ANFS_LIB/files.sh" ||
-      { warn "settings and templates: $ANFS_LIB/files.sh is missing: install core/anfs again"; return "$EX_UNAVAIL"; }
+    [[ -f "$ANFS_LIB_DIR/files.sh" ]] && source "$ANFS_LIB_DIR/files.sh" ||
+      { warn "settings and templates: $ANFS_LIB_DIR/files.sh is missing: install core/anfs again"; return "$EX_UNAVAIL"; }
   fi
   list=$(mktemp "${TMPDIR:-/tmp}/ovm-skeleton.XXXXXX")
   (cd "$OVM_LIB/vault" && find . -type f ! -name .DS_Store | sed 's|^\./||' | LC_ALL=C sort) > "$list"
@@ -723,7 +730,7 @@ _plugins_apply() {
       WF_LEFT+=("$id")
       have=$(_plugin_version "$m")
       if [[ "$have" == "${PIN_VER[$i]}" ]]; then say "$id $have is there"
-      else say "$id ${have:-?} is there: left as it is (the pin is ${PIN_VER[$i]}; ovm init --update brings an older one to it)"
+      else say "$id ${have:-?} is there: left as it is (the pin is ${PIN_VER[$i]}; ovm update brings an older one to it)"
       fi
       continue
     fi
@@ -741,14 +748,14 @@ _plugins_apply() {
   return $rc
 }
 
-# init --update: each pin whose plugin is in <root> brought to the pin when older (WF_UPDATED);
+# ovm update: each pin whose plugin is in <root> brought to the pin when older (WF_UPDATED);
 # newer or equal left (WF_LEFT); absent named. Only the plugins' files are written.
 WF_UPDATED=()
 _plugins_update() {
   local root="$1" i id m have rc=0 r
   for i in "${!PIN_ID[@]}"; do
     id="${PIN_ID[$i]}" m="$root/.obsidian/plugins/${PIN_ID[$i]}/manifest.json"
-    if [[ ! -f "$m" ]]; then say "$id is not in this vault: ovm init places it"; continue; fi
+    if [[ ! -f "$m" ]]; then say "$id is not in this vault: ovm sync places it"; continue; fi
     have=$(_plugin_version "$m")
     if [[ "$have" == "${PIN_VER[$i]}" ]]; then
       WF_LEFT+=("$id"); say "$id $have is at the pin"
@@ -804,10 +811,9 @@ _steps_left() {
 # --- init, new, list ----------------------------------------------------------------------
 
 cmd_init() {
-  local dir="${1:-}" update=${CLI_OPT[update]:-false} noplug=${CLI_OPT[no-plugins]:-false}
+  local dir="${1:-}" noplug=${CLI_OPT[no-plugins]:-false}
   _require_yq
-  ! $update || ! $noplug || usage_err "--update and --no-plugins: --update only touches plugins"
-  local root parent id file name made=false rc=0 r
+  local root parent id file name made=false rc=0 r fresh=false
   root=$(_canon "${dir:-.}") || fail "$EX_NOTFOUND" "no such directory: ${dir:-.}"
   file="$root/$OVM_CONFIG"
   name=$(_entry_of "$root") ||
@@ -815,16 +821,8 @@ cmd_init() {
   if [[ "$root" != / && "$root" != "$OVM_HOME" ]] && parent=$(_find_root "$(dirname -- "$root")"); then
     fail "$EX_EXISTS" "$(_display "$root") is inside the vault at $(_display "$parent"); a vault does not hold another"
   fi
-
-  if $update; then
-    [[ -f "$file" ]] || fail "$EX_STALE" "$(_display "$root") is not a vault (no $OVM_CONFIG): ovm init it first"
-    id=$(_cfg_id "$root")
-    _ovm_lib || fail "$EX_UNAVAIL" "ovm's files are missing: ppm install -f stack/obsidian"
-    _pins_load
-    _plugins_update "$root" || rc=$?
-    _wf_result "$id" "$name" "$root" unchanged
-    return $rc
-  fi
+  # Fresh: Obsidian has never opened it, and ovm has not set it up
+  [[ -e "$root/.obsidian" ]] || fresh=true
 
   if [[ -f "$file" ]]; then
     yq -e 'tag == "!!map" or tag == "!!null"' "$file" >/dev/null 2>&1 || die "$(_display "$file") is not a YAML mapping"
@@ -862,14 +860,18 @@ CFG
     say "vault $name ($id) at $(_display "$root") is initialized already"
   fi
 
-  # The workflow: what can be done is done; running init again finishes the rest
+  # The workflow: what can be done is done; init or sync again finishes the rest
   if ! _ovm_lib; then
     warn "ovm's files are missing: ppm install -f stack/obsidian (vault.yml is written; ovm init again then)"
     rc=$EX_UNAVAIL
   else
-    r=0
-    _skeleton_apply "$root" || r=$?
-    [[ $r -eq 0 ]] || rc=$r
+    if $fresh; then
+      r=0
+      _skeleton_apply "$root" || r=$?
+      [[ $r -eq 0 ]] || rc=$r
+    else
+      say "settings and templates: not copied (.obsidian/ is there: what the vault has is yours)"
+    fi
     if ! $noplug; then
       _pins_load
       r=0
@@ -878,15 +880,9 @@ CFG
       _steps_left "$root" "$([[ ${#WF_PLACED[@]} -gt 0 ]] && echo true || echo false)"
     fi
   fi
-  _wf_result "$id" "$name" "$root" "$($made && echo initialized || echo unchanged)"
+  anfs_result id "$id" name "$name" path "$root" status "$($made && echo initialized || echo unchanged)" \
+    placed "${WF_PLACED[*]}" kept "${WF_LEFT[*]}" copied "${WF_COPIED[*]}" steps_left "${WF_STEPS[*]}"
   return $rc
-}
-
-# init's --json: what it did, the lists space-separated
-_wf_result() {
-  anfs_result id "$1" name "$2" path "$3" status "$4" \
-    placed "${WF_PLACED[*]}" updated "${WF_UPDATED[*]}" kept "${WF_LEFT[*]}" \
-    copied "${WF_COPIED[*]}" steps_left "${WF_STEPS[*]}"
 }
 
 cmd_new() {
@@ -897,6 +893,76 @@ cmd_new() {
   [[ ! -e "$dir" && ! -L "$dir" ]] || fail "$EX_EXISTS" "already exists: $(_display "$dir") (ovm init $(_display "$dir") makes it a vault)"
   mkdir -p -- "$dir" || die "cannot create $dir"
   cmd_init "$dir"
+}
+
+# The vaults sync and update work on: those named (each must be usable), else every vault in
+# ~/vaults that answers. Into WV_ROOT, WV_NAME, WV_ID.
+WV_ROOT=() WV_NAME=() WV_ID=()
+_work_vaults() {
+  local q
+  WV_ROOT=() WV_NAME=() WV_ID=()
+  if [[ $# -eq 0 ]]; then
+    _live_vaults
+    WV_ROOT=("${LIVE[@]}") WV_NAME=("${LIVE_NAME[@]}") WV_ID=("${LIVE_ID[@]}")
+    [[ ${#WV_ROOT[@]} -gt 0 ]] || say "no vaults in $(_display "$OVM_VAULTS_HOME") (ovm new NAME)"
+    return 0
+  fi
+  for q in "$@"; do
+    _vault_named "$q"
+    WV_ROOT+=("${E_ROOT[$V_I]}") WV_NAME+=("${E_NAME[$V_I]}") WV_ID+=("${E_ID[$V_I]}")
+  done
+}
+
+# The worst of two exit codes: 1 (needs the person) over 69 (needs a rerun)
+_worst() { if [[ $1 -eq 0 || $2 -eq 1 ]]; then REPLY=$2; elif [[ $2 -eq 0 || $1 -eq 1 ]]; then REPLY=$1; else REPLY=$2; fi; }
+
+# sync and update, one row per vault for --json: vault id path placed[] updated[] kept[] steps_left[]
+_wf_row() {
+  anfs_json_on || return 0
+  printf '%s\n' "$1$US$2$US$3$US${WF_PLACED[*]}$US${WF_UPDATED[*]}$US${WF_LEFT[*]}$US${WF_STEPS[*]}"
+}
+_wf_table() {
+  anfs_json_on || return 0
+  anfs_table "VAULT ID PATH PLACED UPDATED KEPT STEPS_LEFT" "vault id path placed[] updated[] kept[] steps_left[]"
+}
+
+cmd_sync() {
+  local i rc=0 r rows=""
+  _require_yq
+  _work_vaults "$@"
+  [[ ${#WV_ROOT[@]} -gt 0 ]] || { printf '' | _wf_table; return 0; }
+  _ovm_lib || fail "$EX_UNAVAIL" "ovm's files are missing: ppm install -f stack/obsidian"
+  _pins_load
+  for i in "${!WV_ROOT[@]}"; do
+    WF_PLACED=() WF_LEFT=() WF_UPDATED=() WF_STEPS=()
+    say "${WV_NAME[$i]} ($(_display "${WV_ROOT[$i]}")):"
+    r=0
+    _plugins_apply "${WV_ROOT[$i]}" || r=$?
+    _worst "$rc" "$r"; rc=$REPLY
+    if [[ ${#WF_PLACED[@]} -gt 0 ]]; then _steps_left "${WV_ROOT[$i]}" true; fi
+    rows+="$(_wf_row "${WV_NAME[$i]}" "${WV_ID[$i]}" "${WV_ROOT[$i]}")"$'\n'
+  done
+  printf '%s' "$rows" | _wf_table
+  return $rc
+}
+
+cmd_update() {
+  local i rc=0 r rows=""
+  _require_yq
+  _work_vaults "$@"
+  [[ ${#WV_ROOT[@]} -gt 0 ]] || { printf '' | _wf_table; return 0; }
+  _ovm_lib || fail "$EX_UNAVAIL" "ovm's files are missing: ppm install -f stack/obsidian"
+  _pins_load
+  for i in "${!WV_ROOT[@]}"; do
+    WF_PLACED=() WF_LEFT=() WF_UPDATED=() WF_STEPS=()
+    say "${WV_NAME[$i]} ($(_display "${WV_ROOT[$i]}")):"
+    r=0
+    _plugins_update "${WV_ROOT[$i]}" || r=$?
+    _worst "$rc" "$r"; rc=$REPLY
+    rows+="$(_wf_row "${WV_NAME[$i]}" "${WV_ID[$i]}" "${WV_ROOT[$i]}")"$'\n'
+  done
+  printf '%s' "$rows" | _wf_table
+  return $rc
 }
 
 cmd_list() {

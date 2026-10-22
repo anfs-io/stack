@@ -63,4 +63,5 @@ On it: `ventoy`, `gem-local` (ruby), `tsm` (tailscale), `opm` (op), `remotefs`, 
 | `ovm space list` | `space` (a vault space's path: `anfs/product`), `to` (a wsm space), `as`, `status` (`ok`, `pending`, `unlinked`, `missing`, `conflict`, `unknown`, `no folder`, `dangling`, `no vault`, `orphan`), `link`, `vault`, `path` (the folder) |
 | `ovm docs` | `id`, `type`, `title`, `space` (the deepest linked vault space holding it, else the first folder), `path`, `vault` |
 | `ovm validate` | `path`, `finding` |
+| `ovm sync`, `ovm update` | `vault`, `id`, `path`, `placed`, `updated`, `kept`, `steps_left` (each a list of plugin ids or steps), one per vault |
 | `opm list` | `scope`, `shared`, `service_account`, `token_item`, `token_vault`, `provisioned` |
