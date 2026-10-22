@@ -2,3 +2,5 @@
 .env
 .env.local
 *.local.*
+# A local.env put in the clone by mistake (it may hold a secret) is never committed; any depth
+local.env
