@@ -32,8 +32,9 @@ pcm up twenty
 ```
 
 On `up`, the edge finds the zone, creates this machine's tunnel (`pcm-<hostname>`)
-if it doesn't exist, points it at the proxy, writes the tunnel token for this
-service, and adds a proxied CNAME `crm → <tunnel id>.cfargotunnel.com`. It never
+if it doesn't exist, points it at the proxy, writes the tunnel token into pcm's
+state (`~/.local/state/pcm/containers/cloudflared/state.env`, mode 0600, read
+below `local.env`; `pcm show cloudflared` names it), and adds a proxied CNAME `crm → <tunnel id>.cfargotunnel.com`. It never
 replaces an existing record for the name. `pcm remove twenty` deletes the CNAME
 (only if it points at this tunnel); the tunnel stays.
 

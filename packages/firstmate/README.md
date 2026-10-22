@@ -32,6 +32,11 @@ firstmate status                      # agents and task states
 firstmate down                        # stops the whole session: first mate, crew, supervisor
 ```
 
+`firstmate up` writes one thing outside its own directories, on purpose: Claude Code's trust
+for the repo (`projects.<root>.hasTrustDialogAccepted` in `~/.claude.json`, `trust_root`), since
+`--dangerously-skip-permissions` does not skip that dialog. It is Claude Code's file, mostly its
+state; nothing else of it is touched.
+
 Operator state (backlog, briefs, reports, task state) lives in `FM_HOME`, which defaults to
 `~/.local/share/firstmate/home`. `ppm remove stack/firstmate` deletes it along with the repo.
 

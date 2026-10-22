@@ -4,6 +4,11 @@ Ships the `Include config.d/*.conf` line that lets packages drop
 ssh config fragments into `~/.ssh/config.d/`, and provides the **ssh hook
 registry**.
 
+The `Include` is appended to your own `~/.ssh/config` (once; ssh dictates the file): the one
+edit of a person's config file an install makes, accepted in core's AGENTS.md ("Where files
+go"). Fragments are linked files (stack/op's `99-op.conf`, core/pmm's `05-pmm.conf`, which only
+includes pmm's state file of running machines); nothing writes into `config.d/` as it runs.
+
 ## The hook registry
 
 Several packages want to extend `ssh`. Before this, each defined its own wrapper

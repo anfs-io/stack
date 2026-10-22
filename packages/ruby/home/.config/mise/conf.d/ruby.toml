@@ -2,7 +2,8 @@
 ruby = { version = "latest", postinstall = "{{ env.HOME }}/.local/share/mise/scripts/ruby-lsp.sh" }
 
 [env]
-MISE_RUBY_DEFAULT_PACKAGES_FILE = "{{ env.HOME }}/.config/ruby/default-gems"
+# The gems mise installs with every ruby: a list packages add to (install_gem), so DATA, not config
+MISE_RUBY_DEFAULT_PACKAGES_FILE = "{{ env.HOME }}/.local/share/ruby/default-gems"
 RUBOCOP_TARGET_VERSION = "4.0"
 
 # [hooks]
