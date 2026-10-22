@@ -53,8 +53,8 @@ On it: `ventoy`, `gem-local` (ruby), `tsm` (tailscale), `opm` (op), `remotefs`, 
 | --- | --- |
 | `ventoy disks` | `device`, `size`, `usb_id`, `bus_addr`, `mounted`, `name` |
 | `ventoy list` | `size`, `status` (`on stick`, `only on stick`, `differs`, `not copied`), `iso` |
-| `gem-local list` | `gem`, `dir`, `note` (`missing`) |
-| `gem-local src list` | `path`, `note` (`missing`) |
+| `gem-local list` | `gem`, `status` (`ok`, `missing`: the link's repo dir is gone), `dir` |
+| `gem-local src list` | `path`, `status` (`ok`, `missing`) |
 | `remotefs list` | `label`, `remote`, `mountpoint`, `state` (`mounted`, `unmounted`, `stale`) |
 | `pikvm msd list` | `size`, `image` |
 | `ssh-key list` | `key` (the fingerprint), `status` (`local`, `agent`), `file`, `type`, `comment`, `public` |

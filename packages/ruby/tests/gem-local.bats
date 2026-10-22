@@ -49,13 +49,13 @@ setup() {
   [ "$(wc -l < "$CONFIG" | tr -d ' ')" = 1 ]
 }
 
-@test "src list: rows piped, objects with --json, a missing dir noted" {
+@test "src list: rows piped, objects with --json, STATUS ok or missing" {
   printf '%s\n' "~/repo" "~/gone" > "$(mkdir -p "${CONFIG%/*}" && echo "$CONFIG")"
   run "$GL" src list
-  [ "${lines[0]}" = "~/repo"$'\t'"-" ]
+  [ "${lines[0]}" = "~/repo"$'\t'"ok" ]
   [ "${lines[1]}" = "~/gone"$'\t'"missing" ]
   run env -u ANFS_TABLE "$GL" src ls --json
-  [ "$output" = "[{\"path\":\"$HOME/repo\",\"note\":null},{\"path\":\"$HOME/gone\",\"note\":\"missing\"}]" ]
+  [ "$output" = "[{\"path\":\"$HOME/repo\",\"status\":\"ok\"},{\"path\":\"$HOME/gone\",\"status\":\"missing\"}]" ]
 }
 
 @test "src remove takes rm, and a dir that is gone" {
@@ -72,8 +72,8 @@ setup() {
   ln -s "$HOME/repo/alpha" "$GEMS/alpha"
   ln -s "$HOME/repo/beta" "$GEMS/beta"
   run "$GL" ls
-  [ "${lines[0]}" = "alpha"$'\t'"~/repo/alpha"$'\t'"-" ]
-  [ "${lines[1]}" = "beta"$'\t'"~/repo/beta"$'\t'"missing" ]
+  [ "${lines[0]}" = "alpha"$'\t'"ok"$'\t'"~/repo/alpha" ]
+  [ "${lines[1]}" = "beta"$'\t'"missing"$'\t'"~/repo/beta" ]
   run "$GL" path alpha
   [ "$output" = "$HOME/repo/alpha" ]
   run "$GL" path beta

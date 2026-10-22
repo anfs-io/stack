@@ -34,11 +34,11 @@ source "$ANFS_LIB_DIR/table.sh"
 CLI_TOOL=gem-local
 
 cli_cmd build "Link every gem found in the configured repos and bundle them (rebuilds from scratch)"
-cli_cmd list "Linked gems: GEM DIR NOTE" --alias ls
+cli_cmd list "Linked gems: GEM STATUS DIR" --alias ls
 cli_cmd path "Print the gems dir, or a gem's repo dir" --arg "[gem]"
 cli_cmd cd "Change to the gems dir, or a gem's repo dir (requires ~/.config/sh/ruby.sh)" --arg "[gem]"
 cli_group src "The repos gems are looked for in"
-cli_cmd "src list" "Configured repos: PATH NOTE" --alias ls
+cli_cmd "src list" "Configured repos: PATH STATUS" --alias ls
 cli_cmd "src add" "Add a repo to the config ('.' adds the current dir)" --arg "dir"
 cli_cmd "src remove" "Remove a repo from the config" --alias rm --arg "dir"
 cli_standard
@@ -163,15 +163,15 @@ cmd_build() {
 }
 
 cmd_list() {
-  local link note rows=""
+  local link status rows=""
 
   for link in "$RUBY_LOCAL_GEMS_HOME"/*; do
     [[ -L "$link" ]] || continue
-    note=""
-    [[ -e "$link" ]] || note="missing"
-    rows+="$(anfs_row "${link##*/}" "$(readlink "$link")" "$note")"$'\n'
+    status=ok
+    [[ -e "$link" ]] || status=missing
+    rows+="$(anfs_row "${link##*/}" "$status" "$(readlink "$link")")"$'\n'
   done
-  printf '%s' "$rows" | anfs_table "GEM DIR NOTE" "gem dir note"
+  printf '%s' "$rows" | anfs_table "GEM STATUS DIR" "gem status dir"
 
   [[ -n "$rows" ]] || anfs_json_on || warn "no gems linked; run: gem-local build"
 }
@@ -193,14 +193,14 @@ cmd_cd() {
 }
 
 cmd_src_list() {
-  local entry note rows=""
+  local entry status rows=""
 
   while IFS= read -r entry; do
-    note=""
-    [[ -d "$(_expand "$entry")" ]] || note="missing"
-    rows+="$(anfs_row "$(_expand "$entry")" "$note")"$'\n'
+    status=ok
+    [[ -d "$(_expand "$entry")" ]] || status=missing
+    rows+="$(anfs_row "$(_expand "$entry")" "$status")"$'\n'
   done < <(_config_entries)
-  printf '%s' "$rows" | anfs_table "PATH NOTE" "path note"
+  printf '%s' "$rows" | anfs_table "PATH STATUS" "path status"
 
   [[ -n "$rows" ]] || anfs_json_on || warn "no repos configured; add one with: gem-local src add <dir>"
 }
