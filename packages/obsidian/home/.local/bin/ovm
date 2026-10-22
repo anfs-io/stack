@@ -25,7 +25,7 @@
 # 64 usage, 69 unavailable, 73 exists, 75 lock.
 set -euo pipefail
 
-OVM_VERSION=0.2.0
+OVM_VERSION=0.2.1
 
 # Paths, messages, the log and the command line come from anfs
 ANFS_LIB="$HOME/.local/lib/anfs"
@@ -78,7 +78,10 @@ cli_cmd remove "Drop a vault from the registry; its files are untouched" --alias
   --opt "-y --yes: Do not ask before dropping it" --arg "vault"
 cli_cmd prune "Drop every stale registry entry" --opt "-n --dry-run: Say what would be dropped" \
   --opt "-y --yes: Do not ask before dropping them"
-cli_cmd path "Print the path of a vault (default: the one you are in) or of a document" --arg "[vault-or-doc]"
+cli_cmd cd "Change to a vault (default: the one you are in) or a document's directory (requires the ovm shell function)" \
+  --arg "[vault-or-doc]"
+cli_cmd path "Print the path of a vault (default: the one you are in) or of a document" \
+  --opt "--dir: A document's directory, not the file (what ovm cd goes to)" --arg "[vault-or-doc]"
 cli_cmd docs "List documents: id, type, title, space, path" \
   --opt "--type TYPE: Only that type" --opt "--space SPEC: Only the documents of that wsm space" --arg "[dir]"
 cli_cmd show "Print a document by id" --opt "--body: Leave out the frontmatter" --arg "doc"
@@ -650,6 +653,12 @@ _doc_find() {
   esac
 }
 
+# ovm cd is the shell function's (sh/ovm.sh): it cds to what `ovm path --dir` prints
+cmd_cd() {
+  echo "ovm cd needs the ovm shell function (source ~/.config/sh/ovm.sh)" >&2
+  exit 1
+}
+
 cmd_path() {
   local rc=0 root
   if [[ $# -eq 0 ]]; then
@@ -669,6 +678,7 @@ cmd_path() {
     return 0
   fi
   if [[ "$1" =~ $ID_RE ]] && _doc_find "$1"; then
+    [[ "${CLI_OPT[dir]:-false}" != true ]] || D_PATH=$(dirname -- "$D_PATH")
     if anfs_json_on; then anfs_result path "$D_PATH" kind document; else printf '%s\n' "$D_PATH"; fi
     return 0
   fi

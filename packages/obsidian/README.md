@@ -18,10 +18,15 @@ ovm new <dir>                         # create the directory and init it
 ovm list [--stale]                    # NAME ID STATUS PATH
 ovm scan [dir...]                     # find ovm.yml under the directories (default ~)
 ovm remove <vault>; ovm prune         # drop registry entries; the files are untouched
-ovm path [vault-or-doc]               # a vault's path, or a document's by id
+ovm path [--dir] [vault-or-doc]       # a vault's path, or a document's by id (--dir: its directory)
+ovm cd [vault-or-doc]                 # go there: a vault, or a document's directory
 ovm docs; ovm show <id>               # documents by their frontmatter id
 ovm validate [--fix] [--strict]       # documents against the vault's profile
 ```
+
+`ovm cd` is a shell function (`~/.config/sh/ovm.sh`, bash and zsh) through core's `_anfs_cd`,
+like `wsm cd`: it goes where `ovm path --dir` says, a vault's directory or a document's, and with
+no argument the vault you are in (outside one it fails and you stay put). It completes vault names.
 
 ### Links into spaces
 

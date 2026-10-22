@@ -28,7 +28,10 @@ of the line, completion (`zcomp <tool>` in the package's zsh file), `--json`, `-
 the log and the exit codes (64 usage, 69 missing) all come from there. Core's AGENTS.md has the
 rules ("The Command Line", "Lists and --json", "Messages, Debugging and the Log");
 `packages/ventoy/home/.local/bin/ventoy` is the model, and each tool has `tests/*.bats`
-(`bats packages/<name>/tests </dev/null`).
+(`bats packages/<name>/tests </dev/null`). A tool's `cd` is core's pattern too: `cli_cmd cd` whose
+`cmd_cd` only says the shell function is missing, and a wrapper in the package's
+`home/.config/sh/<tool>.sh` through `_anfs_cd` (core's AGENTS.md, "Shell Integration"); `ovm cd`
+is the one here.
 
 `isos/isos.yml` is this source's ISO catalogue (core's `lib/anfs/iso.sh`): what `anfs iso pull <id>`
 downloads into the shared store (`~/.cache/anfs/isos`), what `ventoy copy <id>` puts on a stick
