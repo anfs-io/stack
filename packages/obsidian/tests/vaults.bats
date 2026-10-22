@@ -1,47 +1,52 @@
 #!/usr/bin/env bats
-# Vaults: the entries of ~/vaults (OVM_VAULTS_HOME), each a directory or a link to one with an
-# ovm.yml, named by the entry. No registry, no scan.
+# Vaults: the entries of ~/vaults (OVM_VAULTS_HOME), each a directory or a link to one with a
+# vault.yml, named by the entry. No registry, no scan.
 # Run: bats packages/obsidian/tests/
 
 load helper
 setup() { ovm_setup; }
 
-@test "init writes ovm.yml with a new id in an entry of ~/vaults, and list shows it" {
+@test "init writes vault.yml with a new id in an entry of ~/vaults, and list shows it" {
   mkdir -p vaults/notes
   run ovm init vaults/notes
   [ "$status" -eq 0 ]
   [[ "$output" == "initialized vault notes ("*") at ~/vaults/notes" ]]
-  run yq -r .id vaults/notes/ovm.yml
+  run yq -r .id vaults/notes/vault.yml
   [[ "$output" =~ ^[a-z2-7]{10}$ ]]
   local id="$output"
-  run yq -r '.profile.required | join(",")' vaults/notes/ovm.yml
-  [ "$output" = "type,id" ]
-  # The name is the entry's: ovm.yml carries none
-  run yq -r 'has("name")' vaults/notes/ovm.yml
+  # The template's keys: where the spaces are, what to skip, what every document must have
+  run yq -r '[.spaces_path, (.exclude | join(",")), (.required | join(","))] | join(" ")' vaults/notes/vault.yml
+  [ "$output" = "spaces _templates type,id" ]
+  run yq -r 'keys | join(" ")' vaults/notes/vault.yml
+  [ "$output" = "id spaces_path exclude required" ]
+  # The name is the entry's: vault.yml carries none
+  run yq -r 'has("name")' vaults/notes/vault.yml
   [ "$output" = false ]
+  # The rest is there, commented out
+  grep -q '^#kinds:' vaults/notes/vault.yml && grep -q '^#tags:' vaults/notes/vault.yml
   run ovm ls
   [ "$output" = "notes"$'\t'"$id"$'\t'"ok"$'\t'"~/vaults/notes" ]
 }
 
-@test "init defaults to the current directory; again it keeps the id; an ovm.yml without an id gets one" {
+@test "init defaults to the current directory; again it keeps the id; a vault.yml without an id gets one" {
   mkdir -p vaults/work && cd vaults/work
   run ovm init
   [ "$status" -eq 0 ]
   local id
-  id=$(yq -r .id ovm.yml)
+  id=$(yq -r .id vault.yml)
   run ovm init
   [ "$status" -eq 0 ]
   [ "$output" = "vault work ($id) at ~/vaults/work is initialized already" ]
-  [ "$(yq -r .id ovm.yml)" = "$id" ]
+  [ "$(yq -r .id vault.yml)" = "$id" ]
   mkdir ../other
-  printf '# mine\nlinks:\n  - source: a\n    target: x/y\n' > ../other/ovm.yml
+  printf '# mine\nspaces_path: notes\ntags: [a]\n' > ../other/vault.yml
   run ovm init ../other
   [ "$status" -eq 0 ]
-  run yq -r .id ../other/ovm.yml
+  run yq -r .id ../other/vault.yml
   [[ "$output" =~ ^[a-z2-7]{10}$ ]]
-  grep -q '^# mine$' ../other/ovm.yml
-  run yq -r '.links[0].target' ../other/ovm.yml
-  [ "$output" = "x/y" ]
+  grep -q '^# mine$' ../other/vault.yml
+  run yq -r '.spaces_path + " " + (.tags | join(",")) + " " + (has("exclude") | tostring)' ../other/vault.yml
+  [ "$output" = "notes a false" ]
 }
 
 @test "init outside ~/vaults is refused with the hint to link it there; a linked one is named by its entry" {
@@ -49,35 +54,35 @@ setup() { ovm_setup; }
   run ovm init elsewhere/apex
   [ "$status" -eq 1 ]
   [[ "$output" == *"~/elsewhere/apex is not in ~/vaults"*"ln -s '$HOME/elsewhere/apex' ~/vaults/<name>"* ]]
-  [ ! -e elsewhere/apex/ovm.yml ]
+  [ ! -e elsewhere/apex/vault.yml ]
   # Below an entry is not an entry either
   run ovm init vaults/notes/sub
   [ "$status" -eq 1 ]
-  [ ! -e vaults/notes/sub/ovm.yml ]
+  [ ! -e vaults/notes/sub/vault.yml ]
   # Linked into ~/vaults under another name: init by the link or by the real path
   ln -s ../elsewhere/apex vaults/main
   run ovm init elsewhere/apex
   [ "$status" -eq 0 ]
   [[ "$output" == "initialized vault main ("*") at ~/elsewhere/apex" ]]
-  [ -f elsewhere/apex/ovm.yml ]
+  [ -f elsewhere/apex/vault.yml ]
   run ovm init vaults/main
   [[ "$output" == "vault main ("*") at ~/elsewhere/apex is initialized already" ]]
 }
 
 @test "a vault does not hold another" {
   mkdir -p big/vaults/inner
-  printf 'id: aaaaaaaaaa\n' > big/ovm.yml
+  printf 'id: aaaaaaaaaa\n' > big/vault.yml
   OVM_VAULTS_HOME="$HOME/big/vaults" run ovm init big/vaults/inner
   [ "$status" -eq 73 ]
   [[ "$output" == *"inside the vault at ~/big"* ]]
-  [ ! -e big/vaults/inner/ovm.yml ]
+  [ ! -e big/vaults/inner/vault.yml ]
 }
 
 @test "new creates ~/vaults/NAME and inits it; an existing entry, a path or no name is refused" {
   run ovm new fresh
   [ "$status" -eq 0 ]
   [[ "$output" == "initialized vault fresh ("*") at ~/vaults/fresh" ]]
-  [ -f vaults/fresh/ovm.yml ]
+  [ -f vaults/fresh/vault.yml ]
   run ovm new fresh
   [ "$status" -eq 73 ]
   ln -s nowhere vaults/dangling
@@ -96,12 +101,12 @@ setup() { ovm_setup; }
   vault a
   local a="$VID"
   mkdir -p icloud/apex vaults/plain elsewhere/loose
-  printf 'id: bbbbbbbbbb\n' > icloud/apex/ovm.yml
+  printf 'id: bbbbbbbbbb\n' > icloud/apex/vault.yml
   ln -s ../icloud/apex vaults/apex
   ln -s ../icloud/gone vaults/gone
   touch vaults/afile vaults/.DS_Store
-  # An ovm.yml outside ~/vaults is not a vault ovm knows
-  printf 'id: cccccccccc\n' > elsewhere/loose/ovm.yml
+  # A vault.yml outside ~/vaults is not a vault ovm knows
+  printf 'id: cccccccccc\n' > elsewhere/loose/vault.yml
   run ovm ls
   [ "$status" -eq 0 ]
   [ "${#lines[@]}" -eq 5 ]
@@ -114,6 +119,10 @@ setup() { ovm_setup; }
   run ovm ls --json
   run yq -p json -r '.[] | .name + "=" + .status' <<< "$output"
   [ "$output" = "a=ok"$'\n'"afile=not a vault"$'\n'"apex=ok"$'\n'"gone=unreachable"$'\n'"plain=not a vault" ]
+  # The old marker alone is not a vault
+  mkdir vaults/old && printf 'id: dddddddddd\n' > vaults/old/ovm.yml
+  run ovm ls
+  [[ "$output" == *"old"$'\t'"-"$'\t'"not a vault"$'\t'"~/vaults/old"* ]]
 }
 
 @test "no ~/vaults is no vaults; OVM_VAULTS_HOME moves it, from the environment or ovm.local.env" {
@@ -121,7 +130,7 @@ setup() { ovm_setup; }
   [ "$status" -eq 0 ]
   [ -z "$output" ]
   mkdir -p notes/one
-  printf 'id: dddddddddd\n' > notes/one/ovm.yml
+  printf 'id: dddddddddd\n' > notes/one/vault.yml
   OVM_VAULTS_HOME="$HOME/notes" run ovm ls
   [ "$output" = "one"$'\t'"dddddddddd"$'\t'"ok"$'\t'"~/notes/one" ]
   mkdir -p .config/ovm
@@ -129,7 +138,7 @@ setup() { ovm_setup; }
   run ovm path one
   [ "$output" = "$HOME/notes/one" ]
   run ovm new two
-  [ -f notes/two/ovm.yml ]
+  [ -f notes/two/vault.yml ]
   [ ! -e vaults ]
 }
 
@@ -193,9 +202,9 @@ setup() { ovm_setup; }
   [ "$output" = "$HOME/icloud/apex/a.md" ]
 }
 
-@test "an ovm.yml outside ~/vaults: commands in it say to link it there" {
+@test "a vault.yml outside ~/vaults: commands in it say to link it there" {
   mkdir loose
-  printf 'id: eeeeeeeeee\n' > loose/ovm.yml
+  printf 'id: eeeeeeeeee\n' > loose/vault.yml
   cd loose
   run ovm path
   [ "$status" -eq 1 ]
@@ -208,8 +217,8 @@ setup() { ovm_setup; }
 
 @test "an ambiguous id prefix exits 2 and lists the candidates" {
   mkdir -p vaults/x vaults/y
-  printf 'id: aaaaaaaaab\n' > vaults/x/ovm.yml
-  printf 'id: aaaaaaaaac\n' > vaults/y/ovm.yml
+  printf 'id: aaaaaaaaab\n' > vaults/x/vault.yml
+  printf 'id: aaaaaaaaac\n' > vaults/y/vault.yml
   run ovm path aaaa
   [ "$status" -eq 2 ]
   [[ "$output" == *"~/vaults/x"* && "$output" == *"~/vaults/y"* ]]
@@ -220,7 +229,7 @@ setup() { ovm_setup; }
   # applied the way ppm applies it: lib/anfs/manifest.sh's plan, then anfs_link_one
   local icloud="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/apex"
   mkdir -p "$icloud" "$BATS_TEST_TMPDIR/layer/home"
-  printf 'id: ffffffffff\n' > "$icloud/ovm.yml"
+  printf 'id: ffffffffff\n' > "$icloud/vault.yml"
   cat > "$BATS_TEST_TMPDIR/layer/package.yml" <<'YML'
 version: 0.1.0
 links:
@@ -251,7 +260,8 @@ YML
   run ovm --version
   [[ "$output" == ovm\ * ]]
   run ovm help
-  [[ "$output" == *"link <add|remove|list|apply|validate>"* ]]
+  [[ "$output" == *"space <list|add|remove|link|unlink|apply>"* ]]
+  [[ "$output" == *"~/.config/ovm/links.yml"* ]]
   [[ "$output" == *"list, ls "* ]]
   [[ "$output" == *"new <name>"* ]]
   [[ "$output" == *"-d, --debug"* ]]
@@ -269,12 +279,21 @@ YML
   ! grep -qE '^(ls|rm)	' <<< "$output"
   run ovm __complete path ""
   [ "$output" = "a"$'\t'"~/vaults/a"$'\n'"gone"$'\t'"~/vaults/gone" ]
-  run ovm __complete link ""
-  [[ "$output" == *"remove"$'\t'*"(alias: rm)"* ]]
-  run ovm __complete link add ""
-  [ "$output" = ":dirs" ]
-  run ovm __complete link add "-"
-  [[ "$output" == *"--to"$'\t'* && "$output" == *"--as"$'\t'* ]]
+  run ovm __complete space ""
+  [[ "$output" == *"remove"$'\t'*"(alias: rm)"* && "$output" == *"link"$'\t'* ]]
+  # A vault space: <vault>/<space> for every vault, and the bare names in the vault you are in
+  mkdir -p vaults/a/spaces/product vaults/a/spaces/journal vaults/a/spaces/.hidden
+  vault b
+  yq -i '.spaces_path = "areas"' vaults/b/vault.yml
+  mkdir -p vaults/b/areas/home vaults/b/spaces/nope
+  run ovm __complete space link ""
+  [ "$output" = "a/journal"$'\n'"a/product"$'\n'"b/home" ]
+  run bash -c 'cd vaults/a && "$1" __complete space link ""' _ "$OVM"
+  [ "$output" = "journal"$'\n'"product"$'\n'"a/journal"$'\n'"a/product"$'\n'"b/home" ]
+  run ovm __complete space link "-"
+  [[ "$output" == *"--as"$'\t'* ]]
+  run ovm __complete space list ""
+  [[ "$output" == "a"$'\t'* ]]
   # A tab press writes nothing
   rm -rf "$XDG_STATE_HOME"
   (cd vaults/a && ovm __complete "" >/dev/null)

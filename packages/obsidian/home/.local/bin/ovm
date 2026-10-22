@@ -1,25 +1,27 @@
 #!/usr/bin/env bash
 # ovm — Obsidian Vault Manager
 #
-# A vault is a directory of markdown documents with an ovm.yml at its root: an Obsidian vault, or
+# A vault is a directory of markdown documents with a vault.yml at its root: an Obsidian vault, or
 # any directory of markdown, Obsidian's or not (a plain tree, a git repo of docs). "Obsidian" is
 # the name, not a restriction. Vaults are the entries of ~/vaults ($OVM_VAULTS_HOME), as spaces
 # are ~/spaces': a directory there, or a link to one (a vault stored on iCloud is a link, declared
-# by a package's links: entry), with an ovm.yml, which carries the vault's id. `ls ~/vaults` is
-# the list; a vault is named by its entry.
+# by a package's links: entry), with a vault.yml, which carries the vault's id. `ls ~/vaults` is
+# the list; a vault is named by its entry. A vault space is a folder directly under the vault's
+# spaces_path (vault.yml, default spaces): <vault>/<space>.
 #
 # ovm does three things with a vault:
 #
-#   links      ovm.yml maps vault directories to wsm spaces (an id, as `wsm ls` has it: lgat,
-#              lgat/tech/web). ovm puts a symlink in the space's directory pointing back into the
-#              vault, so the documentation sits next to the code it describes. Knowledge of the
-#              links is the vault's; the symlinks are machine-local and `ovm link apply` recreates
-#              them. wsm tells ovm when a space is installed or removed (lib/anfs/callbacks.sh; this
-#              package's install.sh registers), without knowing ovm exists.
+#   spaces     vault spaces linked into wsm spaces (an id, as `wsm ls` has it: lgat,
+#              lgat/tech/web), as ~/.config/ovm/links.yml declares: the person's, not the vault's
+#              and not wsm's (links.local.yml beside it for one machine). ovm puts a symlink in
+#              the wsm space's directory pointing back into the vault, so the documentation sits
+#              next to the code it describes; `ovm space apply` makes the missing ones. wsm tells
+#              ovm when a space is installed or removed (lib/anfs/callbacks.sh; this package's
+#              install.sh registers), without knowing ovm exists.
 #   documents  every document has frontmatter with a stable `id`, so it can be found whatever
 #              its path becomes: `ovm docs`, `ovm path ID`, `ovm show ID`.
-#   validate   documents are checked against the vault's `profile` (required keys, allowed
-#              types). OKF itself only requires `type`; the profile is the real schema.
+#   validate   documents are checked against the vocabulary in vault.yml (required keys, kinds,
+#              field types, tags), vault-wide and per vault space.
 #
 # Every command takes --json. Exit codes follow wsm: 1 not found, 2 ambiguous, 3 not a usable vault,
 # 64 usage, 69 unavailable, 73 exists, 75 lock.
@@ -27,7 +29,7 @@ set -euo pipefail
 # A job's copy of this tool runs instead when ANFS_WORK names one (lib/anfs/work.sh)
 [ -z "${ANFS_WORK:-}" ] || [ ! -f "$HOME/.local/lib/anfs/work.sh" ] || . "$HOME/.local/lib/anfs/work.sh"
 
-OVM_VERSION=0.3.0
+OVM_VERSION=0.4.0
 
 # Paths, messages, the log and the command line come from anfs
 if [[ ! -f "$HOME/.local/lib/anfs/paths.sh" ]]; then
@@ -60,9 +62,13 @@ anfs_tool_paths ovm
 OVM_VAULTS_HOME="${OVM_VAULTS_HOME:-$HOME/vaults}"
 OVM_VAULTS_HOME="${OVM_VAULTS_HOME%/}"
 OVM_LOCK="$OVM_STATE_HOME/links.lock"
-# The symlinks ovm made: what `remove` events and `link validate` work from
+# The symlinks ovm made: what `remove` events and `space list`'s orphans work from
 OVM_LINKS="$OVM_STATE_HOME/links"
-OVM_CONFIG=ovm.yml
+# Which vault spaces are linked into which wsm spaces: the person's (their repository's layer may
+# ship it), and this machine's additions beside it
+OVM_LINKS_YML="$OVM_CONFIG_HOME/links.yml"
+OVM_LINKS_LOCAL="$OVM_CONFIG_HOME/links.local.yml"
+OVM_CONFIG=vault.yml
 OVM_HOME=$(cd "$HOME" && pwd -P)
 
 EX_NOTFOUND=1 EX_AMBIGUOUS=2 EX_STALE=3
@@ -78,29 +84,34 @@ ID_RE='^[a-z2-7]{10}$'
 # bash's `read` does not fold empty fields away around it
 US="$ANFS_US"
 
+# A second separator, for the parts of a YAML path (_yaml_dump)
+RS=$'\x1e'
+
 CLI_VERSION="$OVM_VERSION"
-cli_cmd init "Make an entry of ~/vaults (default .) a vault: write ovm.yml, mint its id" --arg "[dir]"
+cli_cmd init "Make an entry of ~/vaults (default .) a vault: write vault.yml, mint its id" --arg "[dir]"
 cli_cmd new "Create ~/vaults/NAME and init it" --arg "name"
 cli_cmd list "The entries of ~/vaults: the vaults" --alias ls
 cli_cmd cd "Change to a vault (default: the one you are in) or a document's directory (requires the ovm shell function)" \
   --arg "[vault-or-doc]"
 cli_cmd path "Print the path of a vault (default: the one you are in) or of a document" \
   --opt "--dir: A document's directory, not the file (what ovm cd goes to)" --arg "[vault-or-doc]"
-cli_cmd docs "List documents: id, type, title, space, path" \
-  --opt "--type TYPE: Only that type" --opt "--space SPEC: Only the documents of that wsm space" --arg "[dir]"
+cli_cmd docs "List documents: id, type, title, space, path (of a vault, a vault space or a DIR)" \
+  --opt "--type TYPE: Only that type" \
+  --opt "--space SPEC: The documents of the vault spaces links.yml links into that wsm space" --arg "[vault-or-space]"
 cli_cmd show "Print a document by id" --opt "--body: Leave out the frontmatter" --arg "doc"
-cli_group link "Vault directories linked into wsm spaces"
-cli_cmd "link add" "Link a directory (default .) into a space, and record it in ovm.yml" \
-  --opt "--to SPEC: The wsm space (wsm ls): lgat, lgat/tech/web" \
-  --opt "--as NAME: The symlink's name (default: the directory's)" --arg "[dir]"
-cli_cmd "link remove" "Remove a directory's links and their ovm.yml entries" --alias rm \
-  --opt "--to SPEC: Only the link to that space" \
-  --opt "-y --yes: Do not ask before removing the links" --arg "[dir]"
-cli_cmd "link list" "The configured links and their state" --alias ls --arg "[dir]"
-cli_cmd "link apply" "Create this vault's links that are missing" \
+cli_group space "Vault spaces (the folders under a vault's spaces_path) and the wsm spaces links.yml links them into"
+cli_cmd "space list" "Each vault space and where it is linked: the vault you are in, VAULT, or every vault" --alias ls \
+  --opt "--problems: Only the rows that are not ok, pending or unlinked; exit 1 when there is one" --arg "[vault]"
+cli_cmd "space add" "Make a vault space: its folder under spaces_path" --arg "space"
+cli_cmd "space remove" "Unlink a vault space from every wsm space; its folder and its notes stay" --alias rm \
+  --opt "-y --yes: Do not ask before removing the links" --arg "space"
+cli_cmd "space link" "Link a vault space into a wsm space, and declare it in links.yml" \
+  --opt "--as NAME: The link's name in the wsm space (default: the space's)" --arg "space" --arg "spec"
+cli_cmd "space unlink" "Remove a vault space's links (into SPEC, or every one) and their links.yml entries" \
+  --arg "space" --arg "[spec]"
+cli_cmd "space apply" "Make the links links.yml declares that are missing on this machine" \
   --opt "--event EVENT: From wsm: install or remove, for the spaces that follow" --arg "[spec...]"
-cli_cmd "link validate" "Every vault's links that are missing, dangling or in conflict" --arg "[spec]"
-cli_cmd validate "Check documents against the vault's profile" \
+cli_cmd validate "Check documents against the vault's vocabulary (vault.yml)" \
   --opt "--fix: Mint the ids that are missing" --opt "--strict: Exit 1 on any finding" --arg "[path]"
 ! declare -F anfs_config_declare >/dev/null || anfs_config_declare
 cli_standard
@@ -108,9 +119,12 @@ cli_standard
 cli_help_epilogue() {
   cat <<EOF
 A vault is an entry of $(_display "$OVM_VAULTS_HOME") (OVM_VAULTS_HOME), a directory or a link to one,
-with an ovm.yml; it is named by its entry, its id or a unique id prefix (4+ characters). A vault
-stored elsewhere is a link there. SPEC is a wsm space (wsm ls): its id, the source and its path
-(lgat, lgat/tech/web).
+with a vault.yml; it is named by its entry, its id or a unique id prefix (4+ characters). A vault
+stored elsewhere is a link there. A vault space is a folder directly under the vault's spaces_path
+(vault.yml, default spaces), named <vault>/<space>, or <space> in the vault you are in. Which vault
+spaces are linked into which wsm spaces is declared in $(_display "$OVM_LINKS_YML") (links.local.yml
+beside it for this machine; ovm space link and unlink write them). SPEC is a wsm space (wsm ls): its
+id, the source and its path (lgat, lgat/tech/web).
 EOF
 }
 
@@ -142,9 +156,17 @@ _new_id() {
 # What a command says when it is done; quiet with --json, where anfs_result speaks instead
 say() { anfs_json_on || printf '%s\n' "$*"; }
 
-# --- The marker: ovm.yml ------------------------------------------------------------------
+# Every node of a YAML document on stdin (or <file>), one line each: its path (the parts joined
+# by RS), its tag, and a scalar's value (newlines made spaces). Generic, so one yq reads all of a
+# vault.yml or a frontmatter block.
+# shellcheck disable=SC2016
+YAML_DUMP='.. | [(path | map(tostring) | join(strenv(RS))), tag,
+  ((select(tag != "!!map" and tag != "!!seq") | tostring | sub("\n"; " ")) // "")] | join(strenv(US))'
+_yaml_dump() { RS="$RS" US="$US" yq -r "$YAML_DUMP" "$@"; }
 
-# The id in <root>/ovm.yml, or nothing when there is none or it is not an id
+# --- The marker: vault.yml ----------------------------------------------------------------
+
+# The id in <root>/vault.yml, or nothing when there is none or it is not an id
 _cfg_id() {
   local id
   [[ -f "$1/$OVM_CONFIG" ]] || return 0
@@ -152,6 +174,70 @@ _cfg_id() {
   [[ "$id" =~ $ID_RE ]] && printf '%s\n' "$id"
   return 0
 }
+
+# What the commands need of <root>/vault.yml, read once per vault per run: VC_SPACES (spaces_path,
+# default spaces; empty when it is not usable, and VC_BAD says why) and VC_EXCLUDE (the patterns,
+# without a leading ./ or a trailing /)
+declare -A VCC_SPACES=() VCC_BAD=() VCC_EXCLUDE=()
+VC_SPACES="" VC_BAD="" VC_EXCLUDE=()
+_vault_cfg() {
+  local root="$1" sp p bad="" part
+  local -a lines=() ex=()
+  if [[ -z "${VCC_SPACES[$root]+x}" ]]; then
+    mapfile -t lines < <(yq -r '[((.spaces_path // "spaces") | tostring)] + ((.exclude // []) | [.] | flatten | map(tostring)) | .[]' \
+      "$root/$OVM_CONFIG" 2>/dev/null || true)
+    sp="${lines[0]:-spaces}"
+    while [[ "$sp" == ./* ]]; do sp="${sp#./}"; done
+    while [[ "$sp" == */ ]]; do sp="${sp%/}"; done
+    if [[ -z "$sp" || "$sp" == /* ]]; then
+      bad="spaces_path is a folder relative to the vault's root: ${lines[0]:-}"
+    else
+      local IFS=/
+      for part in $sp; do
+        if [[ "$part" == .. ]]; then bad="spaces_path may not leave the vault (..): $sp"
+        elif [[ "$part" == .* ]]; then bad="spaces_path may not be hidden: $sp"
+        fi
+      done
+      unset IFS
+    fi
+    [[ -z "$bad" ]] || sp=""
+    for p in "${lines[@]:1}"; do
+      while [[ "$p" == ./* ]]; do p="${p#./}"; done
+      while [[ "$p" == */ ]]; do p="${p%/}"; done
+      [[ -z "$p" ]] || ex+=("$p")
+    done
+    VCC_SPACES[$root]="$sp" VCC_BAD[$root]="$bad"
+    VCC_EXCLUDE[$root]=$(IFS="$US"; printf '%s' "${ex[*]}")
+  fi
+  VC_SPACES="${VCC_SPACES[$root]}" VC_BAD="${VCC_BAD[$root]}" VC_EXCLUDE=()
+  [[ -z "${VCC_EXCLUDE[$root]}" ]] || IFS="$US" read -ra VC_EXCLUDE <<< "${VCC_EXCLUDE[$root]}"
+}
+
+# The vault spaces of the vault at <root>: the folders directly under its spaces_path, hidden ones
+# and files left out, one name per line
+_space_dirs() {
+  local d
+  _vault_cfg "$1"
+  [[ -n "$VC_SPACES" ]] || return 0
+  for d in "$1/$VC_SPACES"/*/; do
+    [[ -d "$d" ]] || continue
+    d="${d%/}"
+    printf '%s\n' "${d##*/}"
+  done
+}
+
+# The vault space a path relative to the root of the vault at <root> is in (the first part under
+# spaces_path), or nothing
+_space_of() {
+  local rel="$2" s
+  _vault_cfg "$1"
+  [[ -n "$VC_SPACES" && "$rel" == "$VC_SPACES"/*/* ]] || return 0
+  s="${rel#"$VC_SPACES"/}"
+  printf '%s\n' "${s%%/*}"
+}
+
+# A vault space's name: a folder's, without a /, not hidden
+_space_name_ok() { [[ -n "$1" && "$1" != */* && "$1" != .* ]]; }
 
 # The root of the vault containing <dir>, or return 1. Checks $HOME itself but never walks above
 # it, and stops at / for a start outside $HOME.
@@ -165,7 +251,7 @@ _find_root() {
   done
 }
 
-# Whether <dir>/ovm.yml can be read within OVM_PROBE_SECONDS (3): a vault on a hung iCloud or
+# Whether <dir>/vault.yml can be read within OVM_PROBE_SECONDS (3): a vault on a hung iCloud or
 # network mount blocks every read of it, so ovm looks once, in a process an alarm can end, and
 # leaves the vault alone after that. Remembered per path for the run.
 declare -A OVM_REACH=()
@@ -182,7 +268,7 @@ _reachable() {
 
 # --- The vaults: the entries of $OVM_VAULTS_HOME -------------------------------------------
 #
-# An entry (a directory, or a link to one) with an ovm.yml is a vault, named by the entry. There
+# An entry (a directory, or a link to one) with a vault.yml is a vault, named by the entry. There
 # is no other list: a vault stored elsewhere (iCloud) is a link there, declared by a package's
 # links: entry.
 
@@ -198,8 +284,10 @@ _entries() {
 # Every entry, into parallel arrays: E_NAME, E_STATE (ok, unreachable, not a vault), E_ID and
 # E_ROOT (the vault's canonical root when ok; else the entry, or what its link points at)
 E_NAME=() E_STATE=() E_ID=() E_ROOT=()
+E_LOADED=false
 _vaults_load() {
   local name e
+  $E_LOADED && return 0
   E_NAME=() E_STATE=() E_ID=() E_ROOT=()
   while IFS= read -r name; do
     [[ -n "$name" ]] || continue
@@ -214,6 +302,7 @@ _vaults_load() {
       E_STATE+=(ok) E_ROOT+=("$(_canon "$e")") E_ID+=("$(_cfg_id "$e")")
     fi
   done < <(_entries)
+  E_LOADED=true
 }
 
 # The name of the entry of $OVM_VAULTS_HOME that is the directory <root> (canonical), or return 1
@@ -230,7 +319,7 @@ _entry_of() {
 }
 
 # The vault holding <dir>: VA_ROOT (its canonical root) and VA_NAME (its entry). Returns 1 when no
-# ovm.yml holds <dir>; fails when the one that does is not an entry of $OVM_VAULTS_HOME.
+# vault.yml holds <dir>; fails when the one that does is not an entry of $OVM_VAULTS_HOME.
 VA_ROOT="" VA_NAME=""
 _vault_of() {
   VA_ROOT=$(_find_root "$1") || return 1
@@ -276,15 +365,29 @@ _ambiguous() {
   exit "$EX_AMBIGUOUS"
 }
 
-# The roots of the vaults that answer, into LIVE (parallel: LIVE_ID, LIVE_NAME)
+# A vault <query> names that is usable, as V_I, or fail: 1 none, 2 ambiguous, 3 not usable
+_vault_named() {
+  local rc=0
+  _vaults_load
+  _vault_resolve "$1" || rc=$?
+  [[ $rc -ne 2 ]] || _ambiguous "$1"
+  [[ $rc -eq 0 ]] || fail "$EX_NOTFOUND" "no vault '$1' in $(_display "$OVM_VAULTS_HOME") (ovm list)"
+  [[ "${E_STATE[$V_I]}" == ok ]] || fail "$EX_STALE" "${E_NAME[$V_I]} is ${E_STATE[$V_I]} (ovm list)"
+}
+
+# The roots of the vaults that answer, into LIVE (parallel: LIVE_ID, LIVE_NAME; LIVE_IX by name)
 LIVE=() LIVE_ID=() LIVE_NAME=()
+declare -A LIVE_IX=()
 _live_vaults() {
   local i
-  LIVE=() LIVE_ID=() LIVE_NAME=()
+  LIVE=() LIVE_ID=() LIVE_NAME=() LIVE_IX=()
   _vaults_load
   for i in "${!E_NAME[@]}"; do
     case "${E_STATE[$i]}" in
-      ok) LIVE+=("${E_ROOT[$i]}") LIVE_ID+=("${E_ID[$i]}") LIVE_NAME+=("${E_NAME[$i]}") ;;
+      ok)
+        LIVE_IX[${E_NAME[$i]}]=${#LIVE[@]}
+        LIVE+=("${E_ROOT[$i]}") LIVE_ID+=("${E_ID[$i]}") LIVE_NAME+=("${E_NAME[$i]}")
+        ;;
       unreachable) warn "vault ${E_NAME[$i]} skipped: $(_display "${E_ROOT[$i]}") does not answer" ;;
     esac
   done
@@ -361,15 +464,19 @@ cmd_init() {
 # An ovm vault (ovm help). The id is this vault's identity: do not change it. The vault's name is
 # its entry in ~/vaults (OVM_VAULTS_HOME).
 id: $id
-# Directories linked into wsm spaces are recorded here: ovm link add DIR --to SPEC
-#links:
-#  - source: docs/product      # relative to this file
-#    target: lgat/tech/web     # a wsm space (wsm ls)
-#    as: product               # optional: the symlink's name; default is the directory's
-# What \`ovm validate\` requires of every document's frontmatter
-profile:
-  required: [type, id]
-  #types: [PRD, ADR, Note]    # allowed values of type; leave out to allow any
+spaces_path: spaces              # the folder whose subfolders are the vault spaces (ovm space add NAME)
+exclude: [_templates]            # what docs and validate skip: path patterns (.obsidian/, .trash/ always)
+# The vocabulary \`ovm validate\` checks documents against; each key may also appear per space
+required: [type, id]             # keys every document's frontmatter must have
+#kinds:                          # allowed values of type; each may require more keys
+#  note: {}
+#  decision: {required: [status]}
+#fields:                         # the value type of a frontmatter key
+#  status: [proposed, accepted, superseded]   # a list: one of these
+#  timestamp: datetime           # string, number, bool, date, datetime, list
+#tags: [idea, decision]          # allowed tags, frontmatter and inline; a/b is allowed by a
+#spaces:                         # per vault space: more vocabulary (where a space is linked: ovm space link)
+#  product: {tags: [linker]}
 CFG
     made=true
   fi
@@ -401,8 +508,9 @@ cmd_list() {
 
 # --- Documents ----------------------------------------------------------------------------
 #
-# A document is a .md file in a vault: not in a hidden directory (.obsidian, .git, .trash) or
-# node_modules, and not index.md or log.md, which OKF reserves and which carry no frontmatter.
+# A document is a .md file in a vault that the walk meets (_walk: not under a hidden name or
+# node_modules, not matched by vault.yml's exclude:), and not index.md or log.md, which OKF
+# reserves and which carry no frontmatter.
 
 # One row per document that opens with frontmatter: path, ok|open (open: the block never closes),
 # then its top-level id, type and title. A file with no frontmatter gives no row.
@@ -429,49 +537,35 @@ open && /^title:/ { title = val($0) }
 END { if (open) row("open") }
 '
 
-# The documents under <dir>, one path per line
-_doc_files() {
-  find "$1" -mindepth 1 \( -name '.*' -o -name node_modules \) -prune -o \
-    -type f -name '*.md' ! -name index.md ! -name log.md -print 2>/dev/null | LC_ALL=C sort
+# The .md files under <dir>, in the vault at <root>: one absolute path per line, sorted. Hidden
+# names (.obsidian, .trash, .git) and node_modules are always skipped; each of vault.yml's
+# exclude: patterns is matched against the path relative to the root of every directory and file
+# met, as [[ $rel == $pat ]] would (find's -path: * crosses /), and a matching directory is pruned.
+# What docs, show, path, validate (and tasks) all go through.
+_walk() {
+  local root="$1" dir="$2" rel p
+  local -a args=()
+  _vault_cfg "$root"
+  rel="${dir#"$root"}"
+  args=(".$rel" -mindepth 1 \( -name '.*' -o -name node_modules)
+  for p in "${VC_EXCLUDE[@]}"; do args+=(-o -path "./$p"); done
+  args+=(\) -prune -o -type f -name '*.md' -print)
+  (cd -- "$root" && find "${args[@]}" 2>/dev/null) |
+    R="$root" awk '{ print ENVIRON["R"] substr($0, 2) }' | LC_ALL=C sort
 }
 
-# FM_AWK's rows for every document under <dir>
+# The documents under <dir> of the vault at <root>, one path per line
+_doc_files() { _walk "$1" "$2" | awk '!/\/(index|log)\.md$/'; }
+
+# FM_AWK's rows for every document under <dir> of the vault at <root>
 _doc_scan() {
-  find "$1" -mindepth 1 \( -name '.*' -o -name node_modules \) -prune -o \
-    -type f -name '*.md' ! -name index.md ! -name log.md -exec awk "$FM_AWK" {} + 2>/dev/null | LC_ALL=C sort
+  _doc_files "$1" "$2" | tr '\n' '\0' | xargs -0 -r awk "$FM_AWK" 2>/dev/null | LC_ALL=C sort
 }
 
 # A document's frontmatter, without the fences / its body, without the frontmatter
 _fm_block() { awk 'NR == 1 { if ($0 !~ /^---[ \t\r]*$/) exit; next } /^---[ \t\r]*$/ { exit } { print }' "$1"; }
 _doc_body() {
   awk 'NR == 1 && /^---[ \t\r]*$/ { fm = 1; next } fm == 1 { if (/^---[ \t\r]*$/) fm = 2; next } { print }' "$1"
-}
-
-# The links of the vault at <root>, into L_SRC, L_TGT, L_AS (the default name filled in)
-L_SRC=() L_TGT=() L_AS=()
-_links_load() {
-  local root="$1" src tgt as
-  L_SRC=() L_TGT=() L_AS=()
-  [[ -f "$root/$OVM_CONFIG" ]] || return 0
-  while IFS="$US" read -r src tgt as; do
-    src="${src#./}" src="${src%/}" tgt="${tgt%/}"
-    [[ -n "$src" && -n "$tgt" ]] || continue
-    [[ -n "$as" ]] || as=$(_default_as "$root" "$src")
-    L_SRC+=("$src") L_TGT+=("$tgt") L_AS+=("$as")
-  done < <(yq -r ".links[]? | [.source // \"\", .target // \"\", .as // \"\"] | join(\"$US\")" "$root/$OVM_CONFIG" 2>/dev/null || true)
-}
-
-# The wsm space a path relative to the vault root belongs to: the link whose source holds it,
-# the deepest one when links nest. Empty when no link does. Uses L_* (_links_load).
-_space_of() {
-  local rel="$1" i best="" len=-1 src
-  for i in "${!L_SRC[@]}"; do
-    src="${L_SRC[$i]}"
-    if [[ "$src" == . || "$rel" == "$src" || "$rel" == "$src"/* ]]; then
-      if [[ ${#src} -gt $len ]]; then len=${#src} best="${L_TGT[$i]}"; fi
-    fi
-  done
-  printf '%s\n' "$best"
 }
 
 # Find a document by id in every live vault: D_PATH, D_ROOT, D_VAULT (name), D_VID. Returns 1
@@ -486,8 +580,8 @@ _doc_find() {
     while IFS="$US" read -r path state id type title; do
       [[ "$id" == "$want" ]] || continue
       hits+=("$path") roots+=("${LIVE[$v]}") names+=("${LIVE_NAME[$v]}") vids+=("${LIVE_ID[$v]}")
-    done < <(find "${LIVE[$v]}" -mindepth 1 \( -name '.*' -o -name node_modules \) -prune -o \
-      -type f -name '*.md' ! -name index.md ! -name log.md -exec grep -lE "^id:[[:space:]]*[\"']?$want" {} + 2>/dev/null |
+    done < <(_doc_files "${LIVE[$v]}" "${LIVE[$v]}" | tr '\n' '\0' |
+      xargs -0 -r grep -lE "^id:[[:space:]]*[\"']?$want" /dev/null 2>/dev/null |
       while IFS= read -r path; do awk "$FM_AWK" "$path"; done)
   done
   case ${#hits[@]} in
@@ -536,16 +630,45 @@ cmd_path() {
 }
 
 cmd_docs() {
-  local path="${1:-}" want_type="${CLI_OPT[type]:-}" want_space="${CLI_OPT[space]:-}"
+  local arg="${1:-}" want_type="${CLI_OPT[type]:-}" want_space="${CLI_OPT[space]:-}"
   want_space="${want_space%/}"
   _require_yq
-  # Where to look: PATH (in its vault), else the vault you are in, else every vault
+  [[ -z "$arg" || -z "$want_space" ]] || fail "$EX_USAGE" "docs takes a vault, a vault space or a DIR, or --space: not both"
+  # Where to look: the vault spaces linked into --space; a DIR (in its vault), a vault or a vault
+  # space; else the vault you are in; else every vault
   local -a roots=() dirs=() names=()
-  local root dir v
-  if [[ -n "$path" ]]; then
-    dir=$(_canon "$path") || fail "$EX_NOTFOUND" "no such directory: $path"
-    _vault_of "$dir" || fail "$EX_NOTFOUND" "$(_display "$dir") is not inside a vault"
-    roots=("$VA_ROOT") dirs=("$dir") names=("$VA_NAME")
+  local dir i v
+  if [[ -n "$want_space" ]]; then
+    _pairs_load
+    _live_vaults
+    local -A seen=()
+    for i in "${!K_VAULT[@]}"; do
+      [[ "${K_TO[$i]}" == "$want_space" && -n "${LIVE_IX[${K_VAULT[$i]}]+x}" ]] || continue
+      v=${LIVE_IX[${K_VAULT[$i]}]}
+      _vault_cfg "${LIVE[$v]}"
+      [[ -n "$VC_SPACES" ]] || continue
+      dir="${LIVE[$v]}/$VC_SPACES/${K_SPACE[$i]}"
+      [[ -d "$dir" && -z "${seen[$dir]:-}" ]] || continue
+      seen[$dir]=1
+      roots+=("${LIVE[$v]}") dirs+=("$dir") names+=("${LIVE_NAME[$v]}")
+    done
+  elif [[ -n "$arg" ]]; then
+    case "$arg" in
+      /*|.*|"~"|"~/"*)
+        [[ "$arg" != "~" && "$arg" != "~/"* ]] || arg="$HOME${arg#\~}"
+        dir=$(_canon "$arg") || fail "$EX_NOTFOUND" "no such directory: $arg"
+        _vault_of "$dir" || fail "$EX_NOTFOUND" "$(_display "$dir") is not inside a vault"
+        roots=("$VA_ROOT") dirs=("$dir") names=("$VA_NAME")
+        ;;
+      */*)
+        _space_arg "$arg" folder
+        roots=("$SP_ROOT") dirs=("$SP_DIR") names=("$SP_VAULT")
+        ;;
+      *)
+        _vault_named "$arg"
+        roots=("${E_ROOT[$V_I]}") dirs=("${E_ROOT[$V_I]}") names=("${E_NAME[$V_I]}")
+        ;;
+    esac
   elif _vault_of "$PWD"; then
     roots=("$VA_ROOT") dirs=("$VA_ROOT") names=("$VA_NAME")
   else
@@ -553,16 +676,15 @@ cmd_docs() {
     roots=("${LIVE[@]}") dirs=("${LIVE[@]}") names=("${LIVE_NAME[@]}")
   fi
 
-  local file state id type title space shown
+  local file state id type title space
   for v in "${!roots[@]}"; do
-    _links_load "${roots[$v]}"
+    _vault_cfg "${roots[$v]}"
     while IFS="$US" read -r file state id type title; do
       [[ -n "$file" ]] || continue
-      space=$(_space_of "${file#"${roots[$v]}"/}")
       [[ -z "$want_type" || "$type" == "$want_type" ]] || continue
-      [[ -z "$want_space" || "$space" == "$want_space" ]] || continue
+      space=$(_space_of "${roots[$v]}" "${file#"${roots[$v]}"/}")
       printf '%s\n' "$id$US$type$US$title$US$space$US$file$US${names[$v]}"
-    done < <(_doc_scan "${dirs[$v]}")
+    done < <(_doc_scan "${roots[$v]}" "${dirs[$v]}")
   done | anfs_table "ID TYPE TITLE SPACE PATH VAULT" "id type title space path vault"
 }
 
@@ -582,8 +704,7 @@ cmd_show() {
   _fm_block "$D_PATH" > "$tmp/fm.yml"
   _doc_body "$D_PATH" > "$tmp/body"
   [[ -s "$tmp/fm.yml" ]] || echo '{}' > "$tmp/fm.yml"
-  _links_load "$D_ROOT"
-  space=$(_space_of "${D_PATH#"$D_ROOT"/}")
+  space=$(_space_of "$D_ROOT" "${D_PATH#"$D_ROOT"/}")
   ID="$want" VAULT="$D_VAULT" VID="$D_VID" P="$D_PATH" SPACE="$space" FM="$tmp/fm.yml" BODY="$tmp/body" \
     yq -n -o=json '{
       "id": strenv(ID), "vault": strenv(VAULT), "vault_id": strenv(VID), "path": strenv(P),
@@ -592,19 +713,166 @@ cmd_show() {
     die "the frontmatter of $(_display "$D_PATH") does not parse (ovm validate)"
 }
 
-# --- Links --------------------------------------------------------------------------------
+# --- links.yml: where vault spaces are linked ---------------------------------------------
 #
-# A link is <space's directory>/<as> -> <vault>/<source>. The space's directory comes from wsm
-# (`wsm ls --json`: space and dir, null when the space is not installed), so ovm.yml holds no
-# absolute path and works on another machine. One tool reads another's list as JSON, never by
-# column (lib/anfs/table.sh).
+# The person's declaration, ~/.config/ovm/links.yml, then this machine's additions in
+# links.local.yml beside it: a list of {vault, space, to, as}. Both are read, links.yml first, and
+# a pair (vault, space, one of to) given twice is one link: a local file adds, it cannot take one
+# away. ovm writes them only from space link, unlink and remove: links.yml when it is a file or
+# missing, links.local.yml when links.yml is a link (shipped by a layer of the person's
+# repository, which is theirs to edit).
+
+# The declared pairs, one per (vault, space, wsm space): K_VAULT, K_SPACE, K_TO, K_AS (the
+# default, the space's name, filled in), K_FILE (where it is declared first). K_RO[vault|space|to]
+# is the shipped file (a link) that declares that pair, when one does.
+K_VAULT=() K_SPACE=() K_TO=() K_AS=() K_FILE=()
+declare -A K_RO=() K_SEEN=()
+K_LOADED=false
+# With K_SOFT=true (wsm's events), a file that does not read is warned about, and _pairs_load
+# returns 1 instead of exiting
+K_SOFT=false
+
+_pairs_bad() {
+  if $K_SOFT; then warn "$1 (no links read)"; return 1; fi
+  fail "$EX_USAGE" "$1"
+}
+
+# Read <file> into K_*. A file that is not a list of {vault, space, to[, as]} is refused whole.
+_pairs_read() {
+  local f="$1" tag line n=0 k t key
+  local -a F=() keys=() tos=() ttags=()
+  local -a v=() s=() to=() as=()
+  local where
+  tag=$(yq -r tag "$f" 2>/dev/null) || { _pairs_bad "$(_display "$f") does not parse as YAML"; return 1; }
+  [[ "$tag" != "!!null" ]] || return 0
+  [[ "$tag" == "!!seq" ]] || { _pairs_bad "$(_display "$f") is not a list of {vault, space, to, as} entries"; return 1; }
+  # shellcheck disable=SC2016
+  while IFS= read -r line; do
+    # (yq prints a blank line for a list with only comments before it)
+    [[ -n "$line" ]] || continue
+    n=$((n + 1))
+    IFS="$US" read -ra F <<< "$line"
+    where="$(_display "$f"): entry $n"
+    [[ "${F[0]:-}" == "!!map" ]] || { _pairs_bad "$where is not a map of vault, space, to and as"; return 1; }
+    IFS=, read -ra keys <<< "${F[1]:-}"
+    for key in "${keys[@]}"; do
+      case "$key" in vault|space|to|as) ;; *) _pairs_bad "$where: unknown key '$key' (vault, space, to, as)"; return 1 ;; esac
+    done
+    [[ "${F[2]:-}" == "!!str" && -n "${F[3]:-}" && "${F[3]}" != */* ]] ||
+      { _pairs_bad "$where: vault is the name of an entry of $(_display "$OVM_VAULTS_HOME")"; return 1; }
+    where+=" (${F[3]}/${F[5]:-})"
+    [[ "${F[4]:-}" == "!!str" ]] && _space_name_ok "${F[5]:-}" ||
+      { _pairs_bad "$where: space is a folder's name under the vault's spaces_path"; return 1; }
+    case "${F[6]:-}" in
+      "!!null") ;;
+      "!!str") [[ -n "${F[7]:-}" && "${F[7]}" != */* && "${F[7]}" != .* ]] ||
+                 { _pairs_bad "$where: as is a name, not a path"; return 1; } ;;
+      *) _pairs_bad "$where: as is a name"; return 1 ;;
+    esac
+    IFS=, read -ra ttags <<< "${F[9]:-}"
+    tos=("${F[@]:10}")
+    case "${F[8]:-}" in
+      "!!str"|"!!seq") ;;
+      *) _pairs_bad "$where: to is a wsm space, or a list of them (wsm ls)"; return 1 ;;
+    esac
+    [[ ${#tos[@]} -gt 0 ]] || { _pairs_bad "$where: to is empty"; return 1; }
+    for k in "${!tos[@]}"; do
+      [[ "${ttags[$k]:-}" == "!!str" && -n "${tos[$k]}" ]] ||
+        { _pairs_bad "$where: to is a wsm space, or a list of them (wsm ls)"; return 1; }
+      v+=("${F[3]}") s+=("${F[5]}") to+=("${tos[$k]%/}") as+=("${F[7]:-}")
+    done
+  done < <(US="$US" yq -r '.[] | [tag, ((select(tag == "!!map") | keys | join(",")) // ""),
+      (.vault | tag), (.vault // "" | tostring), (.space | tag), (.space // "" | tostring),
+      (.as | tag), (.as // "" | tostring), (.to | tag), ([.to] | flatten | map(tag) | join(",")),
+      ([.to] | flatten | .[] | tostring)] | join(strenv(US))' "$f" 2>/dev/null)
+  # Valid as a whole: now it counts
+  for k in "${!v[@]}"; do
+    key="${v[$k]}|${s[$k]}|${to[$k]}"
+    [[ ! -L "$f" ]] || K_RO[$key]="$f"
+    [[ -z "${K_SEEN[$key]:-}" ]] || continue
+    K_SEEN[$key]=1
+    K_VAULT+=("${v[$k]}") K_SPACE+=("${s[$k]}") K_TO+=("${to[$k]}") K_AS+=("${as[$k]:-${s[$k]}}") K_FILE+=("$f")
+  done
+}
+
+_pairs_load() {
+  local f
+  $K_LOADED && return 0
+  _require_yq
+  K_VAULT=() K_SPACE=() K_TO=() K_AS=() K_FILE=() K_RO=() K_SEEN=()
+  for f in "$OVM_LINKS_YML" "$OVM_LINKS_LOCAL"; do
+    [[ -e "$f" ]] || continue
+    _pairs_read "$f" || return 1
+  done
+  K_LOADED=true
+}
+
+# The file ovm writes, into LW: links.yml, unless it is a link (shipped), then links.local.yml
+_links_writable() {
+  LW="$OVM_LINKS_YML"
+  [[ ! -L "$OVM_LINKS_YML" ]] || LW="$OVM_LINKS_LOCAL"
+}
+
+# Add <to> to the entry of <vault>, <space> and <as> (empty: the default) in <file>, or a new entry
+_links_add() {
+  local f="$1" n
+  if [[ ! -e "$f" ]]; then
+    mkdir -p -- "${f%/*}" || die "cannot create ${f%/*}"
+    cat > "$f" <<'EOF'
+# Which vault spaces ovm links into which wsm spaces (ovm help). Written by ovm space link, unlink
+# and remove; ovm space apply makes what is missing on a machine.
+#- vault: apex                 # an entry of ~/vaults
+#  space: product              # a folder under that vault's spaces_path
+#  to: [anfs-dev, lgat/tech]   # wsm space ids (wsm ls)
+#  as: apex                    # optional: the link's name in each wsm space (default: the space's)
+EOF
+  fi
+  # shellcheck disable=SC2016
+  n=$(V="$2" S="$3" A="$5" yq -r '[(. // [])[] | select(tag == "!!map" and .vault == strenv(V) and .space == strenv(S)
+      and (.as // "") == strenv(A))] | length' "$f") || die "$(_display "$f") does not parse"
+  if [[ "$n" -gt 0 ]]; then
+    V="$2" S="$3" A="$5" T="$4" yq -i '(.[] | select(tag == "!!map" and .vault == strenv(V) and .space == strenv(S)
+      and (.as // "") == strenv(A)) | .to) |= ([.] | flatten) + [strenv(T)]' "$f"
+  elif [[ -n "$5" ]]; then
+    V="$2" S="$3" A="$5" T="$4" yq -i '. += [{"vault": strenv(V), "space": strenv(S), "to": [strenv(T)], "as": strenv(A)}] |
+      .[-1].to style="flow"' "$f"
+  else
+    V="$2" S="$3" T="$4" yq -i '. += [{"vault": strenv(V), "space": strenv(S), "to": [strenv(T)]}] | .[-1].to style="flow"' "$f"
+  fi
+}
+
+# Take the pair <vault> <space> <to> out of every file ovm may write that has it; an entry whose
+# to is left empty goes
+_links_del() {
+  local f
+  for f in "$OVM_LINKS_YML" "$OVM_LINKS_LOCAL"; do
+    [[ -f "$f" && ! -L "$f" ]] || continue
+    # shellcheck disable=SC2016
+    V="$1" S="$2" T="$3" yq -i '
+      del(.[] | select(tag == "!!map" and .vault == strenv(V) and .space == strenv(S) and (.to | tag) == "!!str" and .to == strenv(T))) |
+      del(.[] | select(tag == "!!map" and .vault == strenv(V) and .space == strenv(S) and (.to | tag) == "!!seq") | .to[] | select(. == strenv(T))) |
+      del(.[] | select(tag == "!!map" and .vault == strenv(V) and .space == strenv(S) and (.to | tag) == "!!seq" and (.to | length) == 0))' "$f"
+  done
+}
+
+# --- Links: vault spaces in wsm spaces ----------------------------------------------------
+#
+# A link is <wsm space's directory>/<as> -> <vault>/<spaces_path>/<space>. The wsm space's
+# directory comes from wsm (`wsm ls --json`: space and dir, null when the space is not installed),
+# so links.yml holds no path and works on another machine. One tool reads another's list as JSON,
+# never by column (lib/anfs/table.sh).
 
 declare -A WSM_DIR=() WSM_KNOWN=()
-WSM_LOADED=false
+WSM_LOADED=false WSM_OK=false
+# Read wsm's spaces; without wsm, fail 69, or with `soft` return 1 and leave WSM_OK false
 _wsm_load() {
   local id dir
-  $WSM_LOADED && return 0
-  command -v wsm >/dev/null 2>&1 || fail "$EX_UNAVAIL" "wsm is required for links (ppm install core/wsm)"
+  $WSM_LOADED && { $WSM_OK || [[ "${1:-}" == soft ]] || _wsm_missing; return 0; }
+  WSM_LOADED=true
+  if ! command -v wsm >/dev/null 2>&1; then
+    [[ "${1:-}" == soft ]] && return 0
+    _wsm_missing
+  fi
   WSM_DIR=() WSM_KNOWN=()
   while IFS="$US" read -r id dir; do
     id="${id%/}"
@@ -612,8 +880,9 @@ _wsm_load() {
     WSM_KNOWN[$id]=1
     WSM_DIR[$id]="$dir"
   done < <(wsm ls --json 2>/dev/null | yq -p json -r ".[] | .space + \"$US\" + (.dir // \"\")" 2>/dev/null || true)
-  WSM_LOADED=true
+  WSM_OK=true
 }
+_wsm_missing() { fail "$EX_UNAVAIL" "wsm is required to link vault spaces (ppm install core/wsm)"; }
 
 # The record of the symlinks ovm made: path, vault id, what it points at, the space. Loaded into
 # R_PATH, R_VID, R_DEST, R_TGT.
@@ -642,22 +911,29 @@ _rec_set() {
 }
 
 # Where one link stands. Sets LS_STATE, LS_PATH (the symlink), LS_DEST (what it should point at):
-#   ok        the symlink is there and points into the vault
-#   missing   the space is installed and nothing is at the symlink's path
-#   pending   the space is not installed; wsm will say when it is
-#   unknown   no source defines the space
-#   conflict  something else is at the symlink's path
-#   dangling  the vault directory is gone (the symlink, if any, points at nothing)
+#   ok         the symlink is there and points into the vault
+#   missing    the wsm space is installed and nothing is at the symlink's path
+#   pending    the wsm space is not installed; wsm will say when it is
+#   unknown    no source defines the wsm space (or there is no wsm to ask)
+#   conflict   something else is at the symlink's path
+#   no folder  the vault space's folder is not there
+#   dangling   the folder is gone and ovm's symlink is still there, pointing at nothing
+# Usage: _link_state <vault root> <folder, relative to it> <wsm space> <as>
 LS_STATE="" LS_PATH="" LS_DEST=""
 _link_state() {
-  local root="$1" src="$2" tgt="$3" as="$4" dir
+  local root="$1" src="$2" tgt="$3" as="$4" dir=""
   LS_DEST="$root/$src" LS_PATH=""
-  [[ "$src" != . ]] || LS_DEST="$root"
+  [[ -z "${WSM_KNOWN[$tgt]:-}" ]] || dir="${WSM_DIR[$tgt]:-}"
+  [[ -z "$dir" ]] || LS_PATH="$dir/$as"
+  if [[ ! -d "$LS_DEST" ]]; then
+    if [[ -n "$LS_PATH" && -L "$LS_PATH" && "$(anfs_link_src_state "$LS_PATH" "$LS_DEST")" == "missing src" ]]
+    then LS_STATE=dangling
+    else LS_STATE="no folder"
+    fi
+    return 0
+  fi
   if [[ -z "${WSM_KNOWN[$tgt]:-}" ]]; then LS_STATE=unknown; return 0; fi
-  dir="${WSM_DIR[$tgt]:-}"
   if [[ -z "$dir" ]]; then LS_STATE=pending; return 0; fi
-  LS_PATH="$dir/$as"
-  if [[ ! -d "$LS_DEST" ]]; then LS_STATE=dangling; return 0; fi
   if [[ -L "$LS_PATH" ]]; then
     if _points_at "$LS_PATH" "$LS_DEST"; then LS_STATE=ok; else LS_STATE=conflict; fi
   elif [[ -e "$LS_PATH" ]]; then
@@ -676,19 +952,13 @@ _points_at() {
   [[ -d "$1" && -d "$2" && "$(_canon "$1")" == "$(_canon "$2")" ]]
 }
 
-# The name a link gets when ovm.yml gives none: the directory's, or the vault's (its entry in
-# ~/vaults) for its root
-_default_as() {
-  if [[ "$2" == . ]]; then _entry_of "$1" || printf '%s\n' "${1##*/}"; else printf '%s\n' "${2##*/}"; fi
-}
-
 # A symlink in a cloned repo would show up there as an untracked file
 _in_git() { [[ "$(git -C "$1" rev-parse --is-inside-work-tree 2>/dev/null)" == true ]]; }
 
 # Bring one link into being. Returns 1 when it could not be (and says why).
-# Usage: _link_make <root> <vault id> <source> <target> <as>
+# Usage: _link_make <root> <vault id> <folder> <wsm space> <as> <label: vault/space>
 _link_make() {
-  local root="$1" vid="$2" src="$3" tgt="$4" as="$5"
+  local root="$1" vid="$2" src="$3" tgt="$4" as="$5" label="$6"
   _link_state "$root" "$src" "$tgt" "$as"
   case "$LS_STATE" in
     ok)
@@ -696,57 +966,202 @@ _link_make() {
       ;;
     missing)
       if _in_git "${LS_PATH%/*}"; then
-        warn "not linking $src: $(_display "${LS_PATH%/*}") is inside a git repository, where the link would be an untracked file"
+        warn "not linking $label: $(_display "${LS_PATH%/*}") is inside a git repository, where the link would be an untracked file"
         return 1
       fi
       anfs_link_one "$LS_DEST" "$LS_PATH" || { warn "cannot link $(_display "$LS_PATH")"; return 1; }
       _rec_set "$LS_PATH" "$vid" "$LS_DEST" "$tgt"
       say "linked $(_display "$LS_PATH") -> $(_display "$LS_DEST")"
       ;;
-    pending)  say "pending $src -> $tgt: the space is not installed (wsm install $tgt)" ;;
-    unknown)  warn "$src: no wsm space '$tgt' (wsm ls)"; return 1 ;;
-    dangling) warn "$src: no such directory in the vault: $(_display "$LS_DEST")"; return 1 ;;
-    conflict) warn "$src: $(_display "$LS_PATH") exists and is not this link; move it away, or pick another name with --as"; return 1 ;;
+    pending)  say "pending $label -> $tgt: the wsm space is not installed (wsm install $tgt)" ;;
+    unknown)  warn "$label: no wsm space '$tgt' (wsm ls)"; return 1 ;;
+    "no folder"|dangling) warn "$label: no such folder in the vault: $(_display "$LS_DEST")"; return 1 ;;
+    conflict) warn "$label: $(_display "$LS_PATH") exists and is not this link; move it away, or pick another name with --as"; return 1 ;;
   esac
 }
 
 # Remove a symlink ovm made, if it still is one: never anything that replaced it
 _link_drop() {
   local path="$1" dest="$2"
-  if [[ -L "$path" ]] && _points_at "$path" "$dest"; then
+  if [[ -L "$path" ]] && { _points_at "$path" "$dest" || [[ "$(anfs_link_src_state "$path" "$dest")" == "missing src" ]]; }; then
     rm -f -- "$path"
     say "unlinked $(_display "$path")"
   fi
   _rec_set "$path"
 }
 
-# The vault directory an argument names, as a path relative to its vault's root: LK_ROOT, LK_SRC
-LK_ROOT="" LK_SRC=""
-_link_dir() {
-  local dir
-  dir=$(_canon "${1:-.}") || fail "$EX_NOTFOUND" "no such directory: ${1:-.}"
-  _vault_of "$dir" || fail "$EX_NOTFOUND" "$(_display "$dir") is not inside a vault"
-  LK_ROOT="$VA_ROOT"
-  LK_SRC=.
-  [[ "$dir" == "$LK_ROOT" ]] || LK_SRC="${dir#"$LK_ROOT"/}"
+# --- ovm space ----------------------------------------------------------------------------
+
+# The vault space an argument names: <vault>/<space>, or <space> in the vault you are in. Sets
+# SP_VAULT (the entry's name), SP_SPACE, and when the vault is usable SP_ROOT, SP_VID, SP_REL (the
+# folder, relative to the root) and SP_DIR. <need>: vault (it must be usable), folder (and the
+# folder there), or nothing (a vault no longer in ~/vaults is still named).
+SP_VAULT="" SP_SPACE="" SP_ROOT="" SP_VID="" SP_REL="" SP_DIR=""
+_space_arg() {
+  local arg="${1%/}" need="${2:-}" rc=0
+  if [[ "$arg" == */* ]]; then
+    SP_VAULT="${arg%%/*}" SP_SPACE="${arg#*/}"
+  elif _vault_of "$PWD"; then
+    SP_VAULT="$VA_NAME" SP_SPACE="$arg"
+  else
+    fail "$EX_USAGE" "name the vault: <vault>/$arg (you are not in one)"
+  fi
+  [[ -n "$SP_VAULT" && "$SP_VAULT" != .* ]] && _space_name_ok "$SP_SPACE" ||
+    fail "$EX_USAGE" "a vault space is <vault>/<space>, a folder directly under the vault's spaces_path: $arg"
+  SP_ROOT="" SP_VID="" SP_REL="" SP_DIR=""
+  _vaults_load
+  _vault_resolve "$SP_VAULT" || rc=$?
+  [[ $rc -ne 2 ]] || _ambiguous "$SP_VAULT"
+  if [[ $rc -eq 0 && "${E_STATE[$V_I]}" == ok ]]; then
+    SP_VAULT="${E_NAME[$V_I]}" SP_ROOT="${E_ROOT[$V_I]}" SP_VID="${E_ID[$V_I]}"
+    _vault_cfg "$SP_ROOT"
+    if [[ -n "$VC_SPACES" ]]; then
+      SP_REL="$VC_SPACES/$SP_SPACE" SP_DIR="$SP_ROOT/$SP_REL"
+    elif [[ -n "$need" ]]; then
+      fail "$EX_STALE" "$(_display "$SP_ROOT/$OVM_CONFIG"): $VC_BAD"
+    fi
+  elif [[ -n "$need" ]]; then
+    [[ $rc -ne 0 ]] || fail "$EX_STALE" "${E_NAME[$V_I]} is ${E_STATE[$V_I]} (ovm list)"
+    fail "$EX_NOTFOUND" "no vault '$SP_VAULT' in $(_display "$OVM_VAULTS_HOME") (ovm list)"
+  fi
+  if [[ "$need" == folder && ! -d "$SP_DIR" ]]; then
+    fail "$EX_NOTFOUND" "no folder $(_display "$SP_DIR"): ovm space add $SP_VAULT/$SP_SPACE"
+  fi
+  return 0
 }
 
-cmd_link_add() {
-  local dir="${1:-}" to="${CLI_OPT[to]:-}" as="${CLI_OPT[as]:-}"
-  to="${to%/}"
-  [[ -n "$to" ]] || cli_usage_err "--to SPEC is required"
+# One row of space list: space, to, as, status, the link, vault, the folder
+_space_row() { printf '%s\n' "$1$US$2$US$3$US$4$US$5$US$6$US$7"; }
+
+cmd_space_list() {
+  local want="${1:-}" problems=${CLI_OPT[problems]:-false}
+  _require_yq
+  _pairs_load
+  _wsm_load soft
+  $WSM_OK || warn "wsm is not installed: where vault spaces are linked is unknown (ppm install core/wsm)"
+  local all=false v i s name root
+  local -a vs=()
+  _live_vaults
+  if [[ -n "$want" ]]; then
+    _vault_named "$want"
+    vs=("${LIVE_IX[${E_NAME[$V_I]}]}")
+  elif _vault_of "$PWD"; then
+    vs=("${LIVE_IX[$VA_NAME]}")
+  else
+    all=true
+    vs=("${!LIVE[@]}")
+  fi
+
+  # Every declared link's path, so a symlink in the record that none declares is an orphan
+  local -A declared=() vid_name=()
+  for i in "${!K_VAULT[@]}"; do
+    [[ -z "${WSM_DIR[${K_TO[$i]}]:-}" ]] || declared["${WSM_DIR[${K_TO[$i]}]}/${K_AS[$i]}"]=1
+  done
+  for v in "${!LIVE[@]}"; do vid_name[v${LIVE_ID[$v]}]="${LIVE_NAME[$v]}"; done
+
+  local -a rows=()
+  local -A shown=() mine=()
+  for v in "${vs[@]}"; do
+    root="${LIVE[$v]}" name="${LIVE_NAME[$v]}"
+    mine[v${LIVE_ID[$v]}]=1
+    _vault_cfg "$root"
+    [[ -z "$VC_BAD" ]] || warn "$(_display "$root/$OVM_CONFIG"): $VC_BAD"
+    # The folders, each with its links, then the links whose folder is not there
+    while IFS= read -r s; do
+      [[ -n "$s" ]] || continue
+      shown[$s]=1
+      local any=false
+      for i in "${!K_VAULT[@]}"; do
+        [[ "${K_VAULT[$i]}" == "$name" && "${K_SPACE[$i]}" == "$s" ]] || continue
+        any=true
+        _link_state "$root" "$VC_SPACES/$s" "${K_TO[$i]}" "${K_AS[$i]}"
+        rows+=("$(_space_row "$s" "${K_TO[$i]}" "${K_AS[$i]}" "$LS_STATE" "$LS_PATH" "$name" "$LS_DEST")")
+      done
+      $any || rows+=("$(_space_row "$s" "" "" unlinked "" "$name" "$root/$VC_SPACES/$s")")
+    done < <(_space_dirs "$root")
+    for i in "${!K_VAULT[@]}"; do
+      [[ "${K_VAULT[$i]}" == "$name" && -z "${shown[${K_SPACE[$i]}]:-}" ]] || continue
+      if [[ -n "$VC_SPACES" ]]; then
+        _link_state "$root" "$VC_SPACES/${K_SPACE[$i]}" "${K_TO[$i]}" "${K_AS[$i]}"
+      else
+        LS_STATE="no folder" LS_PATH="" LS_DEST=""
+      fi
+      rows+=("$(_space_row "${K_SPACE[$i]}" "${K_TO[$i]}" "${K_AS[$i]}" "$LS_STATE" "$LS_PATH" "$name" "$LS_DEST")")
+    done
+    shown=()
+  done
+  if $all; then
+    # Entries naming a vault that is not one here (an unreachable one was warned about)
+    for i in "${!K_VAULT[@]}"; do
+      [[ -z "${LIVE_IX[${K_VAULT[$i]}]+x}" ]] || continue
+      _vault_resolve "${K_VAULT[$i]}" && [[ "${E_STATE[$V_I]}" == unreachable ]] && continue
+      rows+=("$(_space_row "${K_SPACE[$i]}" "${K_TO[$i]}" "${K_AS[$i]}" "no vault" "" "${K_VAULT[$i]}" "")")
+    done
+  fi
+  # Symlinks ovm made that no entry declares any more
+  _rec_load
+  for i in "${!R_PATH[@]}"; do
+    [[ -z "${declared[${R_PATH[$i]}]:-}" && -L "${R_PATH[$i]}" ]] || continue
+    $all || [[ -n "${mine[v${R_VID[$i]}]:-}" ]] || continue
+    rows+=("$(_space_row "${R_DEST[$i]##*/}" "${R_TGT[$i]}" "${R_PATH[$i]##*/}" orphan "${R_PATH[$i]}" \
+      "${vid_name[v${R_VID[$i]}]:-}" "${R_DEST[$i]}")")
+  done
+
+  local -a out=()
+  local row st
+  for row in "${rows[@]}"; do
+    if $problems; then
+      st="${row#*"$US"*"$US"*"$US"}" st="${st%%"$US"*}"
+      case "$st" in ok|pending|unlinked) continue ;; esac
+    fi
+    out+=("$row")
+  done
+  if [[ ${#out[@]} -gt 0 ]]; then printf '%s\n' "${out[@]}"; fi |
+    anfs_table "SPACE TO AS STATUS LINK VAULT" "space to as status link vault path"
+  if $problems; then
+    [[ ${#out[@]} -eq 0 ]] || return 1
+    say "no problems"
+  fi
+  return 0
+}
+
+cmd_space_add() {
+  _require_yq
+  _pairs_load
+  _space_arg "$1" vault
+  if [[ -d "$SP_DIR" ]]; then
+    say "already a space: $(_display "$SP_DIR")"
+    anfs_result space "$SP_SPACE" vault "$SP_VAULT" path "$SP_DIR" status unchanged
+    return 0
+  fi
+  [[ ! -e "$SP_DIR" ]] || fail "$EX_EXISTS" "$(_display "$SP_DIR") exists and is not a folder"
+  mkdir -p -- "$SP_DIR" || die "cannot create $SP_DIR"
+  say "made $SP_VAULT/$SP_SPACE: $(_display "$SP_DIR")"
+  anfs_result space "$SP_SPACE" vault "$SP_VAULT" path "$SP_DIR" status made
+}
+
+cmd_space_link() {
+  local to="${2%/}" as="${CLI_OPT[as]:-}"
   [[ "$as" != */* && "$as" != . && "$as" != .. ]] || fail "$EX_USAGE" "--as is a name, not a path: $as"
   _require_yq
-  _link_dir "$dir"
+  _pairs_load
+  _space_arg "$1" folder
   _wsm_load
   [[ -n "${WSM_KNOWN[$to]:-}" ]] || fail "$EX_NOTFOUND" "no wsm space '$to' (wsm ls)"
-  local name="$as" vid file="$LK_ROOT/$OVM_CONFIG"
-  [[ -n "$name" ]] || name=$(_default_as "$LK_ROOT" "$LK_SRC")
-  vid=$(_cfg_id "$LK_ROOT")
-  [[ -n "$vid" ]] || die "$(_display "$file") has no id: ovm init $(_display "$LK_ROOT")"
+  [[ -n "$SP_VID" ]] || die "$(_display "$SP_ROOT/$OVM_CONFIG") has no id: ovm init $(_display "$SP_ROOT")"
+  [[ "$as" != "$SP_SPACE" ]] || as=""
+  local name="${as:-$SP_SPACE}" label="$SP_VAULT/$SP_SPACE" key="$SP_VAULT|$SP_SPACE|$to" i old="" declared=false
+  for i in "${!K_VAULT[@]}"; do
+    [[ "${K_VAULT[$i]}|${K_SPACE[$i]}|${K_TO[$i]}" == "$key" ]] || continue
+    declared=true old="${K_AS[$i]}"
+  done
+  # Declared in a shipped file under another name: that file is the person's repository's
+  if [[ -n "${K_RO[$key]:-}" && "$old" != "$name" ]]; then
+    fail "$EX_NOTFOUND" "$label -> $to is declared in $(_display "${K_RO[$key]}") as $old, which is shipped (a link): edit it there"
+  fi
 
-  # Everything that would refuse the link, before ovm.yml changes
-  _link_state "$LK_ROOT" "$LK_SRC" "$to" "$name"
+  # Everything that would refuse the link, before links.yml changes
+  _link_state "$SP_ROOT" "$SP_REL" "$to" "$name"
   case "$LS_STATE" in
     conflict) fail "$EX_EXISTS" "$(_display "$LS_PATH") exists and is not this link; move it away, or pick another name with --as" ;;
     missing)
@@ -755,124 +1170,125 @@ cmd_link_add() {
       ;;
   esac
 
-  # One entry per source and space: adding it again replaces it, and a link it had under
-  # another name goes. ("=" marks an entry, so one without `as` is told from none at all.)
-  local old
-  old=$(S="$LK_SRC" T="$to" yq -r '.links[]? | select(.source == strenv(S) and .target == strenv(T)) | "=" + (.as // "")' "$file" | head -n 1)
-  S="$LK_SRC" T="$to" yq -i 'del(.links[]? | select(.source == strenv(S) and .target == strenv(T)))' "$file"
-  if [[ -n "$as" ]]; then
-    S="$LK_SRC" T="$to" A="$as" yq -i '.links += [{"source": strenv(S), "target": strenv(T), "as": strenv(A)}]' "$file"
-  else
-    S="$LK_SRC" T="$to" yq -i '.links += [{"source": strenv(S), "target": strenv(T)}]' "$file"
-  fi
-  if [[ -n "$old" && -n "${WSM_DIR[$to]:-}" ]]; then
-    old="${old#=}"
-    [[ -n "$old" ]] || old=$(_default_as "$LK_ROOT" "$LK_SRC")
-    [[ "$old" == "$name" ]] || _link_drop "${WSM_DIR[$to]}/$old" "$LS_DEST"
+  # One link per vault space and wsm space: again with another name renames it
+  if ! $declared || [[ "$old" != "$name" ]]; then
+    _links_writable
+    [[ "$LW" != "$OVM_LINKS_LOCAL" ]] ||
+      say "$(_display "$OVM_LINKS_YML") is shipped (a link): writing $(_display "$OVM_LINKS_LOCAL")"
+    ! $declared || _links_del "$SP_VAULT" "$SP_SPACE" "$to"
+    _links_add "$LW" "$SP_VAULT" "$SP_SPACE" "$to" "$as"
+    if $declared && [[ -n "${WSM_DIR[$to]:-}" ]]; then _link_drop "${WSM_DIR[$to]}/$old" "$LS_DEST"; fi
   fi
   local rc=0
-  _link_make "$LK_ROOT" "$vid" "$LK_SRC" "$to" "$name" || rc=1
-  anfs_result source "$LK_SRC" target "$to" as "$name" status "$LS_STATE" link "$LS_PATH"
+  _link_make "$SP_ROOT" "$SP_VID" "$SP_REL" "$to" "$name" "$label" || rc=1
+  anfs_result space "$SP_SPACE" to "$to" as "$name" status "$LS_STATE" link "$LS_PATH" vault "$SP_VAULT" path "$LS_DEST"
   return "$rc"
 }
 
-cmd_link_remove() {
-  local dir="${1:-}" to="${CLI_OPT[to]:-}"
+# Unlink the vault space in SP_* from <to> (every wsm space when empty): the links ovm made, and
+# the pairs in the files ovm writes. A pair a shipped file declares is left, and named. Prints
+# nothing to count; returns 1 when nothing matched or a pair is shipped.
+_space_unlink() {
+  local to="$1" i j n=0 label="$SP_VAULT/$SP_SPACE" key
+  local -a shipped=()
+  _wsm_load soft
+  for i in "${!K_VAULT[@]}"; do
+    [[ "${K_VAULT[$i]}" == "$SP_VAULT" && "${K_SPACE[$i]}" == "$SP_SPACE" ]] || continue
+    [[ -z "$to" || "${K_TO[$i]}" == "$to" ]] || continue
+    key="$SP_VAULT|$SP_SPACE|${K_TO[$i]}"
+    if [[ -n "${K_RO[$key]:-}" ]]; then shipped+=("${K_TO[$i]}$US${K_RO[$key]}"); continue; fi
+    n=$((n + 1))
+    # The links ovm made for it: the record's (a wsm space no longer installed is only there),
+    # and the one wsm's directory says
+    if [[ -n "$SP_DIR" ]]; then
+      _rec_load
+      local -a paths=("${R_PATH[@]}") dests=("${R_DEST[@]}") tgts=("${R_TGT[@]}")
+      for j in "${!paths[@]}"; do
+        [[ "${dests[$j]}" == "$SP_DIR" && "${tgts[$j]}" == "${K_TO[$i]}" ]] || continue
+        _link_drop "${paths[$j]}" "${dests[$j]}"
+      done
+      [[ -z "${WSM_DIR[${K_TO[$i]}]:-}" ]] || _link_drop "${WSM_DIR[${K_TO[$i]}]}/${K_AS[$i]}" "$SP_DIR"
+    fi
+    _links_del "$SP_VAULT" "$SP_SPACE" "${K_TO[$i]}"
+    say "removed $label -> ${K_TO[$i]} from links.yml"
+  done
+  for i in "${shipped[@]}"; do
+    warn "$label -> ${i%%"$US"*} is declared in $(_display "${i#*"$US"}"), which is shipped (a link): edit it there"
+  done
+  UNLINKED=$n
+  [[ ${#shipped[@]} -eq 0 ]] || return 1
+  [[ $n -gt 0 ]] || fail "$EX_NOTFOUND" "no link of $label${to:+ into $to} in links.yml (ovm space ls)"
+}
+
+cmd_space_unlink() {
+  local to="${2:-}" rc=0
   to="${to%/}"
   _require_yq
-  _link_dir "$dir"
-  _links_load "$LK_ROOT"
-  _wsm_load
-  local i n=0 file="$LK_ROOT/$OVM_CONFIG"
-  for i in "${!L_SRC[@]}"; do
-    [[ "${L_SRC[$i]}" == "$LK_SRC" && ( -z "$to" || "${L_TGT[$i]}" == "$to" ) ]] && n=$((n + 1))
-  done
-  [[ $n -eq 0 ]] || anfs_confirm "link remove removes $n links of $LK_SRC and their entries in $(_display "$file")" "Remove them?"
-  n=0
-  for i in "${!L_SRC[@]}"; do
-    [[ "${L_SRC[$i]}" == "$LK_SRC" ]] || continue
-    [[ -z "$to" || "${L_TGT[$i]}" == "$to" ]] || continue
-    n=$((n + 1))
-    _link_state "$LK_ROOT" "${L_SRC[$i]}" "${L_TGT[$i]}" "${L_AS[$i]}"
-    [[ -z "$LS_PATH" ]] || _link_drop "$LS_PATH" "$LS_DEST"
-    S="${L_SRC[$i]}" T="${L_TGT[$i]}" yq -i 'del(.links[]? | select(.source == strenv(S) and .target == strenv(T)))' "$file"
-    say "removed $LK_SRC -> ${L_TGT[$i]} from $(_display "$file")"
-  done
-  [[ $n -gt 0 ]] || fail "$EX_NOTFOUND" "no link of $LK_SRC${to:+ to $to} in $(_display "$file") (ovm link ls)"
-  # An empty list reads better gone
-  yq -i 'del(.links | select(length == 0))' "$file"
-  anfs_result source "$LK_SRC" removed "$n"
+  _pairs_load
+  _space_arg "$1"
+  _space_unlink "$to" || rc=$?
+  anfs_result space "$SP_SPACE" vault "$SP_VAULT" removed "$UNLINKED"
+  return "$rc"
 }
 
-# Rows for the links of the vaults in ROOTS (parallel NAMES): source, target, as, state, the
-# symlink's path, vault name
-_link_rows() {
-  local v i
-  for v in "${!ROOTS[@]}"; do
-    _links_load "${ROOTS[$v]}"
-    for i in "${!L_SRC[@]}"; do
-      _link_state "${ROOTS[$v]}" "${L_SRC[$i]}" "${L_TGT[$i]}" "${L_AS[$i]}"
-      printf '%s\n' "${L_SRC[$i]}$US${L_TGT[$i]}$US${L_AS[$i]}$US$LS_STATE$US$LS_PATH$US${NAMES[$v]}"
-    done
-  done
-}
-
-cmd_link_list() {
+cmd_space_remove() {
+  local i n=0 rc=0
   _require_yq
-  local -a ROOTS=() NAMES=()
-  local rel="" src tgt as state path vault
-  if [[ $# -eq 1 ]]; then
-    _link_dir "$1"
-    ROOTS=("$LK_ROOT") NAMES=("$VA_NAME")
-    [[ "$LK_SRC" == . ]] || rel="$LK_SRC"
-  elif _vault_of "$PWD"; then
-    ROOTS=("$VA_ROOT") NAMES=("$VA_NAME")
-  else
-    _live_vaults
-    ROOTS=("${LIVE[@]}") NAMES=("${LIVE_NAME[@]}")
-  fi
-  _wsm_load
-  _link_rows | while IFS="$US" read -r src tgt as state path vault; do
-    # With PATH: the links at or below it, and the ones that hold it
-    [[ -z "$rel" || "$src" == . || "$src" == "$rel" || "$src" == "$rel"/* || "$rel" == "$src"/* ]] || continue
-    printf '%s\n' "$src$US$tgt$US$as$US$state$US$path$US$vault"
-  done | anfs_table "SOURCE TARGET AS STATUS LINK VAULT" "source target as status link vault"
+  _pairs_load
+  _space_arg "$1"
+  for i in "${!K_VAULT[@]}"; do
+    [[ "${K_VAULT[$i]}" == "$SP_VAULT" && "${K_SPACE[$i]}" == "$SP_SPACE" ]] && n=$((n + 1))
+  done
+  [[ $n -gt 0 ]] || fail "$EX_NOTFOUND" "$SP_VAULT/$SP_SPACE is not linked anywhere: nothing to remove (its folder is yours: rm it yourself)"
+  anfs_confirm "space remove unlinks $SP_VAULT/$SP_SPACE from $n wsm space(s) and takes it out of links.yml; its folder stays" "Unlink it?"
+  _space_unlink "" || rc=$?
+  [[ -z "$SP_DIR" || ! -d "$SP_DIR" ]] || say "left $(_display "$SP_DIR") and its notes"
+  anfs_result space "$SP_SPACE" vault "$SP_VAULT" removed "$UNLINKED"
+  return "$rc"
 }
 
-cmd_link_apply() {
-  local event="${CLI_OPT[event]:-}" arg
-  local -a specs=("$@")
+cmd_space_apply() {
+  local event="${CLI_OPT[event]:-}" arg i v rc=0 made=0
+  local -A want=()
+  for arg in "$@"; do [[ -z "${arg%/}" ]] || want[${arg%/}]=1; done
   _require_yq
-  local i v rc=0 vid root
   if [[ -z "$event" ]]; then
-    _here; root="$VA_ROOT"
-    vid=$(_cfg_id "$root")
-    [[ -n "$vid" ]] || die "$(_display "$root/$OVM_CONFIG") has no id: ovm init"
+    _pairs_load
     _wsm_load
-    _links_load "$root"
-    [[ ${#L_SRC[@]} -gt 0 ]] || say "no links in $(_display "$root/$OVM_CONFIG") (ovm link add DIR --to SPEC)"
-    for i in "${!L_SRC[@]}"; do
-      _link_make "$root" "$vid" "${L_SRC[$i]}" "${L_TGT[$i]}" "${L_AS[$i]}" || rc=1
+    _live_vaults
+    for i in "${!K_VAULT[@]}"; do
+      [[ ${#want[@]} -eq 0 || -n "${want[${K_TO[$i]}]:-}" ]] || continue
+      # Only what can be here: the vault in ~/vaults, its folder there (space list shows the rest)
+      [[ -n "${LIVE_IX[${K_VAULT[$i]}]+x}" ]] || continue
+      v=${LIVE_IX[${K_VAULT[$i]}]}
+      _vault_cfg "${LIVE[$v]}"
+      [[ -n "$VC_SPACES" && -d "${LIVE[$v]}/$VC_SPACES/${K_SPACE[$i]}" ]] || continue
+      made=$((made + 1))
+      _link_make "${LIVE[$v]}" "${LIVE_ID[$v]}" "$VC_SPACES/${K_SPACE[$i]}" "${K_TO[$i]}" "${K_AS[$i]}" \
+        "${K_VAULT[$i]}/${K_SPACE[$i]}" || rc=1
     done
-    anfs_result applied "${#L_SRC[@]}" ok "$([[ $rc -eq 0 ]] && echo true || echo false)"
+    [[ ${#K_VAULT[@]} -gt 0 ]] || say "no links in $(_display "$OVM_LINKS_YML") (ovm space link <vault>/<space> <spec>)"
+    anfs_result applied "$made" ok "$([[ $rc -eq 0 ]] && echo true || echo false)"
     return "$rc"
   fi
 
   # From wsm, for the spaces it just installed or removed. Never fails the tool that emitted:
-  # what could not be done is said, and `ovm link validate` shows it later.
-  local -A want=()
-  for arg in "${specs[@]}"; do want[${arg%/}]=1; done
+  # what could not be done is said, and `ovm space list --problems` shows it later.
   [[ ${#want[@]} -gt 0 ]] || return 0
   case "$event" in
     install)
-      _wsm_load
+      K_SOFT=true
+      _pairs_load || return 0
+      _wsm_load soft
+      $WSM_OK || return 0
       _live_vaults
-      for v in "${!LIVE[@]}"; do
-        _links_load "${LIVE[$v]}"
-        for i in "${!L_SRC[@]}"; do
-          [[ -n "${want[${L_TGT[$i]}]:-}" ]] || continue
-          _link_make "${LIVE[$v]}" "${LIVE_ID[$v]}" "${L_SRC[$i]}" "${L_TGT[$i]}" "${L_AS[$i]}" || true
-        done
+      for i in "${!K_VAULT[@]}"; do
+        [[ -n "${want[${K_TO[$i]}]:-}" && -n "${LIVE_IX[${K_VAULT[$i]}]+x}" ]] || continue
+        v=${LIVE_IX[${K_VAULT[$i]}]}
+        _vault_cfg "${LIVE[$v]}"
+        [[ -n "$VC_SPACES" ]] || continue
+        _link_make "${LIVE[$v]}" "${LIVE_ID[$v]}" "$VC_SPACES/${K_SPACE[$i]}" "${K_TO[$i]}" "${K_AS[$i]}" \
+          "${K_VAULT[$i]}/${K_SPACE[$i]}" || true
       done
       ;;
     remove)
@@ -889,41 +1305,11 @@ cmd_link_apply() {
   return 0
 }
 
-cmd_link_validate() {
-  _require_yq
-  local spec="${1:-}" src tgt as state path vault i n=0
-  spec="${spec%/}"
-  local -a ROOTS=() NAMES=() rows=()
-  local -A configured=()
-  _live_vaults
-  ROOTS=("${LIVE[@]}") NAMES=("${LIVE_NAME[@]}")
-  _wsm_load
-  while IFS="$US" read -r src tgt as state path vault; do
-    [[ -n "$src" ]] || continue
-    [[ -z "$path" ]] || configured[$path]=1
-    [[ -z "$spec" || "$tgt" == "$spec" ]] || continue
-    case "$state" in ok|pending) continue ;; esac
-    rows+=("$src$US$tgt$US$as$US$state$US$path$US$vault")
-  done < <(_link_rows)
-  # A symlink ovm made whose entry has left every ovm.yml
-  _rec_load
-  for i in "${!R_PATH[@]}"; do
-    [[ -z "${configured[${R_PATH[$i]}]:-}" && -L "${R_PATH[$i]}" ]] || continue
-    [[ -z "$spec" || "${R_TGT[$i]}" == "$spec" ]] || continue
-    rows+=("$US${R_TGT[$i]}$US${R_PATH[$i]##*/}${US}orphan$US${R_PATH[$i]}$US")
-  done
-  n=${#rows[@]}
-  if [[ $n -gt 0 ]]; then
-    printf '%s\n' "${rows[@]}"
-  fi | anfs_table "SOURCE TARGET AS STATUS LINK VAULT" "source target as status link vault"
-  if [[ $n -eq 0 ]]; then
-    say "all links ok"
-    return 0
-  fi
-  return 1
-}
-
 # --- validate -----------------------------------------------------------------------------
+#
+# A document is checked against the vocabulary of vault.yml: its own keys (required, kinds,
+# fields, tags), merged with those of the vault space it is in (spaces.<name>): required and tags
+# are the union, kinds and fields the vault's with the space's entries replacing the same names.
 
 # Put `id: <id>` into a document's frontmatter: on its empty id line, else as its last line
 _doc_set_id() {
@@ -940,10 +1326,137 @@ _doc_set_id() {
   rm -f -- "$tmp"
 }
 
+# The inline tags of documents (file<US>tag per line): `#name` at the start of a line or after a
+# space, outside the frontmatter, fenced code and inline code
+# shellcheck disable=SC2016
+TAGS_AWK='
+FNR == 1 { fm = 0; fence = 0; if ($0 ~ /^---[ \t\r]*$/) { fm = 1; next } }
+fm == 1 { if ($0 ~ /^---[ \t\r]*$/) fm = 2; next }
+/^[ \t]*(```|~~~)/ { fence = !fence; next }
+fence { next }
+{
+  line = $0
+  gsub(/`[^`]*`/, "", line)
+  line = " " line
+  while (match(line, /[ \t]#[A-Za-z][A-Za-z0-9_\/-]*/)) {
+    print FILENAME "\037" substr(line, RSTART + 2, RLENGTH - 2)
+    line = substr(line, RSTART + RLENGTH)
+  }
+}
+'
+
+# The value types a field may have
+OVM_FIELD_TYPES="string number bool date datetime list"
+
+# The vocabulary of <root>/vault.yml, into V_* (keyed by scope, or "<scope>|<name>": the scope is
+# a vault space's name, or . for the vault's own), and V_FINDINGS: what is wrong with vault.yml
+declare -A V_REQ=() V_KIND=() V_KREQ=() V_FTYPE=() V_FALLOW=() V_TAG=() V_NKIND=() V_NTAG=() V_SPACE=()
+V_FINDINGS=() V_HAS_REQ=false
+_vocab_load() {
+  local root="$1" path tag val sc key
+  local -a P=() rest=()
+  local -A said=()
+  while IFS="$US" read -r path tag val; do
+    [[ -n "$path" ]] || continue
+    IFS="$RS" read -ra P <<< "$path"
+    # The vault's own keys
+    if [[ ${#P[@]} -eq 1 ]]; then
+      case "${P[0]}" in
+        id|name|spaces_path|exclude|required|kinds|fields|tags|spaces) ;;
+        links) V_FINDINGS+=("links: is not read: link a vault space with ovm space link, declared in $(_display "$OVM_LINKS_YML")") ;;
+        profile) V_FINDINGS+=("profile: is not read: its required is required:, its types are kinds:") ;;
+        items) V_FINDINGS+=("items: is not read: what to skip is exclude:") ;;
+        *) V_FINDINGS+=("unknown key '${P[0]}'") ;;
+      esac
+      [[ "${P[0]}" != required ]] || V_HAS_REQ=true
+      continue
+    fi
+    # spaces.<name>.<key>...: the same vocabulary, for that space
+    sc=. rest=("${P[@]}")
+    if [[ "${P[0]}" == spaces ]]; then
+      sc="${P[1]}"
+      if [[ ${#P[@]} -eq 2 ]]; then
+        V_SPACE[$sc]=1
+        [[ -n "$VC_SPACES" && -d "$root/$VC_SPACES/$sc" ]] ||
+          V_FINDINGS+=("spaces.$sc: no folder ${VC_SPACES:-spaces}/$sc (ovm space add $sc)")
+        continue
+      fi
+      rest=("${P[@]:2}")
+      if [[ ${#rest[@]} -eq 1 ]]; then
+        case "${rest[0]}" in
+          required|kinds|fields|tags) ;;
+          *) V_FINDINGS+=("spaces.$sc: unknown key '${rest[0]}' (required, kinds, fields, tags)") ;;
+        esac
+        continue
+      fi
+    fi
+    key="$sc|${rest[1]}"
+    case "${rest[0]}" in
+      required) [[ "$tag" == "!!map" || "$tag" == "!!seq" ]] || V_REQ[$sc]+="$val$US" ;;
+      tags)     [[ "$tag" == "!!map" || "$tag" == "!!seq" ]] || { V_TAG[$sc|${val#\#}]=1; V_NTAG[$sc]=$(( ${V_NTAG[$sc]:-0} + 1 )); } ;;
+      kinds)
+        if [[ ${#rest[@]} -eq 2 ]]; then
+          [[ -n "${V_KIND[$key]:-}" ]] || V_NKIND[$sc]=$(( ${V_NKIND[$sc]:-0} + 1 ))
+          V_KIND[$key]=1 V_KREQ[$key]="${V_KREQ[$key]:-}"
+        elif [[ "${rest[2]}" == required ]]; then
+          [[ ${#rest[@]} -lt 4 ]] || V_KREQ[$key]+="$val$US"
+        elif [[ ${#rest[@]} -eq 3 ]]; then
+          V_FINDINGS+=("kinds.${rest[1]}: unknown key '${rest[2]}' (required)")
+        fi
+        ;;
+      fields)
+        if [[ ${#rest[@]} -eq 2 ]]; then
+          case "$tag" in
+            "!!seq") V_FTYPE[$key]=one-of V_FALLOW[$key]="" ;;
+            "!!str")
+              if [[ " $OVM_FIELD_TYPES " == *" $val "* ]]; then V_FTYPE[$key]="$val"
+              elif [[ -z "${said[$key]:-}" ]]; then
+                said[$key]=1
+                V_FINDINGS+=("fields.${rest[1]}: unknown type '$val' ($OVM_FIELD_TYPES, or a list of the values allowed)")
+              fi
+              ;;
+            *) V_FINDINGS+=("fields.${rest[1]}: a type ($OVM_FIELD_TYPES) or a list of the values allowed") ;;
+          esac
+        elif [[ ${#rest[@]} -eq 3 && "${V_FTYPE[$key]:-}" == one-of ]]; then
+          V_FALLOW[$key]+="$val$US"
+        fi
+        ;;
+    esac
+  done < <(_yaml_dump "$root/$OVM_CONFIG" 2>/dev/null)
+  [[ -z "$VC_BAD" ]] || V_FINDINGS+=("$VC_BAD")
+  $V_HAS_REQ || V_REQ[.]="type${US}id$US"
+  return 0
+}
+
+# Whether <value> (with its YAML <tag>) is a <type>
+_type_ok() {
+  local type="$1" tag="$2" val="$3"
+  case "$type" in
+    string)   [[ "$tag" != "!!seq" && "$tag" != "!!map" ]] ;;
+    number)   [[ "$tag" == "!!int" || "$tag" == "!!float" ]] ;;
+    bool)     [[ "$tag" == "!!bool" ]] ;;
+    date)     [[ "$tag" != "!!seq" && "$tag" != "!!map" && "$val" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] ;;
+    datetime) [[ "$tag" != "!!seq" && "$tag" != "!!map" &&
+                 "$val" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt\ ][0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]+)?)?\ ?([Zz]|[+-][0-9]{2}(:?[0-9]{2})?)?$ ]] ;;
+    list)     [[ "$tag" == "!!seq" ]] ;;
+    *) return 0 ;;
+  esac
+}
+
+# Whether the tag <t> is allowed in vault space <sc>: listed, or a listed ancestor (a allows a/b)
+_tag_ok() {
+  local sc="$1" t="$2"
+  while :; do
+    [[ -n "${V_TAG[.|$t]:-}" || -n "${V_TAG[$sc|$t]:-}" ]] && return 0
+    [[ "$t" == */* ]] || return 1
+    t="${t%/*}"
+  done
+}
+
 cmd_validate() {
   local path="${1:-}" fix=${CLI_OPT[fix]:-false} strict=${CLI_OPT[strict]:-false}
   _require_yq
-  local scope root file
+  local scope root
   if [[ -n "$path" ]]; then
     [[ -e "$path" ]] || fail "$EX_NOTFOUND" "no such file or directory: $path"
     if [[ -d "$path" ]]; then scope=$(_canon "$path"); else scope="$(_canon "$(dirname -- "$path")")/${path##*/}"; fi
@@ -954,12 +1467,12 @@ cmd_validate() {
     _here
     root="$VA_ROOT" scope="$VA_ROOT"
   fi
-  file="$root/$OVM_CONFIG"
+  _vault_cfg "$root"
+  _vocab_load "$root"
 
-  # The profile: what every document must have. With none, OKF's type and ovm's id.
-  local -a required=() types=()
-  mapfile -t required < <(yq -r '.profile.required // ["type", "id"] | .[]' "$file" 2>/dev/null)
-  mapfile -t types < <(yq -r '.profile.types // [] | .[]' "$file" 2>/dev/null)
+  local -a rows=()
+  local fnd
+  for fnd in "${V_FINDINGS[@]}"; do rows+=("$OVM_CONFIG$US$fnd"); done
 
   # The whole vault's ids, so a duplicate outside PATH is still one
   local -A state_of=() id_of=() type_of=() count=() first=()
@@ -970,16 +1483,28 @@ cmd_validate() {
     [[ -n "$id" ]] || continue
     count[$id]=$(( ${count[$id]:-0} + 1 ))
     [[ -n "${first[$id]:-}" ]] || first[$id]="$f"
-  done < <(_doc_scan "$root")
+  done < <(_doc_scan "$root" "$root")
 
-  local -a docs=() rows=()
+  local -a docs=()
   if [[ -d "$scope" ]]; then
-    mapfile -t docs < <(_doc_files "$scope")
+    mapfile -t docs < <(_doc_files "$root" "$scope")
   else
     docs=("$scope")
   fi
 
-  local rel keys key t ok minted=0 new
+  # The inline tags, in one pass over the documents, when any tag is listed
+  local -A inline=()
+  local t any_tags=false
+  for t in "${!V_NTAG[@]}"; do any_tags=true; done
+  if $any_tags && [[ ${#docs[@]} -gt 0 && -n "${docs[0]}" ]]; then
+    while IFS="$US" read -r f t; do
+      [[ " ${inline[$f]:-} " == *" $t "* ]] || inline[$f]+="${inline[$f]:+ }$t"
+    done < <(printf '%s\0' "${docs[@]}" | xargs -0 -r awk "$TAGS_AWK" 2>/dev/null)
+  fi
+
+  local rel sc key k p ptag pval dump minted=0 new ty kn
+  local -a P=() names=() reqs=() fmtags=() items=() order=()
+  local -A has=() ftag=() fval=() fitems=() asked=() told=()
   for f in "${docs[@]}"; do
     [[ -n "$f" ]] || continue
     rel="${f#"$root"/}"
@@ -987,28 +1512,102 @@ cmd_validate() {
       none) rows+=("$rel${US}no frontmatter"); continue ;;
       open) rows+=("$rel${US}the frontmatter is not closed (no second ---)"); continue ;;
     esac
-    # The top-level keys that have a value
-    if ! keys=$(_fm_block "$f" | yq -r '(. // {}) | to_entries | .[] | select(.value != null and .value != "") | .key' 2>/dev/null); then
+    # The frontmatter, every node of it, in one read
+    if ! dump=$(_fm_block "$f" | _yaml_dump - 2>/dev/null); then
       rows+=("$rel${US}the frontmatter does not parse as YAML")
       continue
     fi
+    has=() ftag=() fval=() fitems=() fmtags=() order=()
+    while IFS="$US" read -r p ptag pval; do
+      [[ -n "$p" ]] || continue
+      IFS="$RS" read -ra P <<< "$p"
+      k="${P[0]}"
+      if [[ ${#P[@]} -eq 1 ]]; then
+        # A key with a value: not null, not an empty string
+        [[ -n "$k" ]] || continue
+        [[ "$ptag" == "!!null" || ( "$ptag" == "!!str" && -z "$pval" ) ]] || { has[$k]=1; order+=("$k"); }
+        ftag[$k]="$ptag" fval[$k]="$pval"
+        [[ "$k" != tags || "$ptag" != "!!str" ]] || read -ra fmtags <<< "${pval//,/ }"
+      elif [[ ${#P[@]} -eq 2 && -n "$k" ]]; then
+        fitems[$k]+="$ptag$RS$pval$US"
+        [[ "$k" != tags || "$ptag" == "!!map" || "$ptag" == "!!seq" ]] || fmtags+=("$pval")
+      fi
+    done <<< "$dump"
     id="${id_of[$f]}"
-    if $fix && ! grep -qxF id <<< "$keys"; then
+    if $fix && [[ -z "${has[id]:-}" ]]; then
       new=$(_new_id)
       while [[ -n "${count[$new]:-}" ]]; do new=$(_new_id); done
       _doc_set_id "$f" "$new"
       count[$new]=1 first[$new]="$f" id="$new"
-      keys+=$'\n'id
+      has[id]=1
       minted=$((minted + 1))
       say "$rel: minted id $new"
     fi
-    for key in "${required[@]}"; do
-      grep -qxF -- "$key" <<< "$keys" || rows+=("$rel${US}missing required key: $key")
+    # The scope: the vault space it is in when vault.yml says more of that space, else the vault's
+    sc=$(_space_of "$root" "$rel")
+    [[ -n "$sc" && -n "${V_SPACE[$sc]:-}" ]] || sc=.
+    # required: the vault's and the space's
+    IFS="$US" read -ra reqs <<< "${V_REQ[.]:-}${V_REQ[$sc]:-}"
+    asked=()
+    for key in "${reqs[@]}"; do
+      [[ -n "$key" && -z "${asked[$key]:-}" ]] || continue
+      asked[$key]=1
+      [[ -n "${has[$key]:-}" ]] || rows+=("$rel${US}missing required key: $key")
     done
-    if [[ ${#types[@]} -gt 0 && -n "${type_of[$f]}" ]]; then
-      ok=false
-      for t in "${types[@]}"; do [[ "$t" == "${type_of[$f]}" ]] && ok=true; done
-      $ok || rows+=("$rel${US}type '${type_of[$f]}' is not one of: ${types[*]}")
+    # kinds: type is one of them, and has what its kind requires
+    ty="${type_of[$f]}"
+    if [[ $(( ${V_NKIND[.]:-0} + ${V_NKIND[$sc]:-0} )) -gt 0 && -n "$ty" ]]; then
+      if [[ -n "${V_KIND[$sc|$ty]:-}" ]]; then kn="$sc|$ty"
+      elif [[ -n "${V_KIND[.|$ty]:-}" ]]; then kn=".|$ty"
+      else kn=""
+      fi
+      if [[ -z "$kn" ]]; then
+        names=()
+        for key in "${!V_KIND[@]}"; do
+          [[ "${key%%|*}" == . || "${key%%|*}" == "$sc" ]] || continue
+          [[ " ${names[*]} " == *" ${key#*|} "* ]] || names+=("${key#*|}")
+        done
+        mapfile -t names < <(printf '%s\n' "${names[@]}" | LC_ALL=C sort)
+        rows+=("$rel${US}type '$ty' is not one of: ${names[*]}")
+      else
+        IFS="$US" read -ra reqs <<< "${V_KREQ[$kn]:-}"
+        for key in "${reqs[@]}"; do
+          [[ -n "$key" && -z "${asked[$key]:-}" ]] || continue
+          asked[$key]=1
+          [[ -n "${has[$key]:-}" ]] || rows+=("$rel${US}missing required key for a $ty: $key")
+        done
+      fi
+    fi
+    # fields: each key present has a value of its type, in the document's order
+    for k in "${order[@]}"; do
+      key=".|$k"
+      [[ -z "${V_FTYPE[$sc|$k]:-}" ]] || key="$sc|$k"
+      [[ -n "${V_FTYPE[$key]:-}" ]] || continue
+      if [[ "${V_FTYPE[$key]}" == one-of ]]; then
+        if [[ "${ftag[$k]}" == "!!seq" ]]; then
+          IFS="$US" read -ra items <<< "${fitems[$k]:-}"
+          for p in "${items[@]}"; do
+            [[ -n "$p" ]] || continue
+            [[ "$US${V_FALLOW[$key]}" == *"$US${p#*"$RS"}$US"* ]] ||
+              rows+=("$rel${US}$k: '${p#*"$RS"}' is not one of: ${V_FALLOW[$key]//$US/ }")
+          done
+        elif [[ "$US${V_FALLOW[$key]}" != *"$US${fval[$k]}$US"* ]]; then
+          rows+=("$rel${US}$k: '${fval[$k]}' is not one of: ${V_FALLOW[$key]//$US/ }")
+        fi
+      elif ! _type_ok "${V_FTYPE[$key]}" "${ftag[$k]}" "${fval[$k]}"; then
+        rows+=("$rel${US}$k is not a ${V_FTYPE[$key]}${fval[$k]:+: ${fval[$k]}}")
+      fi
+    done
+    # tags: in the frontmatter and inline, each listed or under a listed one
+    if [[ $(( ${V_NTAG[.]:-0} + ${V_NTAG[$sc]:-0} )) -gt 0 ]]; then
+      told=()
+      # shellcheck disable=SC2086
+      for t in "${fmtags[@]}" ${inline[$f]:-}; do
+        t="${t#\#}"
+        [[ -n "$t" && -z "${told[$t]:-}" ]] || continue
+        told[$t]=1
+        _tag_ok "$sc" "$t" || rows+=("$rel${US}tag '$t' is not in the vocabulary (vault.yml tags:)")
+      done
     fi
     if [[ -n "$id" && ${count[$id]:-0} -gt 1 ]]; then
       rows+=("$rel${US}duplicate id $id$( [[ "${first[$id]}" == "$f" ]] || printf ' (also %s)' "${first[$id]#"$root"/}")")
@@ -1037,6 +1636,40 @@ complete_vault() {
   done < <(_entries)
 }
 complete_vault_or_doc() { complete_vault; }
+
+# The spaces_path of the vault at <root>, into REPLY: its line in vault.yml, read in bash
+_complete_spaces_path() {
+  local line
+  REPLY=spaces
+  [[ -r "$1/$OVM_CONFIG" ]] || return 0
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^spaces_path:[[:space:]]*[\"\']?([^\"\'#[:space:]]+) ]]; then
+      REPLY="${BASH_REMATCH[1]%/}"
+      return 0
+    fi
+  done < "$1/$OVM_CONFIG"
+}
+# The folders under <root>'s spaces_path, each printed as <prefix><name>
+_complete_spaces_of() {
+  local d
+  _complete_spaces_path "$1"
+  for d in "$1/$REPLY"/*/; do
+    [[ -d "$d" ]] || continue
+    d="${d%/}"
+    printf '%s%s\n' "$2" "${d##*/}"
+  done
+}
+# A vault space: the bare names of the vault you are in, then <vault>/<space> for every entry of
+# ~/vaults that answers (directory listings, and one line of its vault.yml)
+complete_space() {
+  local name root
+  if root=$(_find_root "$PWD" 2>/dev/null); then _complete_spaces_of "$root" ""; fi
+  while IFS= read -r name; do
+    [[ -d "$OVM_VAULTS_HOME/$name" ]] && _reachable "$OVM_VAULTS_HOME/$name" || continue
+    _complete_spaces_of "$OVM_VAULTS_HOME/$name" "$name/"
+  done < <(_entries)
+}
+complete_vault_or_space() { complete_vault; complete_space; }
 # A wsm space: wsm's to say
 complete_spec() { command wsm __complete install "" 2>/dev/null | cut -f1; }
 

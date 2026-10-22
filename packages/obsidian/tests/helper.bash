@@ -71,7 +71,13 @@ unlevel() {
 vault() {
   mkdir -p "$VAULTS/$1"
   ovm init "$VAULTS/$1" >/dev/null
-  VID=$(yq -r .id "$VAULTS/$1/ovm.yml")
+  VID=$(yq -r .id "$VAULTS/$1/vault.yml")
+}
+
+# ~/.config/ovm/links.yml, from <yaml> (\n-escaped)
+links() {
+  mkdir -p "$XDG_CONFIG_HOME/ovm"
+  printf '%b' "$1" > "$XDG_CONFIG_HOME/ovm/links.yml"
 }
 
 # A file in the test HOME: <path relative to ~> <content, \n-escaped>

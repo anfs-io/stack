@@ -20,7 +20,7 @@ hook() {
 @test "post_install registers ovm's wsm listener; post_remove unregisters it" {
   run hook post_install
   [ "$status" -eq 0 ]
-  [[ "${lines[0]}" == "register: wsm stack/obsidian ovm link apply --event" ]]
+  [[ "${lines[0]}" == "register: wsm stack/obsidian ovm space apply --event" ]]
   [[ "$output" == *"ovm new <name>"* ]]
   run hook post_remove
   [ "$status" -eq 0 ]

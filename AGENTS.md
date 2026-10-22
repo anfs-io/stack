@@ -60,7 +60,7 @@ On it: `ventoy`, `gem-local` (ruby), `tsm` (tailscale), `opm` (op), `remotefs`, 
 | `ssh-key list` | `key` (the fingerprint), `status` (`local`, `agent`), `file`, `type`, `comment`, `public` |
 | `git account list` | `account` (`<host>/<user>`), `status` (`key on account`, `no key here`, `key not on account`, `unreachable`), `keys` (how many the account has), `host`, `user` |
 | `ovm list` | `name`, `id`, `status` (`ok`, `unreachable`, `not a vault`), `path` (the entries of `~/vaults`) |
-| `ovm link list` | `source`, `target`, `as`, `status` (`ok`, `pending`, `missing`, `conflict`, `dangling`, `unknown`), `link`, `vault` |
-| `ovm docs` | `id`, `type`, `title`, `space`, `path`, `vault` |
+| `ovm space list` | `space` (a vault space), `to` (a wsm space), `as`, `status` (`ok`, `pending`, `unlinked`, `missing`, `conflict`, `unknown`, `no folder`, `dangling`, `no vault`, `orphan`), `link`, `vault`, `path` (the folder) |
+| `ovm docs` | `id`, `type`, `title`, `space` (the vault space), `path`, `vault` |
 | `ovm validate` | `path`, `finding` |
 | `opm list` | `scope`, `shared`, `service_account`, `token_item`, `token_vault`, `provisioned` |

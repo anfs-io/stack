@@ -1,6 +1,6 @@
-version: 0.3.0
+version: 0.4.0
 author: rjayroach
 categories: [pde]
-# wsm is what ovm's links point into, and what tells ovm when a level is installed or removed
+# wsm is what ovm's links point into, and what tells ovm when a space is installed or removed
 depends:
   - wsm
