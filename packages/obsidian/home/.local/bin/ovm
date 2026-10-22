@@ -44,6 +44,9 @@ source "$ANFS_LIB/log.sh"
 source "$ANFS_LIB/cli.sh"
 # shellcheck source=/dev/null
 source "$ANFS_LIB/table.sh"
+# The links into vaults are made as every link the toolkit makes: relative (lib/anfs/link.sh)
+# shellcheck source=/dev/null
+source "$ANFS_LIB/link.sh"
 
 anfs_tool_paths ovm
 OVM_REGISTRY="$OVM_STATE_HOME/vaults"
@@ -848,7 +851,7 @@ _link_make() {
         warn "not linking $src: $(_display "${LS_PATH%/*}") is inside a git repository, where the link would be an untracked file"
         return 1
       fi
-      ln -s -- "$LS_DEST" "$LS_PATH" || { warn "cannot link $(_display "$LS_PATH")"; return 1; }
+      anfs_link_one "$LS_DEST" "$LS_PATH" || { warn "cannot link $(_display "$LS_PATH")"; return 1; }
       _rec_set "$LS_PATH" "$vid" "$LS_DEST" "$tgt"
       say "linked $(_display "$LS_PATH") -> $(_display "$LS_DEST")"
       ;;

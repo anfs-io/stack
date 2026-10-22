@@ -15,12 +15,15 @@ setup() {
   LINK="$HOME/spaces/acme/main/tech/product"
 }
 
-@test "link add records the link in ovm.yml and creates an absolute symlink in the level" {
+# <link> is relative (lib/anfs/link.sh's anfs_link_one) and resolves to <dir>
+points() { [[ "$(readlink "$1")" != /* ]] && [ "$(cd -P "$1" && pwd -P)" = "$(cd -P "$2" && pwd -P)" ]; }
+
+@test "link add records the link in ovm.yml and creates a relative symlink in the level" {
   cd notes/product
   run ovm link add --to acme/main/tech
   [ "$status" -eq 0 ]
   [[ "$output" == *"linked ~/spaces/acme/main/tech/product -> ~/notes/product"* ]]
-  [ "$(readlink "$LINK")" = "$HOME/notes/product" ]
+  points "$LINK" "$HOME/notes/product"
   run yq -r '.links[0] | .source + " " + .target + " " + (.as // "none")' "$HOME/notes/ovm.yml"
   [ "$output" = "product acme/main/tech none" ]
   # ovm.yml holds no absolute path
@@ -30,13 +33,13 @@ setup() {
 @test "link add: DIR as an argument, --as, a source level, and the vault root itself" {
   run ovm link add notes/infra --to acme/ --as ops
   [ "$status" -eq 0 ]
-  [ "$(readlink "$HOME/spaces/acme/ops")" = "$HOME/notes/infra" ]
+  points "$HOME/spaces/acme/ops" "$HOME/notes/infra"
   run yq -r '.links[0] | .source + " " + .target + " " + .as' notes/ovm.yml
   [ "$output" = "infra acme ops" ]
   run ovm link add notes --to acme/main
   [ "$status" -eq 0 ]
   # The root is named after the vault
-  [ "$(readlink "$HOME/spaces/acme/main/notes")" = "$HOME/notes" ]
+  points "$HOME/spaces/acme/main/notes" "$HOME/notes"
   run yq -r '.links[1].source' notes/ovm.yml
   [ "$output" = "." ]
 }
@@ -96,7 +99,7 @@ setup() {
   level acme/main/later
   run ovm link apply --event install acme/main/later
   [ "$status" -eq 0 ]
-  [ "$(readlink "$HOME/spaces/acme/main/later/product")" = "$HOME/notes/product" ]
+  points "$HOME/spaces/acme/main/later/product" "$HOME/notes/product"
 }
 
 @test "adding a link again with another --as renames it" {
@@ -104,7 +107,7 @@ setup() {
   run ovm link add notes/product --to acme/main/tech --as docs
   [ "$status" -eq 0 ]
   [ ! -e "$LINK" ]
-  [ "$(readlink "$HOME/spaces/acme/main/tech/docs")" = "$HOME/notes/product" ]
+  points "$HOME/spaces/acme/main/tech/docs" "$HOME/notes/product"
   run yq -r '.links | length' notes/ovm.yml
   [ "$output" = "1" ]
 }
@@ -127,6 +130,17 @@ setup() {
   [ "$output" = "false" ]
   run ovm link rm -y
   [ "$status" -eq 1 ]
+}
+
+@test "an absolute link made before (by hand, or an older ovm) is ok, and link rm takes it" {
+  ln -s "$HOME/notes/product" "$LINK"
+  ovm link add notes/product --to acme/main/tech >/dev/null
+  run ovm link ls notes
+  [[ "$output" == "product"$'\t'"acme/main/tech"$'\t'"product"$'\t'"ok"$'\t'* ]]
+  [ "$(readlink "$LINK")" = "$HOME/notes/product" ]
+  run ovm link rm -y notes/product
+  [ "$status" -eq 0 ]
+  [ ! -L "$LINK" ]
 }
 
 @test "link rm leaves a path that is no longer ovm's link" {

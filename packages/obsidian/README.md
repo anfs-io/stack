@@ -31,8 +31,9 @@ no argument the vault you are in (outside one it fails and you stay put). It com
 ### Links into spaces
 
 `ovm.yml`'s `links:` map a vault directory to a wsm space (`wsm ls`: its id, `lgat` or
-`lgat/tech/web`). ovm reads the space's directory from `wsm ls --json` and puts an absolute
-symlink there, so the documentation sits next to the code it describes. The links are the
+`lgat/tech/web`). ovm reads the space's directory from `wsm ls --json` and puts a relative
+symlink there (as every link the toolkit makes, `lib/anfs/link.sh`; one made absolute before is
+still `ok`), so the documentation sits next to the code it describes. The links are the
 vault's; the symlinks are this machine's, and `ovm link apply` makes the missing ones.
 
 ```bash
