@@ -31,10 +31,10 @@ set it as your Sentry `dsn`.
 The defaults in [`.env.schema`](./.env.schema) need nothing beyond pcm's postgres
 on first run.
 
-To override, add a `.env` next to it (e.g. stowed from your own ppm layer); none
-is shipped. Real secrets belong in fnox: a `fnox.toml` in this directory, with
-providers in `../fnox.toml`. pcm resolves the environment first, then `.env`, then
-the schema defaults, and validates the result before starting anything.
+To override, put the lines in `~/.config/pcm/containers/glitchtip/local.env`; no
+`.env` is shipped. Real secrets belong in fnox: a `fnox.toml` in this directory, with
+providers in `../fnox.toml`. pcm resolves the environment first, then `local.env`,
+then the schema defaults, and validates the result before starting anything.
 
 > **Secret:** `GLITCHTIP_SECRET_KEY` ships with an insecure dev default. Set a
 > real one (`openssl rand -hex 32`) before exposing GlitchTip beyond localhost.

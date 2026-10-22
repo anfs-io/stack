@@ -56,7 +56,7 @@ sudo sysctl --system
 ```
 
 Then set `PROXY_HTTP_PORT=80`, `PROXY_HTTPS_PORT=443` and `PROXY_BIND=0.0.0.0`
-in `~/.config/pcm/env/traefik.env`.
+in `~/.config/pcm/containers/traefik/local.env`.
 
 ## SELinux
 

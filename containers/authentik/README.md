@@ -90,8 +90,8 @@ browser and the app agreeing on one URL.
 ## Configuration
 
 The defaults in [`.env.schema`](./.env.schema) need nothing beyond pcm's postgres
-on first run. To override, add a `.env` next to it (e.g. stowed from your own ppm layer); none
-is shipped. Real secrets belong in fnox: a `fnox.toml` in this directory, with
+on first run. To override, put the lines in `~/.config/pcm/containers/authentik/local.env`; no
+`.env` is shipped. Real secrets belong in fnox: a `fnox.toml` in this directory, with
 providers in `../fnox.toml`.
 
 > **Secret:** `AUTHENTIK_SECRET_KEY` ships with an insecure dev default. Set a

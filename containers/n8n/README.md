@@ -29,8 +29,8 @@ account.
 
 ## Configuration
 
-Defaults live in [`.env.schema`](./.env.schema). To override, add a `.env` next
-to it (e.g. stowed from your own ppm layer); none is shipped. Real secrets belong
+Defaults live in [`.env.schema`](./.env.schema). To override, put the lines in
+`~/.config/pcm/containers/n8n/local.env`; no `.env` is shipped. Real secrets belong
 in fnox.
 
 > **Secret:** `N8N_RUNNERS_AUTH_TOKEN` ships with an insecure dev default. Set a

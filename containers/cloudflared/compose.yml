@@ -3,7 +3,7 @@
 # pcm service: run by the cloudflare-tunnel edge (x-pcm.provides: edge). A service
 # whose ingress hosts are under a domain edges.yml maps to cloudflare-tunnel
 # depends on it implicitly. Before it starts, the edge creates this machine's
-# tunnel and writes its token to $PCM_ENV_HOME/cloudflared.env (TUNNEL_TOKEN).
+# tunnel and writes its token (TUNNEL_TOKEN) to ~/.config/pcm/containers/cloudflared/local.env.
 # The tunnel sends every hostname to the proxy (http://traefik:80 on the shared
 # network), which routes by Host. Nothing is published on the host.
 # Every variable, with its default, lives in .env.schema.

@@ -23,10 +23,11 @@ Image, env names and links: `pcm show cloudflared`.
 
 ## Publishing a service
 
-Set its hosts (step 4's `pcm expose` will do this) and bring it up:
+Set its hosts in this machine's settings for it and bring it up:
 
 ```sh
-echo 'TWENTY_HOSTS=crm.roteoh.com' >> ~/.config/pcm/env/twenty.env
+mkdir -p ~/.config/pcm/containers/twenty
+echo 'TWENTY_HOSTS=crm.roteoh.com' >> ~/.config/pcm/containers/twenty/local.env
 pcm up twenty
 ```
 

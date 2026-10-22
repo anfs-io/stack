@@ -1,4 +1,4 @@
-version: 0.1.0
+version: 0.1.1
 description: Reverse proxy for pcm ingress
 upstream: docker.io/library/traefik
 url: https://traefik.io

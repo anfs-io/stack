@@ -41,8 +41,8 @@ stack data would be written to the wrong place on the host. compose.yml mounts
 
 Dockge can start any container and mount anything your user can access through
 the podman socket. With rootless podman that is limited to your user, not root.
-The UI binds to 127.0.0.1 by default; set `DOCKGE_BIND` in a `.env` to expose it.
+The UI binds to 127.0.0.1 by default; set `DOCKGE_BIND` in `~/.config/pcm/containers/dockge/local.env` to expose it.
 
 ## Configuration
 
-Defaults live in [`.env.schema`](./.env.schema). To override them, add a `.env` next to it (e.g. stowed from your own ppm layer); none is shipped.
+Defaults live in [`.env.schema`](./.env.schema). To override them, put the lines in `~/.config/pcm/containers/dockge/local.env`; no `.env` is shipped.
