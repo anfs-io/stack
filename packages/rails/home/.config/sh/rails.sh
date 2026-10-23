@@ -1,5 +1,5 @@
 # rails.sh — portable (bash and zsh); generic Rails helpers for any app or engine.
-# The omz alias cleanup is in .config/zsh/rails.zsh; cnfs-specific tooling is cnfs/rails's partitia.sh
+# The omz alias cleanup is in .config/zsh/rails.zsh; cnfs-specific tooling is cnfs/rails's cnfs.sh
 
 # Echo the nearest Rails app dir relative to $PWD:
 #   .           -> current dir is itself a Rails app (config/application.rb)
