@@ -55,6 +55,7 @@ x-pcm:
       # redirect_regex: http://[a-z0-9-]+\.localhost:3000/auth/callback
       name: Shop                        # optional, default: slug
       # client_type: public             # default; confidential is not supported yet
+      # host: 172.31.16.185             # default localhost: the host in ISSUER
 ```
 
 | Setting | |
@@ -64,18 +65,23 @@ x-pcm:
 | `redirect_regex` | Regex redirect URI(s) (`matching_mode: regex`), e.g. one for every tenant subdomain: `http://[a-z0-9-]+\.localhost:3000/auth/callback` (escape the dots). Repeat `redirect_regex=` for several; it is never split on commas. Must start with `http://` or `https://` (after an optional `^`), no whitespace, quotes or control characters. **Anchored by the hook**: stored as `^(?:<pattern>)$` unless it already starts with `^` and ends with `$` (authentik `fullmatch`es anyway). At least one `redirect` or `redirect_regex` is required; both combine |
 | `name` | Display name, default the slug |
 | `client_type` | `public` (default: PKCE, no secret). `confidential` fails with "not yet supported" |
+| `host` | The host name or IPv4 address in the printed `ISSUER` (default `localhost`). Set it to the server's address when the browser is on another machine; the redirect URIs must say the same host |
 
 It prints, and pcm injects as `PCM_AUTHENTIK_<KEY>`:
 
 | Key | Value |
 |---|---|
-| `ISSUER` | `http://localhost:${AUTHENTIK_HTTP_PORT}/application/o/<slug>/` |
+| `ISSUER` | `http://<host>:${AUTHENTIK_HTTP_PORT}/application/o/<slug>/` (`host` default `localhost`) |
 | `CLIENT_ID` | `<slug>` |
 | `CLIENT_TYPE` | `public` |
 
-The issuer is the host's `localhost` URL: the intended consumer is an app run on
-the host (e.g. a Rails dev server), and the issuer in tokens follows the host the
-browser used.
+The issuer is `localhost` unless `host=` says otherwise: the intended consumer is an
+app run on the host (e.g. a Rails dev server). authentik derives the issuer (in
+discovery and in the tokens' `iss`) from the request's `Host`, so the browser (authorize)
+and the app's back channel (discovery, token, JWKS) must reach authentik on the same
+host, the one in `ISSUER`. For a browser on another machine, give the server's address:
+`host=172.31.16.185` and redirect URIs on `http://172.31.16.185:<port>/...`; discovery
+at that host then says `"issuer": "http://172.31.16.185:9000/application/o/<slug>/"`.
 
 An app that isn't a pcm definition calls the same hooks through pcm:
 
