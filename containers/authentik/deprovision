@@ -5,7 +5,7 @@
 # declares authentik in x-pcm.depends_on, after that service is down and while authentik
 # is running:
 #
-#   deprovision slug=<name> [redirect=...] [name=...] [client_type=...]
+#   deprovision slug=<name> [redirect=...] [redirect_regex=...] [name=...] [client_type=...]
 #
 # Takes provision's settings; only slug matters. Deletes the application and the OAuth2
 # provider provision registered for it (by applying pcm-<slug>.yaml rewritten with
@@ -20,7 +20,7 @@ slug=""
 for arg in "$@"; do
   case "$arg" in
     slug=*) slug="${arg#*=}" ;;
-    redirect=* | name=* | client_type=*) ;;
+    redirect=* | redirect_regex=* | name=* | client_type=*) ;;
     *) echo "deprovision: unknown setting '$arg'" >&2; exit 1 ;;
   esac
 done

@@ -51,7 +51,8 @@ x-pcm:
   depends_on:
     authentik:
       slug: shop                        # required: app slug and client_id
-      redirect: http://localhost:3000/auth/callback   # required
+      redirect: http://localhost:3000/auth/callback   # strict; this or redirect_regex
+      # redirect_regex: http://[a-z0-9-]+\.localhost:3000/auth/callback
       name: Shop                        # optional, default: slug
       # client_type: public             # default; confidential is not supported yet
 ```
@@ -59,7 +60,8 @@ x-pcm:
 | Setting | |
 |---|---|
 | `slug` | Required. Application slug and OIDC `client_id`; a DNS label (`[a-z0-9][a-z0-9-]*`) |
-| `redirect` | Required. Strict-match redirect URI(s): repeat `redirect=` as args, or give a comma-separated list (the only form a YAML map can hold) |
+| `redirect` | Strict-match redirect URI(s): repeat `redirect=` as args, or give a comma-separated list (the only form a YAML map can hold) |
+| `redirect_regex` | Regex redirect URI(s) (`matching_mode: regex`), e.g. one for every tenant subdomain: `http://[a-z0-9-]+\.localhost:3000/auth/callback` (escape the dots). Repeat `redirect_regex=` for several; it is never split on commas. Must start with `http://` or `https://` (after an optional `^`), no whitespace, quotes or control characters. **Anchored by the hook**: stored as `^(?:<pattern>)$` unless it already starts with `^` and ends with `$` (authentik `fullmatch`es anyway). At least one `redirect` or `redirect_regex` is required; both combine |
 | `name` | Display name, default the slug |
 | `client_type` | `public` (default: PKCE, no secret). `confidential` fails with "not yet supported" |
 
@@ -80,6 +82,9 @@ An app that isn't a pcm definition calls the same hooks through pcm:
 ```sh
 pcm provision --as partitia/shop authentik slug=shop \
   redirect=http://localhost:3000/auth/callback redirect=http://127.0.0.1:3000/auth/callback
+pcm provision --as partitia/shop authentik slug=shop \
+  redirect=http://localhost:3000/auth/callback \
+  'redirect_regex=http://[a-z0-9-]+\.localhost:3000/auth/callback'   # every tenant subdomain
 pcm provision --json authentik slug=shop redirect=...    # the keys as a JSON object
 pcm deprovision --as partitia/shop authentik slug=shop
 ```
@@ -88,7 +93,7 @@ How it works: `provision` writes the blueprint `pcm-<slug>.yaml` into
 `${PCM_VOLUMES_HOME}/authentik/blueprints/` (mounted on the worker at
 `/blueprints/custom`) and applies it synchronously with
 `podman exec <worker> ak apply_blueprint custom/pcm-<slug>.yaml`. The blueprint
-defines a public OAuth2/OpenID provider (`client_id` = slug, strict redirect URIs,
+defines a public OAuth2/OpenID provider (`client_id` = slug, strict and regex redirect URIs,
 the built-in self-signed signing key, the implicit-consent authorization flow, the
 default invalidation flow, the openid/email/profile scopes, grant types
 `authorization_code` and `refresh_token`) and the application bound to it. It is
