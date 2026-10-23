@@ -1,0 +1,8 @@
+[tools]
+go = "latest"
+
+[env]
+# What go fetches and builds is DATA (core AGENTS.md, "Where files go"), never ~/go. Here as well as
+# in sh/go.sh so `mise exec` and a hook's `mise activate bash` get it without the rc
+GOPATH = "{{ env.HOME }}/.local/share/go"
+GOBIN = "{{ env.HOME }}/.local/share/go/bin"
