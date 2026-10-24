@@ -46,7 +46,7 @@ and what a pmm machine names in `media:`. The `iso` group (`list`, `show`, `pull
 with one call (`anfs_iso_cli`); its keys are in core's table.
 
 On it: `ventoy`, `gem-local` (ruby), `tsm` (tailscale), `opm` (op), `remotefs`, `pikvm`, `ssh-key`
-(ssh), `git-account` (git: run as `git account`), `ovm` (obsidian). Not yet:
+(ssh), `git-account` (git: run as `git account`), `ovm` and `chorus` (obsidian). Not yet:
 `rpi-imager`, `firstmate`.
 
 | Command | Keys |
@@ -65,4 +65,5 @@ On it: `ventoy`, `gem-local` (ruby), `tsm` (tailscale), `opm` (op), `remotefs`, 
 | `ovm tasks` | `vault_id`, `vault`, `file`, `line`, `doc`, `space` (`<vault>/<path>`: the document's space, as `ovm docs` says it), `section`, `parent`, `tags` (a list), `text`: exactly user/pjm's ten (its source contract; no key added without pjm) |
 | `ovm validate` | `path`, `finding` |
 | `ovm sync`, `ovm update` | `vault`, `id`, `path`, `placed`, `updated`, `kept`, `steps_left` (each a list of plugin ids or steps), one per vault |
+| `chorus list` | `name` (the path from the directory listed, without `.md`), `path`, `plans` (the sibling directory's plan count; null: none), then every frontmatter key of the document (a list is an array): the table is NAME STATUS PLANS OBJECTIVE |
 | `opm list` | `scope`, `shared`, `service_account`, `token_item`, `token_vault`, `provisioned` |

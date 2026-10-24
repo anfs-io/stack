@@ -1,7 +1,8 @@
 # obsidian
 
 Obsidian for the terminal and the editor: the nvim plugin config (`oconf`), the `ob` and `cdi`
-aliases on macOS, and `ovm`, the Obsidian Vault Manager.
+aliases on macOS, `ovm`, the Obsidian Vault Manager, and `chorus`, which lists chorus documents
+(units and their plans) by their frontmatter.
 
 ## ovm
 
@@ -216,3 +217,35 @@ A key added here is a change to pjm's contract: agree it with pjm first. Fenced 
 and `~~~`) and the frontmatter are skipped; indented code blocks, `%% %%` and HTML comments and
 setext headings are not understood. A task reached by two sources (two `--space` whose links
 overlap) is pulled twice.
+
+## chorus
+
+A chorus document is a markdown file that opens with YAML frontmatter: a unit
+(`docs/units/<unit>.md`, with `objective:` and `status:`), or a file of one of its plans
+(`<unit>/<plan>/log.md`: `plan`, `job`, `date`, `summary`, ...). A unit's plans are the
+directories of its sibling directory (`<unit>/`, beside `<unit>.md`).
+
+```bash
+chorus ls [path] [-r] [-s TEXT]   # NAME STATUS PLANS OBJECTIVE: the documents directly in a directory
+                                  # (default .), with -r those below too; a file: that one.
+                                  # -s/--status TEXT: the status contains TEXT (any case; twice: either)
+chorus show <path>                # every frontmatter field of one document (a file, or its path without .md)
+```
+
+NAME is the path from the directory listed, without `.md`. PLANS is the unit's plan count (`-`: no
+sibling directory). OBJECTIVE is `objective`, else `summary` (a log's). On a terminal STATUS is cut
+at 40 characters and each line at the terminal's width; piped (tab-separated) and `--json`, nothing
+is cut. `--json` is an array of objects: `name`, `path` (the whole path), `plans` (the count;
+null: no sibling directory), then every frontmatter key in the file's order (a key named `name`,
+`path` or `plans` is left out). A value is a string, null (empty, `~`, `null`) or, for a list, an
+array. `chorus show --json` is the one object.
+
+The frontmatter is read by awk, not yq: `key: value`, quoted values (`"..."` with its escapes,
+`'...'`), a plain value's trailing `# comment`, flow lists (`[a, b]`), block lists (`- a`), block
+scalars (`|` keeps the newlines, `>` joins with spaces) and plain values that go on over indented
+lines (joined). A nested map is the text of its lines. A key given twice keeps its last value. A
+file whose first line is not `---`, or whose frontmatter never closes (`---` or `...`), is not a
+document: named on the line it is exit 1, in a directory it is left out (`chorus -d ls` says
+which). With `-r`, hidden directories and `node_modules` are skipped.
+
+Exit codes: 0 done (an empty list too); 1 no such path, or not a document; 64 used wrongly.

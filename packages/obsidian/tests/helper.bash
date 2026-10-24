@@ -158,3 +158,27 @@ file() {
 doc() {
   file "$1" "---\nid: $2\ntype: $3\ntitle: \"${4:-A title}\"\n---\n\n# Body of $2\n"
 }
+
+# chorus's tests: the script straight out of the package under a temp HOME, anfs's libraries
+# linked in as ovm_setup does, and a PATH of the system's directories only (chorus needs awk,
+# find, xargs and sort, nothing else). The documents are fixtures the test writes with `file`.
+chorus_setup() {
+  CHORUS="$BATS_TEST_DIRNAME/../home/.local/bin/chorus"
+  local lib="${ANFS_TEST_LIB:-$HOME/.local/lib/anfs}"
+  [[ -f "$lib/bash.sh" && -f "$lib/table.sh" ]] || skip "anfs's libraries are not installed at $lib"
+  mkdir -p "$BATS_TEST_TMPDIR/home" "$BATS_TEST_TMPDIR/bin"
+  HOME=$(cd "$BATS_TEST_TMPDIR/home" && pwd -P)
+  XDG_CONFIG_HOME="$HOME/.config" XDG_DATA_HOME="$HOME/.local/share"
+  XDG_STATE_HOME="$HOME/.local/state" XDG_CACHE_HOME="$HOME/.cache"
+  unset ANFS_CONFIG_HOME ANFS_DATA_HOME ANFS_CACHE_HOME ANFS_STATE_HOME ANFS_DEBUG ANFS_TABLE
+  unset ANFS_WORK ANFS_WORK_SAID  # a person's ANFS_WORK never reaches a test (lib/anfs/work.sh)
+  unset COLUMNS NO_COLOR
+  export HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME
+  export ANFS_LOG=off ANFS_EVENTS=off
+  mkdir -p "$HOME/.local/lib"
+  ln -s "$(cd "$lib" && pwd -P)" "$HOME/.local/lib/anfs"
+  PATH="$BATS_TEST_TMPDIR/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  cd "$HOME" || return 1
+}
+
+chorus() { "$CHORUS" "$@"; }

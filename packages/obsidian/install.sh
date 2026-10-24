@@ -2,7 +2,8 @@
 #
 # Installs ovm (~/.local/bin/ovm), the Obsidian Vault Manager: documentation vaults (Obsidian or
 # plain markdown) whose vault spaces are linked into wsm spaces, as ~/.config/ovm/links.yml
-# declares, and whose documents are found by a stable id. The nvim plugin config and the `ob`
+# declares, and whose documents are found by a stable id; and chorus (~/.local/bin/chorus), which
+# lists chorus documents (units, their plans) by their frontmatter. The nvim plugin config and the `ob`
 # alias are stowed with it.
 #
 # ovm listens to wsm (lib/anfs/callbacks.sh): when wsm installs a space, ovm creates the links

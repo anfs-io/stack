@@ -30,7 +30,7 @@ set -euo pipefail
 # A job's copy of this tool runs instead when ANFS_WORK names one (lib/anfs/work.sh)
 [ -z "${ANFS_WORK:-}" ] || [ ! -f "$HOME/.local/lib/anfs/work.sh" ] || . "$HOME/.local/lib/anfs/work.sh"
 
-OVM_VERSION=0.6.0
+OVM_VERSION=0.7.0
 
 # Paths, messages, the log and the command line come from anfs
 if [[ ! -f "$HOME/.local/lib/anfs/paths.sh" ]]; then

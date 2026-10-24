@@ -1,0 +1,416 @@
+#!/usr/bin/env bash
+# chorus — chorus documents: markdown files that open with YAML frontmatter
+#
+# A unit (docs/units/<unit>.md) says its objective and status in its frontmatter; its sibling
+# directory (<unit>/) holds its plans, one directory each (01-events/plan.md, log.md), whose files
+# may have frontmatter of their own (a log's plan, job, date, summary). `chorus list` reads the
+# frontmatter of a directory's documents into one table; `chorus show` prints one document's.
+#
+# The frontmatter is read by awk, without yq: `key: value` lines, quoted values ("..." and '...'),
+# flow lists ([a, b]), block lists (- a), block scalars (| and >, their lines joined) and plain
+# values that go on over indented lines (joined with spaces). A nested map is read as the text of
+# its lines. A file whose first line is not `---`, or whose frontmatter never closes, is not a
+# document.
+#
+# Exit codes: 1 not found (no such path, or not a document), 64 usage, 69 unavailable.
+set -euo pipefail
+# A job's copy of this tool runs instead when ANFS_WORK names one (lib/anfs/work.sh)
+[ -z "${ANFS_WORK:-}" ] || [ ! -f "$HOME/.local/lib/anfs/work.sh" ] || . "$HOME/.local/lib/anfs/work.sh"
+
+# Paths, messages, the log and the command line come from anfs
+if [[ ! -f "$HOME/.local/lib/anfs/paths.sh" ]]; then
+  echo "chorus: ~/.local/lib/anfs is missing or out of date; install core/anfs again" >&2
+  exit 69
+fi
+# The bash floor, first: re-execs under bash 5 when this is macOS's 3.2
+# shellcheck source=/dev/null
+source "$HOME/.local/lib/anfs/bash.sh"
+# shellcheck source=/dev/null
+source "$HOME/.local/lib/anfs/paths.sh"
+if [[ ! -f "$ANFS_LIB_DIR/table.sh" ]]; then
+  echo "chorus: $ANFS_LIB_DIR is out of date; install core/anfs again" >&2
+  exit 69
+fi
+# shellcheck source=/dev/null
+source "$ANFS_LIB_DIR/log.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB_DIR/cli.sh"
+# shellcheck source=/dev/null
+source "$ANFS_LIB_DIR/table.sh"
+
+EX_NOTFOUND=1
+
+CLI_TOOL=chorus
+
+cli_cmd list "Chorus documents (*.md with frontmatter) in a directory (default .), or one file:
+NAME STATUS PLANS OBJECTIVE. --json: every frontmatter key, and name, path, plans" \
+  --alias ls \
+  --opt "-r --recursive: Also the documents in the directories below it (a unit's plans)" \
+  --opt "-s --status TEXT: Only documents whose status contains TEXT (any case; given twice, either)" \
+  --arg "[path]"
+cli_cmd show "Every frontmatter field of one document (a file, or its path without .md)" --arg "path"
+cli_standard
+
+cli_help_epilogue() {
+  cat <<'EOF'
+A chorus document is a markdown file whose first line is --- and whose frontmatter closes with
+another ---: a unit (docs/units/<unit>.md: objective, status), or a file of one of its plans
+(<unit>/<plan>/log.md: plan, job, date, summary). NAME is the path from the directory listed,
+without .md. PLANS is how many directories the unit's sibling directory (<unit>/) holds: its
+plans. OBJECTIVE is the objective, else the summary (a log's). On a terminal STATUS is cut at 40
+characters and OBJECTIVE at the terminal's width; piped and --json, nothing is cut.
+
+Hidden directories and node_modules are skipped with -r. A file named on the line that is not a
+document is exit 1; in a directory, one is left out.
+EOF
+}
+
+die()  { anfs_die "$@"; }
+fail() { anfs_fail "$@"; }
+
+US="$ANFS_US"
+# Between the items of a list value, and in place of a newline inside a value
+RS=$'\x1e' GS=$'\x1d'
+
+# --- Reading frontmatter ------------------------------------------------------------------
+
+# The frontmatter of each file named, as records, one per line:
+#   <file> US US doc            the file is a document (its frontmatter opened and closed)
+#   <file> US US open           it opened and never closed
+#   <file> US <key> US s US <value>   a string (newlines in it as GS)
+#   <file> US <key> US n US         null (empty, ~, null)
+#   <file> US <key> US l US <item> RS <item>...   a list
+# A file whose first line is not --- gives no record.
+# shellcheck disable=SC2016
+_FM_AWK='
+function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
+function unquote(v,   q) {
+  q = substr(v, 1, 1)
+  if (length(v) >= 2 && (q == "\"" || q == Q) && substr(v, length(v)) == q) {
+    v = substr(v, 2, length(v) - 2)
+    if (q == "\"") { gsub(/\\"/, "\"", v); gsub(/\\\\/, "\\", v); gsub(/\\n/, GS, v); gsub(/\\t/, "\t", v) }
+    else gsub(Q Q, Q, v)
+    return v
+  }
+  # a plain value: a comment after it is not part of it
+  sub(/[ \t]+#.*$/, "", v)
+  return v
+}
+function emit(kind, val) { out = out FILENAME US key US kind US val "\n" }
+function flush(   v, n, i, items, list) {
+  if (key == "") return
+  if (mode == "list") emit("l", lst)
+  else if (mode == "block") { sub(GS "+$", "", raw); emit("s", raw) }
+  else {
+    v = trim(raw)
+    if (v ~ /^\[.*\]$/) {
+      v = substr(v, 2, length(v) - 2); list = ""
+      n = split(v, items, ",")
+      for (i = 1; i <= n; i++) {
+        items[i] = unquote(trim(items[i]))
+        if (items[i] != "") list = list (list == "" ? "" : LS) items[i]
+      }
+      emit("l", list)
+    } else {
+      v = unquote(v)
+      if (v == "" || v == "~" || v == "null" || v == "Null" || v == "NULL") emit("n", "")
+      else emit("s", v)
+    }
+  }
+  key = ""
+}
+FNR == 1 {
+  if (infm) print FILENAME_prev US US "open"
+  infm = 0; done = 0; key = ""; out = ""; FILENAME_prev = FILENAME
+  sub(/\r$/, "")
+  if ($0 ~ /^---[ \t]*$/) infm = 1
+  else done = 1
+  next
+}
+done { next }
+{
+  sub(/\r$/, "")
+  if ($0 ~ /^(---|\.\.\.)[ \t]*$/) {
+    flush(); printf "%s", out; print FILENAME US US "doc"
+    infm = 0; done = 1; next
+  }
+  if ($0 ~ /^#/) next
+  if ($0 ~ /^[A-Za-z0-9_][A-Za-z0-9_.-]*[ \t]*:([ \t]|$)/) {
+    flush()
+    key = $0; sub(/[ \t]*:.*$/, "", key)
+    raw = $0; sub(/^[^:]*:[ \t]*/, "", raw); raw = trim(raw)
+    lst = ""
+    if (raw ~ /^[|>][-+0-9]*([ \t]+#.*)?$/) { mode = "block"; join = (substr(raw, 1, 1) == "|") ? GS : " "; raw = "" }
+    else if (raw == "") mode = "empty"
+    else mode = "plain"
+    next
+  }
+  if (key == "") next
+  if ((mode == "empty" || mode == "list") && $0 ~ /^[ \t]*- /) {
+    v = $0; sub(/^[ \t]*- /, "", v)
+    v = unquote(trim(v))
+    lst = lst (mode == "list" ? LS : "") v; mode = "list"; next
+  }
+  if (mode == "list") next
+  if (mode == "block") { v = $0; sub(/^[ \t]+/, "", v); if (v == "" && join == " ") next; raw = raw (raw == "" ? "" : join) v; next }
+  if ($0 ~ /^[ \t]+[^ \t]/) { v = trim($0); raw = (raw == "" ? v : raw " " v); if (mode == "empty") mode = "plain" }
+}
+END { if (infm) print FILENAME_prev US US "open" }
+'
+
+_frontmatter() {
+  [[ $# -gt 0 ]] || return 0
+  printf '%s\0' "$@" | xargs -0 awk -v Q="'" -v US="$US" -v LS="$RS" -v GS="$GS" "$_FM_AWK" 2>/dev/null || true
+}
+
+# --- Documents ----------------------------------------------------------------------------
+
+# Every document read, in order: DOC_FILES; per index i, DOC_KEYS[i] (the keys, US-joined, in the
+# file's order; a key given twice is kept once, its last value), and DOC_VAL["i<US>key"],
+# DOC_KIND["i<US>key"] (s, n, l)
+declare -a DOC_FILES=() DOC_KEYS=() OPEN_FILES=()
+declare -A DOC_VAL=() DOC_KIND=()
+
+# Read the frontmatter of <file>... into DOC_*
+_read_docs() {
+  local file key kind val cur="" i=-1 keys=""
+  local -A seen=()
+  while IFS="$US" read -r file key kind val; do
+    if [[ -z "$key" ]]; then
+      case "$kind" in
+        doc)
+          [[ "$cur" == "$file" ]] || { i=$(( i + 1 )); keys=""; }
+          DOC_FILES[i]="$file"; DOC_KEYS[i]="$keys"; cur="" ;;
+        open) OPEN_FILES+=("$file") ;;
+      esac
+      continue
+    fi
+    if [[ "$cur" != "$file" ]]; then
+      i=$(( i + 1 )); cur="$file"; keys=""; seen=()
+    fi
+    if [[ -z "${seen[$key]:-}" ]]; then
+      seen[$key]=1
+      keys+="${keys:+$US}$key"
+    fi
+    DOC_VAL["$i$US$key"]="$val"
+    DOC_KIND["$i$US$key"]="$kind"
+  done < <(_frontmatter "$@")
+}
+
+# A document's value of <key> (a list's items separated by ", "; newlines restored) into REPLY
+_val() {
+  local v="${DOC_VAL["$1$US$2"]:-}"
+  v="${v//$RS/, }"
+  REPLY="${v//$GS/$'\n'}"
+}
+
+# The plans of the document <file>: the directories in its sibling directory (<name>/ beside
+# <name>.md), into PLANS (their names); 1 when it has no sibling directory
+_plans() {
+  local sib="${1%.md}" d
+  PLANS=()
+  [[ -d "$sib" ]] || return 1
+  shopt -s nullglob
+  for d in "$sib"/*/; do d="${d%/}"; PLANS+=("${d##*/}"); done
+  shopt -u nullglob
+  return 0
+}
+
+# The absolute path of <path>, its directory resolved logically (a link in it kept)
+_abs() {
+  local p="$1" d
+  if [[ -d "$p" ]]; then (cd "$p" && pwd); return; fi
+  d=$(cd "$(dirname "$p")" && pwd)
+  printf '%s/%s\n' "${d%/}" "${p##*/}"
+}
+
+# One document as a JSON object: <index> <name> <path> <plans or empty>
+_json_doc() {
+  local i="$1" name="$2" path="$3" plans="$4" key kind val first=1 item
+  local -a keys items
+  printf '{'
+  _anfs_json_str name; printf ':'; _anfs_json_str "$name"
+  printf ','; _anfs_json_str path; printf ':'; _anfs_json_str "$path"
+  printf ','; _anfs_json_str plans; printf ':'
+  if [[ -n "$plans" ]]; then _anfs_json_str "$plans"; else printf 'null'; fi
+  IFS="$US" read -ra keys <<< "${DOC_KEYS[$i]}" || true
+  for key in "${keys[@]}"; do
+    case "$key" in name|path|plans) continue ;; esac
+    kind="${DOC_KIND["$i$US$key"]}" val="${DOC_VAL["$i$US$key"]}"
+    printf ','; _anfs_json_str "$key"; printf ':'
+    case "$kind" in
+      n) printf 'null' ;;
+      l)
+        printf '['
+        first=1
+        if [[ -n "$val" ]]; then
+          IFS="$RS" read -ra items <<< "$val" || true
+          for item in "${items[@]}"; do
+            (( first )) || printf ','
+            first=0
+            _anfs_json_str "$item"
+          done
+        fi
+        printf ']' ;;
+      *) _anfs_json_str "${val//$GS/$'\n'}" ;;
+    esac
+  done
+  printf '}'
+}
+
+# Cut <text> to <width> characters, an ellipsis last, into REPLY
+_cut() {
+  REPLY="$1"
+  (( $2 > 0 && ${#REPLY} > $2 )) || return 0
+  REPLY="${REPLY:0:$(( $2 - 1 ))}…"
+}
+
+# The terminal's width, or 0 when it is not known
+_columns() {
+  local size
+  if [[ "${COLUMNS:-}" =~ ^[0-9]+$ ]]; then printf '%s\n' "$COLUMNS"; return; fi
+  size=$(stty size </dev/tty 2>/dev/null) || size=""
+  if [[ "$size" =~ ^[0-9]+\ ([0-9]+)$ ]]; then printf '%s\n' "${BASH_REMATCH[1]}"; else echo 0; fi
+}
+
+# --- Commands -----------------------------------------------------------------------------
+
+cmd_list() {
+  local target="${1:-.}" base file name abs status objective i n form cols line
+  local -a files=() order=() pats=() rows=()
+  [[ -e "$target" ]] || fail "$EX_NOTFOUND" "$target: no such file or directory"
+  if [[ -n "${CLI_OPT[status]:-}" ]]; then mapfile -t pats <<< "${CLI_OPT[status]}"; fi
+
+  if [[ -d "$target" ]]; then
+    base="${target%/}"
+    [[ -n "$base" ]] || base=/
+    local -a depth=(-maxdepth 1)
+    [[ "${CLI_OPT[recursive]:-false}" == true ]] && depth=()
+    while IFS= read -r -d '' file; do
+      [[ -f "$file" && -r "$file" ]] && files+=("$file")
+    done < <(find -H "$base" -mindepth 1 "${depth[@]}" \( -name '.*' -o -name node_modules \) -prune \
+               -o \( -type f -o -type l \) -name '*.md' -print0 2>/dev/null)
+    abs=$(_abs "$base")
+  else
+    files=("$target")
+  fi
+
+  _read_docs "${files[@]}"
+  if [[ ! -d "$target" ]]; then
+    [[ ${#OPEN_FILES[@]} -eq 0 ]] || fail "$EX_NOTFOUND" "$target: the frontmatter is not closed (no second ---)"
+    [[ ${#DOC_FILES[@]} -gt 0 ]] || fail "$EX_NOTFOUND" "$target: not a chorus document (no frontmatter)"
+  fi
+  for file in "${OPEN_FILES[@]}"; do anfs_debug "$file: the frontmatter is not closed; left out"; done
+
+  # name <US> index, sorted by name
+  for i in "${!DOC_FILES[@]}"; do
+    file="${DOC_FILES[$i]}"
+    if [[ -d "$target" ]]; then name="${file#"$base"/}"; else name="${file##*/}"; fi
+    name="${name%.md}"
+    if [[ ${#pats[@]} -gt 0 ]]; then
+      _val "$i" status
+      local hit=false p
+      for p in "${pats[@]}"; do
+        [[ -n "$p" && "${REPLY,,}" == *"${p,,}"* ]] && hit=true
+      done
+      $hit || continue
+    fi
+    order+=("$name$US$i")
+  done
+  if [[ ${#order[@]} -gt 0 ]]; then
+    mapfile -t order < <(printf '%s\n' "${order[@]}" | LC_ALL=C sort -t"$US" -k1,1)
+  fi
+
+  form="${ANFS_TABLE:-}"
+  if [[ -z "$form" ]]; then
+    if anfs_json_on; then form=json; elif [[ -t 1 ]]; then form=aligned; else form=tsv; fi
+  fi
+
+  if [[ "$form" == json ]]; then
+    printf '['
+    n=0
+    for line in "${order[@]}"; do
+      name="${line%%"$US"*}" i="${line##*"$US"}"
+      file="${DOC_FILES[$i]}"
+      if [[ -d "$target" ]]; then file="$abs/${file#"$base"/}"; else file=$(_abs "$file"); fi
+      local plans=""
+      if _plans "${DOC_FILES[$i]}"; then plans=${#PLANS[@]}; fi
+      (( n++ == 0 )) || printf ','
+      _json_doc "$i" "$name" "$file" "$plans"
+    done
+    printf ']\n'
+    return 0
+  fi
+
+  cols=0
+  [[ "$form" != aligned ]] || cols=$(_columns)
+  for line in "${order[@]}"; do
+    name="${line%%"$US"*}" i="${line##*"$US"}"
+    _val "$i" status; status="${REPLY//$'\n'/ }"
+    _val "$i" objective; objective="${REPLY//$'\n'/ }"
+    if [[ -z "$objective" ]]; then _val "$i" summary; objective="${REPLY//$'\n'/ }"; fi
+    local plans=""
+    if _plans "${DOC_FILES[$i]}"; then plans=${#PLANS[@]}; fi
+    if [[ "$form" == aligned ]]; then _cut "$status" 40; status="$REPLY"; fi
+    rows+=("$(anfs_row "$name" "$status" "$plans" "$objective")")
+  done
+  [[ ${#rows[@]} -gt 0 ]] || return 0
+  if [[ "$form" != aligned ]] || (( cols <= 0 )); then
+    printf '%s\n' "${rows[@]}" | ANFS_TABLE="$form" anfs_table "NAME STATUS PLANS OBJECTIVE" "name status plans objective"
+    return 0
+  fi
+  while IFS= read -r line; do
+    _cut "$line" "$cols"
+    printf '%s\n' "$REPLY"
+  done < <(printf '%s\n' "${rows[@]}" | NO_COLOR=1 ANFS_TABLE=aligned anfs_table "NAME STATUS PLANS OBJECTIVE" "name status plans objective")
+}
+
+cmd_show() {
+  local doc="$1" file name key kind val item
+  local -a keys items
+  if [[ -f "$doc" ]]; then file="$doc"
+  elif [[ -f "$doc.md" ]]; then file="$doc.md"
+  else fail "$EX_NOTFOUND" "$doc: no such document"
+  fi
+  _read_docs "$file"
+  [[ ${#OPEN_FILES[@]} -eq 0 ]] || fail "$EX_NOTFOUND" "$file: the frontmatter is not closed (no second ---)"
+  [[ ${#DOC_FILES[@]} -gt 0 ]] || fail "$EX_NOTFOUND" "$file: not a chorus document (no frontmatter)"
+  name="${file##*/}" name="${name%.md}"
+  local path plans=""
+  path=$(_abs "$file")
+  if _plans "$file"; then plans=${#PLANS[@]}; fi
+
+  if anfs_json_on; then
+    _json_doc 0 "$name" "$path" "$plans"
+    printf '\n'
+    return 0
+  fi
+  printf 'name: %s\n' "$name"
+  printf 'path: %s\n' "$(anfs_display "$path")"
+  if [[ -n "$plans" ]]; then
+    printf 'plans: %s\n' "$plans"
+    for item in ${PLANS[@]+"${PLANS[@]}"}; do printf '  - %s\n' "$item"; done
+  fi
+  IFS="$US" read -ra keys <<< "${DOC_KEYS[0]}" || true
+  for key in "${keys[@]}"; do
+    kind="${DOC_KIND["0$US$key"]}" val="${DOC_VAL["0$US$key"]}"
+    case "$kind" in
+      n) printf '%s:\n' "$key" ;;
+      l)
+        printf '%s:\n' "$key"
+        if [[ -n "$val" ]]; then
+          IFS="$RS" read -ra items <<< "$val" || true
+          for item in "${items[@]}"; do printf '  - %s\n' "$item"; done
+        fi ;;
+      *)
+        if [[ "$val" == *"$GS"* ]]; then
+          printf '%s: |\n' "$key"
+          while IFS= read -r item; do printf '  %s\n' "$item"; done <<< "${val//$GS/$'\n'}"
+        else
+          printf '%s: %s\n' "$key" "$val"
+        fi ;;
+    esac
+  done
+}
+
+cli_dispatch "$@"

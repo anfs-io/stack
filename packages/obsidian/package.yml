@@ -1,4 +1,4 @@
-version: 0.6.0
+version: 0.7.0
 author: rjayroach
 categories: [pde]
 # wsm is what ovm's links point into, and what tells ovm when a space is installed or removed
