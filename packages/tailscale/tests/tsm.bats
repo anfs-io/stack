@@ -273,11 +273,19 @@ ack() { "$TSM" join --yes </dev/null >/dev/null 2>&1 || true; }
 # --- the command line (lib/anfs/cli.sh) ------------------------------------
 
 @test "an option the command does not take is a usage error" {
-  run "$TSM" show --yes
+  run "$TSM" show --dry-run
   [ "$status" -eq 64 ]
   [[ "$output" == *"usage: tsm show"* ]]
   run "$TSM" frobnicate
   [ "$status" -eq 64 ]
+}
+
+@test "-y/--yes is taken after any command (core's cli.sh), show's too" {
+  run "$TSM" show --yes
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--hostname=testbox"* ]]
+  run "$TSM" show -y
+  [ "$status" -eq 0 ]
 }
 
 @test "status hands what follows a -- on to tailscale" {
