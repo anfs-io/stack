@@ -94,7 +94,7 @@ declared() { yq -r '.[] | .vault + "/" + .space + ">" + ([.to] | flatten | join(
   points "$LINK" "$PRODUCT"
   [ "$(declared)" = "notes/product>acme/main/tech" ]
   # links.yml holds no path
-  ! grep -q "$HOME" "$LINKS"
+  not grep -q "$HOME" "$LINKS"
   # A second wsm space goes in the same entry's to:
   run ovm space link notes/product acme/main/
   [ "$status" -eq 0 ]

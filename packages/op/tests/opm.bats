@@ -2,6 +2,10 @@
 # opm, against a stubbed `op`. No network, no 1Password account.
 # Run: bats packages/op/tests/opm.bats
 
+# not <command> [args...]: succeeds when the command fails. A bare `! command` fails a test only as
+# its last line (bash's errexit ignores a negated command); a call to not fails it anywhere.
+not() { ! "$@"; }
+
 unset ANFS_WORK ANFS_WORK_SAID  # a person's ANFS_WORK never reaches a test (lib/anfs/work.sh)
 
 setup() {
@@ -61,14 +65,14 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"CREATE vault           lgat"* ]]
   [[ "$output" == *"CREATE service account lgat-sa"* ]]
-  ! grep -qE 'vault create|service-account create|item create' "$OPLOG/argv.log"
+  not grep -qE 'vault create|service-account create|item create' "$OPLOG/argv.log"
 }
 
 @test "refuses to act unattended without --yes" {
   run "$PROV" create lgat
   [ "$status" -ne 0 ]
   [[ "$output" == *"--yes"* ]]
-  ! grep -q 'vault create' "$OPLOG/argv.log"
+  not grep -q 'vault create' "$OPLOG/argv.log"
 }
 
 @test "the service account is granted its own vault and the shared vault" {
@@ -85,7 +89,7 @@ EOF
 @test "the token is never in argv and always on stdin" {
   run "$PROV" create lgat --yes
   [ "$status" -eq 0 ]
-  ! grep -q 'ops_SECRET_TOKEN' "$OPLOG/argv.log"
+  not grep -q 'ops_SECRET_TOKEN' "$OPLOG/argv.log"
   grep -q 'ops_SECRET_TOKEN' "$OPLOG/stdin.log"
   grep -q '"category": "API_CREDENTIAL"' "$OPLOG/stdin.log"
   grep -q '"id": "credential"' "$OPLOG/stdin.log"
@@ -107,7 +111,7 @@ EOF
   chmod +x "$STUB/op"
   OP_SERVICE_ACCOUNT_TOKEN=ops_FORWARDED run "$PROV" create lgat --yes
   grep -q 'TOKEN=unset' "$OPLOG/argv.log"
-  ! grep -q 'ops_FORWARDED' "$OPLOG/argv.log"
+  not grep -q 'ops_FORWARDED' "$OPLOG/argv.log"
 }
 
 @test "create is idempotent: nothing already present is recreated" {
@@ -117,7 +121,7 @@ EOF
   run "$PROV" create lgat --yes
   [ "$status" -eq 0 ]
   [[ "$output" == *"Nothing to do."* ]]
-  ! grep -qE 'vault create|service-account create' "$OPLOG/argv.log"
+  not grep -qE 'vault create|service-account create' "$OPLOG/argv.log"
 }
 
 @test "a service account response with no token is fatal and creates no item" {
@@ -134,7 +138,7 @@ EOF
   run "$PROV" create lgat --yes
   [ "$status" -ne 0 ]
   [[ "$output" == *"no token"* ]]
-  ! grep -q 'item create' "$OPLOG/argv.log"
+  not grep -q 'item create' "$OPLOG/argv.log"
 }
 
 @test "rotate stores the replacement token before revoking the old account" {
@@ -164,7 +168,7 @@ EOF
   grep -q 'item delete lgat-sa-token' "$OPLOG/argv.log"
   grep -q 'user delete lgat-sa' "$OPLOG/argv.log"
   grep -q 'vault delete lgat' "$OPLOG/argv.log"
-  ! grep -q 'vault delete shared' "$OPLOG/argv.log"
+  not grep -q 'vault delete shared' "$OPLOG/argv.log"
   [[ "$output" == *"not reversible"* ]]
 }
 
@@ -218,7 +222,7 @@ EOF
   [ "$status" -eq 0 ]
   grep -q 'user delete lgat-sa-20260922120000' "$OPLOG/argv.log"
   # scope "lgat" must not sweep up the separate "lgat-sandbox" scope
-  ! grep -q 'user delete lgat-sandbox-sa' "$OPLOG/argv.log"
+  not grep -q 'user delete lgat-sandbox-sa' "$OPLOG/argv.log"
 }
 
 @test "status shows a rotated account under its real name" {
@@ -244,7 +248,7 @@ EOF
   grep -q '"shared vault"' "$OPLOG/stdin.log"
   grep -q '"service account"' "$OPLOG/stdin.log"
   # metadata is not secret, but the credential still must not be in argv
-  ! grep -q 'ops_SECRET_TOKEN' "$OPLOG/argv.log"
+  not grep -q 'ops_SECRET_TOKEN' "$OPLOG/argv.log"
 }
 
 @test "created vaults are stamped with a description, since they cannot be tagged" {
@@ -331,7 +335,7 @@ EOF
   rm "$XDG_CONFIG_HOME/opm/opm.local.env"
   OP_SHARED_VAULT=old OP_SA_CREDENTIALS_VAULT=old run "$PROV" create lgat --yes
   grep -q -- '--vault shared:read_items' "$OPLOG/argv.log"
-  ! grep -q 'old' "$OPLOG/argv.log"
+  not grep -q 'old' "$OPLOG/argv.log"
 }
 
 @test "OPM_TAG from opm.local.env names the tag; OP_PROVISION_TAG and OPM_PROVISION_TAG are not read" {
@@ -342,7 +346,7 @@ EOF
   : > "$OPLOG/stdin.log"
   rm "$XDG_CONFIG_HOME/opm/opm.local.env"
   OP_PROVISION_TAG=old OPM_PROVISION_TAG=old run "$PROV" create lgat --yes
-  ! grep -q 'old' "$OPLOG/stdin.log"
+  not grep -q 'old' "$OPLOG/stdin.log"
   grep -q 'op-provision' "$OPLOG/stdin.log"
 }
 

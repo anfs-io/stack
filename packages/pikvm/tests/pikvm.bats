@@ -5,6 +5,10 @@
 #
 #   bats packages/pikvm/tests/pikvm.bats
 
+# not <command> [args...]: succeeds when the command fails. A bare `! command` fails a test only as
+# its last line (bash's errexit ignores a negated command); a call to not fails it anywhere.
+not() { ! "$@"; }
+
 unset ANFS_WORK ANFS_WORK_SAID  # a person's ANFS_WORK never reaches a test (lib/anfs/work.sh)
 
 setup() {
@@ -122,14 +126,14 @@ EOF
   SSH_RC=255 run "$PIKVM" status
   [ "$status" -eq 1 ]
   [[ "$output" == *"cannot connect to root@pikvm"* ]]
-  ! grep -q "hostname" "$ARGV"
+  not grep -q "hostname" "$ARGV"
 }
 
 @test "run: the command goes over as typed, its exit status comes back" {
   run "$PIKVM" run -- ls -la /etc/kvmd
   [ "$status" -eq 0 ]
   grep -qx "root@pikvm: ls -la /etc/kvmd" "$ARGV"
-  ! grep -qx "root@pikvm: rw" "$ARGV"
+  not grep -qx "root@pikvm: rw" "$ARGV"
   run "$PIKVM" run false
   [ "$status" -eq 3 ]
   run "$PIKVM" run
@@ -147,7 +151,7 @@ EOF
   echo rw > "$FS"
   run "$PIKVM" run -w -- touch /etc/x
   [ "$status" -eq 0 ]
-  ! grep -qx "root@pikvm: ro" "$ARGV"
+  not grep -qx "root@pikvm: ro" "$ARGV"
   [ "$(cat "$FS")" = rw ]
 }
 

@@ -276,7 +276,7 @@ YML
   ln -s nowhere vaults/gone
   run ovm __complete ""
   [[ "$output" == *"list"$'\t'"The entries of ~/vaults: the vaults (alias: ls)"* ]]
-  ! grep -qE '^(ls|rm)	' <<< "$output"
+  not grep -qE '^(ls|rm)	' <<< "$output"
   run ovm __complete path ""
   [ "$output" = "a"$'\t'"~/vaults/a"$'\n'"gone"$'\t'"~/vaults/gone" ]
   run ovm __complete space ""

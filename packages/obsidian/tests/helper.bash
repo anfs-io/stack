@@ -7,6 +7,10 @@
 # installed ones (ovm lives in another source than they do), linked into the test HOME. wsm is a stub that answers `wsm ls --json`, which is how ovm reads it, from a file the
 # test writes with `level`.
 
+# not <command> [args...]: succeeds when the command fails. A bare `! command` fails a test only as
+# its last line (bash's errexit ignores a negated command); a call to not fails it anywhere.
+not() { ! "$@"; }
+
 ovm_setup() {
   OVM="$BATS_TEST_DIRNAME/../home/.local/bin/ovm"
   local lib="${ANFS_TEST_LIB:-$HOME/.local/lib/anfs}"

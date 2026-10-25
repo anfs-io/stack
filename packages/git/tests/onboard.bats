@@ -6,6 +6,10 @@
 # Needs the anfs repo beside this one (sources/core or sources/anfs), or $ANFS_REPO.
 # Run: bats packages/git/tests/onboard.bats
 
+# not <command> [args...]: succeeds when the command fails. A bare `! command` fails a test only as
+# its last line (bash's errexit ignores a negated command); a call to not fails it anywhere.
+not() { ! "$@"; }
+
 unset ANFS_WORK ANFS_WORK_SAID  # a person's ANFS_WORK never reaches a test (lib/anfs/work.sh)
 
 bats_require_minimum_version 1.5.0
@@ -202,7 +206,7 @@ order() { awk -F'\t' 'NF >= 3 && $3 ~ /^(ok|todo|optional|skip|n\/a)$/ { printf 
   installed git ssh
   onboard "${ME[@]}" --key local --repo local
   [ "$status" -eq 0 ]
-  ! grep -q "^repo create" "$GHLOG"
+  not grep -q "^repo create" "$GHLOG"
   [[ "$(col publish 4)" == *"on this machine only"* ]]
 
   onboard -y --repo new publish
@@ -288,7 +292,7 @@ order() { awk -F'\t' 'NF >= 3 && $3 ~ /^(ok|todo|optional|skip|n\/a)$/ { printf 
   [ "$(col pm 4)" = "1Password, vault Dev" ]
   # On stdin, never as an argument
   grep -q '"value":"gho_stubtoken"' "$ST/op-github"
-  ! grep -q gho_stubtoken "$OPLOG"
+  not grep -q gho_stubtoken "$OPLOG"
   grep -qF 'GH_TOKEN = { value = "op://Dev/github/token" }' "$USER_REPO/packages/op/home/.config/fnox/gh.toml"
   grep -qx "install user/op" "$PPMLOG"
   [ -z "$(git -C "$USER_REPO" status --porcelain)" ]

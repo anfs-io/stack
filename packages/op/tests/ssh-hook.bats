@@ -3,6 +3,10 @@
 # Everything is stubbed: no network, no 1Password, no real ssh.
 # Run: bats packages/op/tests/ssh-hook.bats
 
+# not <command> [args...]: succeeds when the command fails. A bare `! command` fails a test only as
+# its last line (bash's errexit ignores a negated command); a call to not fails it anywhere.
+not() { ! "$@"; }
+
 setup() {
   REPO="$BATS_TEST_DIRNAME/../../.."
   SSH_ZSH="$REPO/packages/ssh/home/.config/zsh/ssh.zsh"
@@ -64,7 +68,7 @@ run_ssh() {
 @test "the token never appears in argv" {
   make_fnox "ops_TESTTOKEN"
   run_ssh vm1
-  ! grep -q "ops_TESTTOKEN" "$ARGV"
+  not grep -q "ops_TESTTOKEN" "$ARGV"
 }
 
 @test "declared but unresolvable: warns, still connects, sends nothing" {
@@ -85,7 +89,7 @@ run_ssh() {
   [ "$status" -eq 0 ]
   [ ! -e "$BATS_TEST_TMPDIR/pwned" ]
   [ "$(cat "$ENVF")" = "$evil" ]
-  ! grep -q "pwned" "$ARGV"
+  not grep -q "pwned" "$ARGV"
 }
 
 @test "--no-op skips hooks and is not passed to ssh" {

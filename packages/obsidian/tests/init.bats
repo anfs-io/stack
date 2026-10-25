@@ -285,7 +285,7 @@ curl_calls() { grep -c . "$CURL_LOG" || true; }
   for t in note task-list; do
     sed -e 's/^id: <%.*%>$/id: '"$(printf '%-10s' "${t//-/}" | tr ' ' 2 | cut -c1-10)"'/' \
         -e 's/<% tp\.file\.title %>/A '"$t"'/g' "$v/_templates/$t.md" > "$v/$t.md"
-    ! grep -q '<%' "$v/$t.md"
+    not grep -q '<%' "$v/$t.md"
   done
   grep -q '^- \[ \] $' "$v/task-list.md"
   grep -q 'command: obsidian-shellcommands:shell-command-ovm-validate' "$v/task-list.md"

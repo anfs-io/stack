@@ -4,6 +4,10 @@
 #
 #   bats packages/ruby/tests/default-gems.bats
 
+# not <command> [args...]: succeeds when the command fails. A bare `! command` fails a test only as
+# its last line (bash's errexit ignores a negated command); a call to not fails it anywhere.
+not() { ! "$@"; }
+
 unset ANFS_WORK ANFS_WORK_SAID  # a person's ANFS_WORK never reaches a test (lib/anfs/work.sh)
 
 setup() {
@@ -19,7 +23,7 @@ setup() {
 @test "ruby.toml points MISE_RUBY_DEFAULT_PACKAGES_FILE under ~/.local/share" {
   run grep -x 'MISE_RUBY_DEFAULT_PACKAGES_FILE = "{{ env.HOME }}/.local/share/ruby/default-gems"' "$PKG/home/.config/mise/conf.d/ruby.toml"
   [ "$status" -eq 0 ]
-  ! grep -rn '\.config/ruby/default-gems' "$PKG"/install.sh "$PKG"/home
+  not grep -rn '\.config/ruby/default-gems' "$PKG"/install.sh "$PKG"/home
 }
 
 @test "install_gem appends to the file in DATA, sorted, once each; nothing under ~/.config" {

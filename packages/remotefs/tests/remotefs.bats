@@ -5,6 +5,10 @@
 #
 #   bats packages/remotefs/tests/remotefs.bats
 
+# not <command> [args...]: succeeds when the command fails. A bare `! command` fails a test only as
+# its last line (bash's errexit ignores a negated command); a call to not fails it anywhere.
+not() { ! "$@"; }
+
 unset ANFS_WORK ANFS_WORK_SAID  # a person's ANFS_WORK never reaches a test (lib/anfs/work.sh)
 
 setup() {
@@ -117,7 +121,7 @@ stub() {
   SSH_RC=255 run "$RFS" mount web1
   [ "$status" -eq 1 ]
   [[ "$output" == *"cannot log in to web1 over ssh: Permission denied"* ]]
-  ! grep -q '^sshfs' "$ARGV"
+  not grep -q '^sshfs' "$ARGV"
   [ ! -d "$HOME/mnt/web1" ]
 }
 
