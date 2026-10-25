@@ -19,6 +19,8 @@ Packages are flat. A package's groups are `categories: [...]` in its package.yml
 utils); a new category needs no directory, only packages that declare it. `depends:` uses bare
 names.
 
+Every package says what it is for in one line, `description:` in its package.yml (under ~80 characters; core AGENTS.md, package.yml): `ppm show` prints it and the ui shows it on hovering the package's name. A new package gets one.
+
 ## Tools shipped by packages
 
 A script a package puts in `~/.local/bin` is an anfs tool like the core ones: it sources
