@@ -105,4 +105,5 @@ ssh_host_arg() {
   (( $# )) && print -r -- "${1#*@}"          # strip user@
 }
 
-zcomp ssh-key
+# zcomp comes from stack/zsh's aliases.zsh; ssh doesn't depend on that package (and zsh -f lacks it).
+(( $+functions[zcomp] )) && zcomp ssh-key

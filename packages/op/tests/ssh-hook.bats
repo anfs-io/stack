@@ -164,6 +164,14 @@ run_ssh() {
   [[ "${lines[1]}" == "rpi4" ]]
 }
 
+@test "ssh.zsh sources cleanly without stack/zsh's zcomp, and registers ssh-key's completion with it" {
+  run zsh -f -c 'source '"$SSH_ZSH"'; print -r -- "sourced"'
+  [ "$status" -eq 0 ]
+  [ "$output" = "sourced" ]
+  run zsh -f -c 'zcomp() { print -r -- "zcomp $*" }; source '"$SSH_ZSH"
+  [ "$output" = "zcomp ssh-key" ]
+}
+
 @test "the hook is inert when the ssh dispatcher is not installed" {
   make_fnox "ops_TESTTOKEN"
   PATH="$STUB:$PATH" BATS_TEST_TMPDIR="$BATS_TEST_TMPDIR" run zsh -f -c 'source '"$OP_HOOK"'; print -r -- "survived"'
