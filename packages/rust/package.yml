@@ -1,3 +1,4 @@
 version: 0.1.0
 author: rjayroach
+description: Rust, installed by mise, and rust-analyzer for nvim
 categories: [pdt]

@@ -1,5 +1,6 @@
 version: 0.1.1
 author: rjayroach
+description: opencode, the coding agent, installed by mise
 categories: [ai]
 meta:
   agent: opencode

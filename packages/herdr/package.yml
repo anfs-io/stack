@@ -1,4 +1,5 @@
 version: 0.1.1
 author: rjayroach
+description: herdr, the terminal workspace for running coding agents
 categories: [ai]
 brew: [herdr]

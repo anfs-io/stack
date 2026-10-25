@@ -1,4 +1,5 @@
 version: 0.1.0
 author: rjayroach
+description: tmux, with its config and nvim pane navigation
 categories: [pde]
 brew: [tmux, entr]

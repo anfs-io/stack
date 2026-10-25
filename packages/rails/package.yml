@@ -1,5 +1,6 @@
 version: 0.1.2
 author: rjayroach
+description: Rails helpers for the shell and nvim
 categories: [pde]
 depends:
   - ruby

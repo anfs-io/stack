@@ -1,5 +1,6 @@
 version: 0.1.0
 author: rjayroach
+description: Phoenix and Ash for Elixir, with live reload on Linux
 categories: [pdt]
 depends:
   - elixir

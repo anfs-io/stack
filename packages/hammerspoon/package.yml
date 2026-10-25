@@ -1,5 +1,6 @@
 version: 0.1.0
 author: rjayroach
+description: Hammerspoon, for macOS hotkeys and automation
 categories: [utils]
 platforms: [macos]
 cask: [hammerspoon]

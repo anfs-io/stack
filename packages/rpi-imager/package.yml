@@ -1,5 +1,6 @@
 version: 0.2.2
 author: rjayroach
+description: Raspberry Pi cards written from cloud-init profiles (rpi-imager)
 categories: [utils]
 
 # macOS and Linux. Disk operations live in ~/.local/lib/rpi-imager/<os>.sh.

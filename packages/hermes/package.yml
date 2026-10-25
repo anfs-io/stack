@@ -1,5 +1,6 @@
 version: 0.1.1
 author: rjayroach
+description: The Hermes agent (macOS)
 categories: [ai-x]
 meta:
   agent: hermes-agent

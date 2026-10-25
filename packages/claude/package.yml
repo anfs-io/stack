@@ -1,5 +1,6 @@
 version: 0.1.1
 author: rjayroach
+description: Claude Code, installed by mise, and its plugin marketplaces
 categories: [ai]
 meta:
   agent: claude-code

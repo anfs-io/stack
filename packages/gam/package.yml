@@ -1,5 +1,6 @@
 version: 0.1.0
 author: rjayroach
+description: GAM7, for Google Workspace administration
 categories: [utils]
 depends:
   - python

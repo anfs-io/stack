@@ -1,5 +1,6 @@
 version: 0.1.4
 author: rjayroach
+description: git and gh, your git identity and GitHub account (git-account)
 categories: [pde]
 brew: [gh, git-filter-repo]
 depends:

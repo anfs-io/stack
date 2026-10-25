@@ -1,5 +1,6 @@
 version: 0.1.2
 author: rjayroach
+description: Maintenance commands for a PiKVM over ssh (pikvm)
 categories: [utils]
 depends:
   # Everything goes over ssh; the target is an ssh alias or user@host

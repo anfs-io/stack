@@ -1,5 +1,6 @@
 version: 0.1.1
 author: rjayroach
+description: Named mounts of remote directories over ssh (remotefs)
 categories: [utils]
 # sshfs, which remotefs drives. macOS: FUSE-T's, which needs no kernel extension (macFUSE does,
 # and gromgit/fuse/sshfs-mac is disabled upstream); the volume reaches macOS over a local NFS server.

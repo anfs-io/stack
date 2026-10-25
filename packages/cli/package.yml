@@ -1,5 +1,6 @@
 version: 0.1.0
 author: rjayroach
+description: The command-line tools every shell gets (bat, fzf, htop, tree)
 categories: [pde]
 # The command-line toolset every shell gets: stack/bash and stack/zsh depend on this package, so the
 # tools and their config are the same whichever shell is installed

@@ -1,3 +1,4 @@
 version: 0.1.1
 author: rjayroach
+description: fnox, for secrets resolved per directory (1Password and others)
 categories: [pde]

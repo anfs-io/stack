@@ -1,5 +1,6 @@
 version: 0.1.3
 author: rjayroach
+description: Ruby with its build deps, and gem, pry, RuboCop and LSP config
 categories: [pde]
 brew:
   macos: [libyaml, openssl, readline, pkgconf]

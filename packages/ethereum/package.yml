@@ -1,3 +1,4 @@
 version: 0.1.0
 author: rjayroach
+description: Foundry for Ethereum work, with Solidity and Hardhat support in nvim
 categories: [pdt]

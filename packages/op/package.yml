@@ -1,5 +1,6 @@
 version: 0.1.5
 author: rjayroach
+description: 1Password, its CLI and ssh agent, with tokens forwarded to remote hosts
 categories: [pde]
 # macOS: the CLI ships as a cask next to the desktop app, for app integration and biometric unlock.
 # Linux: the CLI comes from mise (op.toml, linux only below) — hosts there use service account tokens,

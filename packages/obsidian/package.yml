@@ -1,5 +1,6 @@
 version: 0.7.0
 author: rjayroach
+description: Obsidian vaults (ovm), chorus documents (chorus) and the nvim plugin
 categories: [pde]
 # wsm is what ovm's links point into, and what tells ovm when a space is installed or removed
 depends:

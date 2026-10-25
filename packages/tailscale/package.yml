@@ -1,5 +1,6 @@
 version: 0.1.3
 author: rjayroach
+description: Tailscale, and tsm, which joins this host to a tailnet from config
 categories: [utils]
 
 # macOS: the cask is the GUI app. It has no `binary` stanza, so nothing lands on PATH —

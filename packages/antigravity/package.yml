@@ -1,5 +1,6 @@
 version: 0.1.1
 author: rjayroach
+description: Antigravity, Google's agent IDE, and its CLI (macOS)
 categories: [ai]
 meta:
   agent:

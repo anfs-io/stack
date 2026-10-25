@@ -1,5 +1,6 @@
 version: 0.1.0
 author: rjayroach
+description: Erlang and Elixir, installed by mise, and the Elixir LSP for nvim
 categories: [pdt]
 # mise compiles Erlang from source on Linux; macOS uses precompiled binaries
 brew:
