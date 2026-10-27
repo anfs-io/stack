@@ -69,3 +69,9 @@ On it: `ventoy`, `gem-local` (ruby), `tsm` (tailscale), `opm` (op), `remotefs`, 
 | `ovm sync`, `ovm update` | `vault`, `id`, `path`, `placed`, `updated`, `kept`, `steps_left` (each a list of plugin ids or steps), one per vault |
 | `chorus list` | `name` (the path from the directory listed, without `.md`), `path`, `plans` (the sibling directory's plan count; null: none), then every frontmatter key of the document (a list is an array): the table is NAME STATUS PLANS OBJECTIVE |
 | `opm list` | `scope`, `shared`, `service_account`, `token_item`, `token_vault`, `provisioned` |
+
+## Harness adapters
+
+Core does not depend on any one coding agent (agents/06's to-stack): it owns what every harness uses (leases, events, `wsm listen --hook`, each space's `coordinator:` policy and its recorded `coordinator.policy`, anfsd's inbox summary), and the glue for one harness is that harness's package, `stack/<harness>`, sourcing core's `~/.local/lib/anfs/*.sh` (the layering rule). A second harness (Codex, OpenCode, Gemini) is a new `stack/<harness>`, with no change in core.
+
+`stack/claude` is Claude Code's: the adapter `~/.local/lib/claude/anfs/hook <entry>` (session-start, listen, prompt, session-end, statusline) and the writer of its hooks and status line into `~/.claude/settings.json`, `~/.local/lib/claude/anfs/settings install|remove|status` (`post_install` and `post_remove` run the package's own copy; on cli.sh as the tool `claude-anfs`, whose `config` group holds `CLAUDE_ANFS_STATUSLINE`). The package's README has the hooks, the merge's ownership rule (the handlers whose command ends `/claude/anfs/hook`), the status line and the tests (`bats packages/claude/tests </dev/null`, against the core checkout beside this one or `ANFS_TEST_LIB`'s).
