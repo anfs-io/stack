@@ -1,0 +1,439 @@
+#!/usr/bin/env bash
+# stack/claude: the Claude Code adapter to anfs's coordinator (agents/06b, 06b2; moved out of core
+# by agents/06's to-stack). One script, run by Claude Code from the hooks this package's settings
+# writes into the person's ~/.claude/settings.json (exec form: this absolute path and an entry, no
+# shell), so in every session on the machine. Claude Code is one kind of lease holder (core's
+# lib/anfs/lease.sh); this is where it becomes one, and where every session of a space hears what
+# waits in the person's inbox. It sources core's libraries (~/.local/lib/anfs: the layering rule).
+#
+#   hook session-start                SessionStart, sync: claim the space's coordinator role, or
+#                                     say who holds it; print the brief (stdout: Claude's context).
+#                                     Below the space's root: only the line saying who holds it
+#   hook listen [--max SECONDS]       SessionStart and Stop, asyncRewake: when this session holds
+#                                     the role, wsm listen --hook until events wake it (exit 2:
+#                                     the batch on stderr wakes Claude even when it is idle)
+#   hook prompt                       UserPromptSubmit, sync: take over a dead, expired or free
+#                                     lease; say once when this session lost it; then the inbox line
+#   hook session-end                  SessionEnd: release the role when this session holds it
+#   hook statusline                   statusLine (settings writes it; CLAUDE_ANFS_STATUSLINE=off not): in a
+#                                     space, `space: <space path> role: coordinator` when this
+#                                     session holds the role live (listening or working), else
+#                                     `space: <space path> role: none`; outside: nothing. Run often (each
+#                                     assistant message, 300 ms debounced): one read of the lease, no
+#                                     process walk, no wsm, no yq, no event; WSM_SPACES_HOME unset
+#                                     prints nothing (no wsm config get either); stdout is the line
+#
+# Outside the spaces it costs one bash start: before any library is sourced, it exits 0 unless the
+# directory it runs in is WSM_SPACES_HOME or below it. That is wsm's setting, exported by wsm's
+# shell integration (sh/wsm.sh, once per shell) and so inherited from Claude Code; unset (Claude
+# Code started outside such a shell: a GUI app), this one call asks wsm config get (the slow path).
+# Then it exits 0 unless the directory is in an installed space with an id. The space's policy is
+# the line wsm install recorded beside the role's lease, $ANFS_STATE_HOME/leases/<space id>/
+# coordinator.policy: "claude hooks" (also when there is none: every space has a coordinator by
+# default), "claude task" (the model runs the listener: no listen, the brief and prompt say so) or
+# "none" (the inbox line only).
+#
+# The input is the hook's JSON on stdin (session_id, cwd, hook_event_name, source, reason,
+# agent_id), read with bash patterns (no jq). The space is the one at or above cwd (its id is
+# the lease's key). The holder is the session id and the verified Claude Code process: the first
+# ancestor whose command is claude, or a node running @anthropic-ai/claude-code's cli.js, within
+# six levels (a shell wrapper between is skipped; CLAUDE_PID is not trusted); none: nothing is
+# claimed (run by hand, or under another tool). Its life is the lease's life.
+#
+# Only a session started AT the space's root is a candidate for its coordinator: cwd is the
+# directory of the deepest space at or above it (~/spaces/lgat for lgat, ~/spaces/lgat/next for
+# lgat/next). One started below the root (~/spaces/lgat/core) never claims, takes over or listens;
+# its session-start says who holds the role, its prompt carries the inbox line. A holder whose cwd
+# later moves below the root stays the holder (Stop re-arms it, SessionEnd releases it).
+#
+# Never coordinates, and exits 0 at once: inside a dispatched run (ANFS_RUN; a run loads no
+# settings file anyway, the user's included: --setting-sources=, and wsm lease claim refuses
+# there), in a subagent's hook (agent_id). With ANFS_COORDINATOR=off or coordinator: none only the
+# inbox line is left; ANFS_INBOX_HINT=off turns that off. Neither variable is a setting: each is
+# one session's environment.
+#
+# The inbox line comes from anfsd's ~/.local/state/anfsd/inbox/summary.json (runtime's
+# internal/land, one compact line), printed when it changed since this session last printed it
+# or every 30 minutes while items wait. Per session: $ANFS_STATE_HOME/claude/<session id>.inbox
+# (the last line) and .lease (the space and claim it held), removed at SessionEnd, pruned after
+# a week.
+#
+# Every entry exits 0 whatever happens (a hook must not break the session), except listen's 2.
+
+# The spaces root first: nothing else is done outside it
+HOOK_ROOT="${WSM_SPACES_HOME:-}"
+if [ -z "$HOOK_ROOT" ]; then
+  # the status line runs too often to ask wsm
+  [ "${1:-}" != statusline ] || exit 0
+  _hook_wsm="$HOME/.local/bin/wsm"
+  [ -x "$_hook_wsm" ] || _hook_wsm=$(command -v wsm) || exit 0
+  HOOK_ROOT=$("$_hook_wsm" config get WSM_SPACES_HOME < /dev/null 2>/dev/null) || exit 0
+fi
+case "$HOOK_ROOT" in
+  "~"|"~/"*) HOOK_ROOT="$HOME${HOOK_ROOT#\~}" ;;
+  '$HOME'|'$HOME/'*) HOOK_ROOT="$HOME${HOOK_ROOT#\$HOME}" ;;
+esac
+HOOK_ROOT="${HOOK_ROOT%/}"
+case "$HOOK_ROOT" in /?*) ;; *) exit 0 ;; esac
+# $PWD as Claude Code's shell had it, else the physical directory (cd -P: no fork)
+case "$PWD/" in
+  "$HOOK_ROOT"/*) ;;
+  *) cd -P . 2>/dev/null || exit 0
+     case "$PWD/" in "$HOOK_ROOT"/*) ;; *) exit 0 ;; esac ;;
+esac
+
+HOOK_ENTRY="${1:-}"
+shift || true
+HOOK_MAX=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --max) HOOK_MAX="${2:-}"; shift 2 || break ;;
+    *) shift ;;
+  esac
+done
+
+# core's libraries, beside this script's directory: <lib>/claude/anfs/hook and <lib>/anfs
+_hook_lib="${BASH_SOURCE[0]%/claude/anfs/hook}/anfs"
+[ "$_hook_lib" != "${BASH_SOURCE[0]}/anfs" ] && [ -f "$_hook_lib/bash.sh" ] || _hook_lib="$HOME/.local/lib/anfs"
+[ -f "$_hook_lib/bash.sh" ] || exit 0
+# shellcheck source=/dev/null
+source "$_hook_lib/bash.sh"
+CLI_TOOL=claude-hook
+for _hook_l in paths log files events lease; do
+  # shellcheck source=/dev/null
+  source "$_hook_lib/$_hook_l.sh" || exit 0
+done
+
+HOOK_ROLE=coordinator
+HOOK_INBOX_EVERY=1800
+HOOK_DIR="$ANFS_STATE_HOME/claude"
+
+# --- the input --------------------------------------------------------------------------------
+
+# A top-level string of the input into REPLY; 1 when it has none
+_hook_str() {
+  local re='"'"$1"'"[[:space:]]*:[[:space:]]*"(([^"\\]|\\.)*)"'
+  REPLY=""
+  [[ "$HOOK_IN" =~ $re ]] || return 1
+  _anfs_ev_unq "${BASH_REMATCH[1]}"
+}
+
+# The Claude Code process this hook runs under, into REPLY; 1 when none within six levels
+_hook_claude_pid() {
+  local p="$PPID" i out ppid comm base args
+  REPLY=""
+  for (( i = 0; i < 6; i++ )); do
+    [[ "$p" =~ ^[0-9]+$ ]] && (( p > 1 )) || return 1
+    out=$(LC_ALL=C ps -o ppid= -o comm= -p "$p" 2>/dev/null) || return 1
+    read -r ppid comm <<< "$out"
+    base="${comm##*/}"
+    if [[ "$base" == claude ]]; then REPLY="$p"; return 0; fi
+    if [[ "$base" == node* ]]; then
+      args=$(LC_ALL=C ps -o args= -p "$p" 2>/dev/null) || args=""
+      if [[ "$args" == *claude-code/cli.js* ]]; then REPLY="$p"; return 0; fi
+    fi
+    p="$ppid"
+  done
+  return 1
+}
+
+# --- the lease --------------------------------------------------------------------------------
+
+# Read the role's lease and judge it now: L_* and L_STATUS (lease.sh), and HOOK_OURS true when
+# it names this session and process (whatever its status)
+_hook_lease() {
+  local now
+  anfs_lease_paths "$HOOK_SID" "$HOOK_ROLE"
+  anfs_lease_read "$_L_FILE" || true
+  _anfs_lease_now; now="$REPLY"
+  anfs_lease_status "$now"
+  HOOK_OURS=false
+  [[ "$L_STATUS" == free || "$L_SESSION" != "$HOOK_SESSION" || "$L_PID" != "$HOOK_PID" ]] || HOOK_OURS=true
+}
+_hook_live() { [[ "$L_STATUS" == listening || "$L_STATUS" == working ]]; }
+
+# True when the input's cwd is the space's own directory (HOOK_SDIR). The space was found by
+# walking up from cwd, so the strings match unless cwd is spelled with . or ..: then the physical
+# directories are compared, as the gate does (cd -P, a builtin: no fork; the directory restored)
+_hook_at_root() {
+  local c="$HOOK_CWD" here="$PWD" a="" b=""
+  [[ "$c" == /* ]] || c="$PWD/$c"
+  [[ "$c" == / ]] || c="${c%/}"
+  [[ "$c" != "$HOOK_SDIR" ]] || return 0
+  cd -P -- "$c" 2>/dev/null && a="$PWD"
+  cd -P -- "$HOOK_SDIR" 2>/dev/null && b="$PWD"
+  cd -- "$here" 2>/dev/null || true
+  [[ -n "$a" && "$a" == "$b" ]]
+}
+
+# True when this session claimed this space's role (its .lease file): a holder, or one that lost it
+_hook_was_holder() { _hook_session_read lease && [[ "$REPLY" == "$HOOK_SID "* ]]; }
+
+# Claim the role for this session; HOOK_CLAIM the claim id, HOOK_FROM what it was taken from
+# ("" when it was this session's already). 0 claimed; 75 held by another (L_* its holder); 76 not
+# a candidate (below the root, and the lease is not this session's); 1 not
+_hook_claim() {
+  local from="" prev="" rc=0
+  _hook_lease
+  $HOOK_CAND || $HOOK_OURS || return 76
+  if ! { $HOOK_OURS && _hook_live; }; then
+    from="$L_STATUS"
+    [[ "$from" != free || -z "$L_PREVIOUS" ]] || from=released
+    prev="${L_ACTOR:-$L_PREVIOUS}"
+  fi
+  anfs_lease_claim "$HOOK_SID" "$HOOK_SPATH" "$HOOK_SDIR" "$HOOK_ROLE" claude "$HOOK_SESSION" "$HOOK_PID" \
+    "$ANFS_LEASE_TTL" "$ANFS_LEASE_WORK_TTL" || rc=$?
+  case "$rc" in
+    0)
+      HOOK_CLAIM="$REPLY" HOOK_FROM="$from" HOOK_PREV="$prev"
+      _hook_session_save lease "$HOOK_SID $HOOK_CLAIM"
+      return 0 ;;
+    75) return 75 ;;
+    *) _anfs_log warn "$HOOK_SPATH/$HOOK_ROLE: not claimed: $ANFS_LEASE_WHY"; return 1 ;;
+  esac
+}
+
+# --- this session's files ---------------------------------------------------------------------
+
+_hook_session_file() { REPLY="$HOOK_DIR/$HOOK_SESSION.$1"; }
+_hook_session_save() {
+  _hook_session_file "$1"
+  { [[ -d "$HOOK_DIR" ]] || mkdir -p -m 700 -- "$HOOK_DIR"; } 2>/dev/null || return 0
+  { printf '%s\n' "$2" > "$REPLY.$$" && mv -f -- "$REPLY.$$" "$REPLY"; } 2>/dev/null || rm -f -- "$REPLY.$$"
+}
+_hook_session_read() {
+  _hook_session_file "$1"
+  local f="$REPLY"
+  REPLY=""
+  { IFS= read -r REPLY < "$f"; } 2>/dev/null || return 1
+}
+_hook_session_drop() { _hook_session_file "$1"; rm -f -- "$REPLY"; }
+
+# --- what Claude reads ------------------------------------------------------------------------
+
+_hook_hhmm() { _anfs_lease_epoch "$1" && TZ=UTC printf -v REPLY '%(%H:%M)TZ' "$REPLY" || REPLY="$1"; }
+
+_hook_brief() {
+  local how="$1" taken=""
+  if [[ -n "$HOOK_FROM" ]]; then
+    taken=" (taken from ${HOOK_PREV:-nobody}: $HOOK_FROM)"
+    [[ "$HOOK_FROM" != free ]] || taken=""
+  fi
+  printf 'anfs: this session %s the coordinator of %s (%s/%s, space %s)%s.\n' "$how" "$HOOK_SPATH" "$HOOK_SPATH" "$HOOK_ROLE" "$HOOK_SID" "$taken"
+  if [[ "$HOOK_ARM" == task ]]; then
+    printf -- '- Listen for the space'\''s events yourself: run `wsm listen --claim %s %s` with Bash run_in_background in %s, and run it again after you handle each batch.\n' "$HOOK_CLAIM" "$HOOK_ROLE" "$HOOK_SDIR"
+  else
+    printf -- '- The events that wake a coordinator (space.yml'\''s coordinator: wake; by default reports filed, runs that end or wait on the person, unhandled work, approvals requested and what came of them: done, failed, expired, refused) arrive as one batch, even while you are idle.\n'
+  fi
+  printf -- '- Act on what is yours; tell the person what is theirs (approvals and unhandled work: anfs inbox).\n'
+  printf -- '- More: wsm events ls (in %s). Who holds the role: wsm lease holder %s.\n' "$HOOK_SDIR" "$HOOK_ROLE"
+  printf -- '- Other sessions in this space do not listen. ANFS_COORDINATOR=off claude starts a session that never coordinates.\n'
+}
+
+_hook_holder_line() {
+  local since=""
+  [[ -z "$L_CLAIMED" ]] || { _hook_hhmm "$L_CLAIMED"; since=", since $REPLY"; }
+  printf 'anfs: the coordinator of %s is %s (another session, %s%s); this session does not listen.\n' \
+    "$HOOK_SPATH" "${L_ACTOR:-?}" "$L_STATUS" "$since"
+}
+
+_hook_free_line() {
+  printf 'anfs: %s has no coordinator now (a session started at its root, %s, becomes it); this session does not listen.\n' \
+    "$HOOK_SPATH" "$(anfs_display "$HOOK_SDIR")"
+}
+
+# The inbox line, when the person has items and it is news to this session
+_hook_inbox() {
+  [[ "${ANFS_INBOX_HINT:-on}" != off ]] || return 0
+  local f="${ANFSD_STATE_HOME:-$XDG_STATE_HOME/anfsd}/inbox/summary.json" line total here=0 else items="" n=0 s
+  { IFS= read -r line < "$f"; } 2>/dev/null || return 0
+  [[ "$line" =~ ^\{\"v\":1,\"total\":([0-9]+), ]] || return 0
+  total="${BASH_REMATCH[1]}"
+  if (( total == 0 )); then _hook_session_drop inbox; return 0; fi
+  s='"(([^"\\]|\\.)*)"'
+  local re='"'"$HOOK_SID"'":\{"space":'"$s"',"approvals":([0-9]+),"unhandled":([0-9]+),"oldest":'"$s"',"items":\[(('"$s"')(,'"$s"')*)?\]\}'
+  if [[ "$line" =~ $re ]]; then
+    here=$(( BASH_REMATCH[3] + BASH_REMATCH[4] ))
+    local list="${BASH_REMATCH[7]}" ire='^"(([^"\\]|\\.)*)",?'
+    while [[ -n "$list" && "$list" =~ $ire ]]; do
+      _anfs_ev_unq "${BASH_REMATCH[1]}"
+      items+="${items:+, }$REPLY"
+      n=$(( n + 1 ))
+      list="${list:${#BASH_REMATCH[0]}}"
+    done
+    (( here <= n )) || items+=", +$(( here - n )) more"
+  fi
+  else=$(( total - here ))
+  if (( here > 0 )); then
+    line="anfs inbox: $here waiting here ($items)"
+    (( else == 0 )) || line+=", $else elsewhere"
+  else
+    line="anfs inbox: $else waiting in other spaces"
+  fi
+  line+=": anfs inbox"
+  local now last="" at=0
+  _anfs_lease_now; now="$REPLY"
+  if _hook_session_read inbox; then at="${REPLY%%$'\t'*}" last="${REPLY#*$'\t'}"; fi
+  [[ "$at" =~ ^[0-9]+$ ]] || at=0
+  if [[ "$line" == "$last" ]] && (( now - at < HOOK_INBOX_EVERY )); then return 0; fi
+  printf '%s\n' "$line"
+  _hook_session_save inbox "$now"$'\t'"$line"
+}
+
+# --- the entries ------------------------------------------------------------------------------
+
+_hook_session_start() {
+  local rc=0 src
+  _hook_str source; src="$REPLY"
+  # a week-old session's files: gone
+  find "$HOOK_DIR" -maxdepth 1 -type f \( -name '*.inbox' -o -name '*.lease' \) -mtime +7 -delete 2>/dev/null || true
+  if ! $HOOK_COORD; then
+    # below the root: who holds the role, so the session knows where the space's events go
+    $HOOK_BELOW || return 0
+    _hook_lease
+    if _hook_live; then _hook_holder_line; else _hook_free_line; fi
+    return 0
+  fi
+  _hook_claim || rc=$?
+  case "$rc" in
+    # held already: compact and resume keep the session's lease (the brief again: the old context
+    # is gone); at startup the parallel listen entry may have claimed it a moment before
+    0) if [[ -z "$HOOK_FROM" && ( "$src" == compact || "$src" == resume ) ]]; then _hook_brief "is still"; else _hook_brief is; fi ;;
+    75) _hook_holder_line ;;
+    76) if _hook_live; then _hook_holder_line; else _hook_free_line; fi ;;
+  esac
+}
+
+_hook_prompt() {
+  local rc=0 had=""
+  if $HOOK_COORD; then
+    _hook_lease
+    if $HOOK_OURS && _hook_live; then
+      if [[ "$HOOK_ARM" == task && "$L_STATE" == working ]] && ! anfs_pid_alive "${L_LPID:-x}"; then
+        printf 'anfs: the coordinator'\''s listener is not running: start it again (Bash, in the background, in %s): wsm listen --claim %s %s\n' "$HOOK_SDIR" "$L_CLAIM" "$HOOK_ROLE"
+      fi
+    else
+      if _hook_session_read lease && [[ "$REPLY" == "$HOOK_SID "* ]]; then had="${REPLY#* }"; fi
+      if _hook_live; then
+        if [[ -n "$had" && "$L_CLAIM" != "$had" ]]; then
+          _hook_hhmm "$L_CLAIMED"
+          printf 'anfs: this session is no longer the coordinator of %s (%s took it at %s).\n' "$HOOK_SPATH" "${L_ACTOR:-?}" "$REPLY"
+          _hook_session_drop lease
+        fi
+      else
+        _hook_claim || rc=$?
+        (( rc != 0 )) || _hook_brief "is now"
+        # below the root and no longer its holder: a candidate no more
+        (( rc != 76 )) || _hook_session_drop lease
+      fi
+    fi
+  fi
+  _hook_inbox
+}
+
+_hook_listen() {
+  local max="${HOOK_MAX:-86340}" claim="" rc=0 wsm
+  $HOOK_COORD && [[ "$HOOK_ARM" == hooks ]] || return 0
+  _hook_lease
+  if [[ "$HOOK_EVENT" == SessionStart ]]; then
+    # beside session-start, in parallel: claim when it is free (the same holder's claim only renews)
+    _hook_claim || return 0
+    claim="$HOOK_CLAIM"
+  elif $HOOK_OURS; then
+    if _hook_live; then claim="$L_CLAIM"; else _hook_claim || return 0; claim="$HOOK_CLAIM"; fi
+  else
+    return 0
+  fi
+  wsm="$ANFS_BIN_DIR/wsm"
+  [[ -x "$wsm" ]] || wsm=$(command -v wsm) || { _anfs_log warn "listen: no wsm"; return 0; }
+  cd -- "$HOOK_SDIR" || return 0
+  # The hook's timeout (Claude Code enforces it on asyncRewake) ends the listener with it
+  "$wsm" listen --hook --max "${max}s" --claim "$claim" "$HOOK_ROLE" < /dev/null &
+  local child=$!
+  trap 'kill -TERM "$child" 2>/dev/null; wait "$child" 2>/dev/null; exit 0' TERM HUP INT
+  wait "$child" || rc=$?
+  trap - TERM HUP INT
+  case "$rc" in
+    2) exit 2 ;;
+    3) printf 'anfs: no events for %s/%s in %ss; still listening (this turn'\''s end listens again).\n' "$HOOK_SPATH" "$HOOK_ROLE" "$max" >&2
+       exit 2 ;;
+  esac
+  return 0
+}
+
+# The status line: the space, and this session's role when it holds it now (the TTL judged, the
+# pid's start time not compared: no ps); a space with no id has no coordinator
+_hook_statusline() {
+  local role=none
+  if [[ -n "$HOOK_SID" ]]; then
+    anfs_lease_paths "$HOOK_SID" "$HOOK_ROLE"
+    if anfs_lease_read "$_L_FILE" && [[ "$L_SESSION" == "$HOOK_SESSION" ]]; then
+      _anfs_lease_now
+      anfs_lease_status "$REPLY" false
+      ! _hook_live || role="$HOOK_ROLE"
+    fi
+  fi
+  printf 'space: %s role: %s\n' "$HOOK_SPATH" "$role"
+}
+
+_hook_session_end() {
+  local reason
+  _hook_str reason; reason="$REPLY"
+  [[ "$reason" == clear ]] || reason=session-end
+  if $HOOK_COORD; then
+    _hook_lease
+    if $HOOK_OURS; then
+      anfs_lease_release "$HOOK_SID" "$HOOK_SPATH" "$HOOK_SDIR" "$HOOK_ROLE" "$L_CLAIM" "$reason" ||
+        _anfs_log warn "$HOOK_SPATH/$HOOK_ROLE: not released: $ANFS_LEASE_WHY"
+    fi
+  fi
+  _hook_session_drop lease
+  _hook_session_drop inbox
+}
+
+# --- main -------------------------------------------------------------------------------------
+
+[[ "$HOOK_MAX" =~ ^[0-9]+$ ]] || HOOK_MAX=""
+case "$HOOK_ENTRY" in session-start|listen|prompt|session-end) ;; statusline) ;; *) exit 0 ;; esac
+[[ -z "${ANFS_RUN:-}" ]] || exit 0
+[[ ! -t 0 ]] || exit 0
+HOOK_IN=""
+IFS= read -r -d '' HOOK_IN || true
+[[ -n "$HOOK_IN" ]] || exit 0
+_hook_str agent_id && exit 0
+_hook_str session_id || exit 0
+HOOK_SESSION="$REPLY"
+[[ "$HOOK_SESSION" =~ ^[A-Za-z0-9._:@-]{1,128}$ ]] || exit 0
+_hook_str hook_event_name; HOOK_EVENT="$REPLY"
+_hook_str cwd || REPLY="$PWD"
+HOOK_CWD="$REPLY"
+anfs_events_space_at "$HOOK_CWD" || exit 0
+HOOK_SID="$ANFS_EV_SID" HOOK_SPATH="$ANFS_EV_SPATH" HOOK_SDIR="${ANFS_EV_SFILE%/*}"
+[[ -n "$HOOK_SPATH" ]] || HOOK_SPATH="${HOOK_SID:-$(anfs_display "$HOOK_SDIR")}"
+if [[ "$HOOK_ENTRY" == statusline ]]; then _hook_statusline; exit 0; fi
+[[ -n "$HOOK_SID" ]] || exit 0
+# The events this session's hooks write are this session's (events.sh's actor: claude:<8>)
+export CLAUDECODE=1 CLAUDE_CODE_SESSION_ID="$HOOK_SESSION"
+
+# The space's policy, as wsm install recorded it (none recorded: the default)
+HOOK_POLICY=claude HOOK_ARM=hooks
+{ read -r HOOK_POLICY HOOK_ARM < "$ANFS_LEASES_HOME/$HOOK_SID/coordinator.policy"; } 2>/dev/null || true
+[[ "$HOOK_ARM" == task ]] || HOOK_ARM=hooks
+
+# A candidate only at the space's root; below it, only this session's own lease is kept (HOOK_BELOW:
+# a session there that is no holder, told who is). The process walk only for those two
+HOOK_COORD=false HOOK_PID="" HOOK_CAND=false HOOK_BELOW=false
+if [[ "$HOOK_POLICY" == claude && "${ANFS_COORDINATOR:-on}" != off ]]; then
+  if _hook_at_root; then HOOK_CAND=true
+  elif ! _hook_was_holder; then HOOK_BELOW=true
+  fi
+  if ! $HOOK_BELOW && _hook_claude_pid; then HOOK_PID="$REPLY" HOOK_COORD=true; fi
+fi
+
+case "$HOOK_ENTRY" in
+  session-start) _hook_session_start ;;
+  listen)        _hook_listen ;;
+  prompt)        _hook_prompt ;;
+  session-end)   _hook_session_end ;;
+esac
+exit 0
