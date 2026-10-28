@@ -1,6 +1,6 @@
 version: 0.1.1
 author: rjayroach
-description: Claude Code (mise), its plugin marketplaces and anfs's coordinator hooks
+description: Claude Code (mise) and anfs's coordinator hooks
 categories: [ai]
 meta:
   agent: claude-code

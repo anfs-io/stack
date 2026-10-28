@@ -5,8 +5,9 @@
 # settings install) and taken out by its removal: the package owns only the handlers whose command
 # is its adapter (~/.local/lib/claude/anfs/hook) and merges them in, keeping everything else;
 # idempotent; not JSON or a link refused; settings status warns when they are wrong. Its
-# statusLine is on by default (CLAUDE_ANFS_STATUSLINE=off leaves it out), never over the person's
-# own; settings config set|unset rewrites the file. jq only checks the JSON here.
+# statusLine is always written where the slot is free or ours, never over the person's own: there
+# is no switch here (agents/06's anfs-key: a space's anfs:, read by the hook). jq only checks the
+# JSON here.
 # Run: bats packages/claude/tests/settings.bats
 
 load helper
@@ -145,7 +146,7 @@ EOF
 
 sl() { jq -c '.statusLine // empty' "$S"; }
 
-@test "the status line: on by default, quoted for a shell; off takes ours out and keeps the hooks; remove takes it out" {
+@test "the status line: always written, quoted for a shell; remove takes it out" {
   settings install >/dev/null
   [ "$(sl)" = "{\"type\":\"command\",\"command\":\"'$H' statusline\"}" ] || { sl; false; }
   # the command runs in a shell: outside a space it prints nothing and exits 0
@@ -157,13 +158,8 @@ sl() { jq -c '.statusLine // empty' "$S"; }
   jq '{statusLine} + del(.statusLine)' "$S" > "$S.n" && mv "$S.n" "$S"
   run settings install
   [[ "$output" == "claude settings: up to date"* ]] || { echo "$output"; false; }
-  run env CLAUDE_ANFS_STATUSLINE=off "$SET" install
-  [ "$output" = "claude settings: written (~/.claude/settings.json: the coordinator's hooks)" ] || { echo "$output"; false; }
-  [ -z "$(sl)" ] && [ "$(handlers Stop)" = "H|listen --max 86340|rewake|86400" ]
-  run env CLAUDE_ANFS_STATUSLINE=maybe "$SET" install
-  [[ "$output" == *"CLAUDE_ANFS_STATUSLINE is on or off, not 'maybe': taken as off"* ]]
-  [ -z "$(sl)" ]
-  # the setting changed by hand: status says the file is outdated
+  # taken out by hand: status says outdated, install writes it back
+  jq 'del(.statusLine)' "$S" > "$S.n" && mv "$S.n" "$S"
   run settings status
   [ "$status" -eq 1 ] && [[ "$output" == *"outdated: ppm install stack/claude writes them"* ]]
   settings install >/dev/null
@@ -172,7 +168,7 @@ sl() { jq -c '.statusLine // empty' "$S"; }
   [ "$status" -eq 0 ] && [ ! -e "$S" ]
 }
 
-@test "a person's statusLine is never touched: install says how to compose; off and remove leave it" {
+@test "a person's statusLine is never touched: install says how to compose; remove leaves it" {
   mkdir -p "$HOME/.claude"
   printf '{"statusLine":{"type":"command","command":"~/.claude/sl.sh","padding":1},"model":"opus"}\n' > "$S"
   local mine='{"type":"command","command":"~/.claude/sl.sh","padding":1}'
@@ -181,42 +177,29 @@ sl() { jq -c '.statusLine // empty' "$S"; }
   [[ "$output" == *"claude settings: statusLine is yours (~/.claude/sl.sh): kept; for the coordinator's line, have it also run '$H' statusline with the same stdin and print what that prints"* ]] || { echo "$output"; false; }
   [[ "$output" == *"written (~/.claude/settings.json: the coordinator's hooks)" ]]
   [ "$(sl)" = "$mine" ]
-  run env CLAUDE_ANFS_STATUSLINE=off "$SET" install
-  [[ "$output" != *"statusLine is yours"* ]] && [ "$(sl)" = "$mine" ]
   settings remove >/dev/null
   [ "$(jq -c . "$S")" = '{"statusLine":'"$mine"',"model":"opus"}' ]
 }
 
-@test "settings config set|unset CLAUDE_ANFS_STATUSLINE rewrites the settings at once; the environment still wins" {
-  settings install >/dev/null
-  run settings config set CLAUDE_ANFS_STATUSLINE=off
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"claude settings: written (~/.claude/settings.json: the coordinator's hooks)"* ]] || { echo "$output"; false; }
-  [ -z "$(sl)" ]
-  [ "$(cat "$XDG_CONFIG_HOME/claude-anfs/claude-anfs.local.env" | grep -c '^CLAUDE_ANFS_STATUSLINE=off$')" -eq 1 ]
-  # install.sh's settings install reads it too
-  settings install >/dev/null
-  [ -z "$(sl)" ]
-  run settings config get CLAUDE_ANFS_STATUSLINE
-  [ "$output" = off ]
-  run settings config unset CLAUDE_ANFS_STATUSLINE
-  [[ "$output" == *"the coordinator's hooks and the status line"* ]] || { echo "$output"; false; }
-  [ -n "$(sl)" ]
-  run env CLAUDE_ANFS_STATUSLINE=on "$SET" config set CLAUDE_ANFS_STATUSLINE=off
-  [[ "$output" == *"is set in the environment"* ]]
-  [ -n "$(sl)" ]
-  # a name that is not a setting is refused, and the file left alone
-  local sum
-  sum=$(cksum < "$S")
-  run settings config set CLAUDE_ANFS_OTHER=1
-  [ "$status" -eq 64 ] && [ "$(cksum < "$S")" = "$sum" ]
+@test "no switch: no settings config, no claude-anfs settings file, the environment's old name ignored; no plugin directories" {
+  run settings config list
+  [ "$status" -eq 64 ]
+  [ ! -e "$PKG/home/.config/claude-anfs" ]
+  run env CLAUDE_ANFS_STATUSLINE=off "$SET" install
+  [ "$status" -eq 0 ] && [ -n "$(sl)" ]
+  # the plugin search paths and the marketplaces' clones are gone (agents/06's anfs-key)
+  [ ! -e "$PKG/home/.config/claude" ]
+  not grep -qE 'plugins\.d|plugin-dir|marketplace' "$PKG/install.sh" "$PKG/home/.config/zsh/claude.zsh" "$PKG/README.md"
+  not grep -qE 'x_install|REPOS|PLUGINS_DIR' "$PKG/install.sh"
+  run bash -c 'user_message() { :; }; source "$1/install.sh"; declare -F x_install' _ "$PKG"
+  [ "$status" -ne 0 ]
 }
 
-@test "settings: an unknown command is a usage error; help names install, remove, status and config" {
+@test "settings: an unknown command is a usage error; help names install, remove and status" {
   run settings bogus
   [ "$status" -eq 64 ]
   run settings help
   [ "$status" -eq 0 ]
-  [[ "$output" == *"install"* && "$output" == *"remove"* && "$output" == *"status"* && "$output" == *"config"* ]]
+  [[ "$output" == *"install"* && "$output" == *"remove"* && "$output" == *"status"* ]]
   [ ! -e "$S" ]
 }

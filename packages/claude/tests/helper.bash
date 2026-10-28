@@ -4,7 +4,7 @@
 # ANFS_TEST_LIB's (stack's convention: a core checkout's lib/anfs), else the core checkout beside
 # this stack one (a job's worktrees, or anfs-dev's clones), else the installed libraries' source.
 # Every test runs the package's scripts linked into a HOME in the per-test temp directory, as ppm
-# links them, with every XDG_* directory, the anfs, wsm and claude-anfs homes, ANFSD_STATE_HOME and
+# links them, with every XDG_* directory, the anfs and wsm homes, ANFSD_STATE_HOME and
 # WSM_SPACES_HOME inside it; claude_guard fails the test if any would still resolve outside it.
 # PATH holds the stubs, bash's, yq's and jq's directories and the system's; no real claude runs.
 
@@ -15,7 +15,7 @@ not() { ! "$@"; }
 # The home this test was started with, before claude_setup moves it
 _CLAUDE_REAL_HOME="${_CLAUDE_REAL_HOME:-$HOME}"
 
-# Fail unless anfs's, wsm's, anfsd's and claude-anfs's directories, as paths.sh resolves them in
+# Fail unless anfs's, wsm's and anfsd's directories, as paths.sh resolves them in
 # this environment, are inside the test's temp directory (and so not under the real home)
 claude_guard() {
   local tmp out d
@@ -23,7 +23,7 @@ claude_guard() {
   out=$(bash -c 'source "$HOME/.local/lib/anfs/paths.sh"
     printf "%s\n" "$ANFS_STATE_HOME" "$ANFS_CONFIG_HOME" "$ANFS_DATA_HOME" "$ANFS_CACHE_HOME" "$ANFS_SOURCES_HOME" \
       "${WSM_STATE_HOME:-$XDG_STATE_HOME/wsm}" "${WSM_CONFIG_HOME:-$XDG_CONFIG_HOME/wsm}" "$WSM_SPACES_HOME" \
-      "${CLAUDE_ANFS_CONFIG_HOME:-$XDG_CONFIG_HOME/claude-anfs}" "$XDG_STATE_HOME" "$XDG_CONFIG_HOME" \
+      "$XDG_STATE_HOME" "$XDG_CONFIG_HOME" \
       "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "${XDG_RUNTIME_DIR:-}" "${ANFSD_STATE_HOME:-$XDG_STATE_HOME/anfsd}" "$HOME"') ||
     { echo "claude_guard: paths.sh failed" >&2; return 1; }
   while IFS= read -r d; do
@@ -40,7 +40,7 @@ claude_setup() {
   if [[ -z "$lib" ]]; then
     if [[ -f "$beside/lease.sh" ]]; then lib="$beside"; else lib="$HOME/.local/lib/anfs"; fi
   fi
-  [[ -f "$lib/lease.sh" && -f "$lib/config.sh" ]] || skip "anfs's libraries are not at $lib"
+  [[ -f "$lib/lease.sh" ]] || skip "anfs's libraries are not at $lib"
   lib=$(cd -P "$lib" && pwd -P)
   # <core>/packages/anfs/home/.local/lib/anfs
   CORE=$(cd -P "$lib/../../../../../.." && pwd -P)
@@ -64,21 +64,20 @@ claude_setup() {
   ANFSD_STATE_HOME="$XDG_STATE_HOME/anfsd" ANFSD_CONFIG_HOME="$XDG_CONFIG_HOME/anfsd"
   unset ANFS_WORK ANFS_WORK_SAID  # a person's ANFS_WORK never reaches a test (lib/anfs/work.sh)
   # Nothing of the session running the tests: no run's spool, no run, no claimed actor or role,
-  # no Claude Code (and no claude-anfs setting or home: CLAUDE*)
+  # no Claude Code (CLAUDE*), no machine default for agent sessions (ANFS_ENABLED)
   unset ANFS_EVENTS_SPOOL ANFS_RUN ANFS_ACTOR ANFS_AS ANFS_SPACE AI_AGENT ANFS_TEST ANFS_LEASE_NOW "${!CLAUDE@}"
-  unset ANFS_COORDINATOR ANFS_INBOX_HINT ANFS_DEBUG ANFS_JSON
+  unset ANFS_COORDINATOR ANFS_INBOX_HINT ANFS_ENABLED ANFS_DEBUG ANFS_JSON
   WSM_SPACES_HOME="$HOME/spaces"
   export HOME XDG_STATE_HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME XDG_RUNTIME_DIR WSM_SPACES_HOME
   export ANFS_CONFIG_HOME ANFS_DATA_HOME ANFS_CACHE_HOME ANFS_STATE_HOME
   export WSM_CONFIG_HOME WSM_DATA_HOME WSM_CACHE_HOME WSM_STATE_HOME ANFSD_STATE_HOME ANFSD_CONFIG_HOME
   export ANFS_LOG=off   # no log file from tests (lib/anfs/log.sh)
   export ANFS_EVENTS=off   # no event log either (lib/anfs/events.sh); a test about events turns it on
-  # What ppm links: core's libraries and wsm, this package's lib/claude/anfs and its settings file
-  mkdir -p "$HOME/.local/lib/claude" "$HOME/.local/bin" "$XDG_CONFIG_HOME/claude-anfs"
+  # What ppm links: core's libraries and wsm, this package's lib/claude/anfs
+  mkdir -p "$HOME/.local/lib/claude" "$HOME/.local/bin"
   ln -s "$lib" "$HOME/.local/lib/anfs"
   ln -s "$PKG/home/.local/lib/claude/anfs" "$HOME/.local/lib/claude/anfs"
   ln -s "$WSM" "$HOME/.local/bin/wsm"
-  ln -s "$PKG/home/.config/claude-anfs/claude-anfs.env" "$XDG_CONFIG_HOME/claude-anfs/claude-anfs.env"
   HOOK="$HOME/.local/lib/claude/anfs/hook"
   export HOOK
   PATH="$BATS_TEST_TMPDIR/bin:$(dirname "$(command -v bash)"):$(dirname "$(command -v yq)"):$(dirname "$(command -v jq)"):/usr/bin:/bin:/usr/sbin:/sbin"

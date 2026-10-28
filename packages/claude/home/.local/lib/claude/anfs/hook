@@ -15,8 +15,8 @@
 #   hook prompt                       UserPromptSubmit, sync: take over a dead, expired or free
 #                                     lease; say once when this session lost it; then the inbox line
 #   hook session-end                  SessionEnd: release the role when this session holds it
-#   hook statusline                   statusLine (settings writes it; CLAUDE_ANFS_STATUSLINE=off not): in a
-#                                     space, `space: <space path> role: coordinator` when this
+#   hook statusline                   statusLine (settings writes it): in a space anfs acts in,
+#                                     `space: <space path> role: coordinator` when this
 #                                     session holds the role live (listening or working), else
 #                                     `space: <space path> role: none`; outside: nothing. Run often (each
 #                                     assistant message, 300 ms debounced): one read of the lease, no
@@ -27,7 +27,10 @@
 # directory it runs in is WSM_SPACES_HOME or below it. That is wsm's setting, exported by wsm's
 # shell integration (sh/wsm.sh, once per shell) and so inherited from Claude Code; unset (Claude
 # Code started outside such a shell: a GUI app), this one call asks wsm config get (the slow path).
-# Then it exits 0 unless the directory is in an installed space with an id. The space's policy is
+# Then it exits 0 unless the directory is in an installed space with an id (the status line: in a
+# space), and, in every entry, when anfs does not act there (agents/06's anfs-key): core's
+# anfs_space_enabled, the space's anfs: as wsm install recorded it, else the machine's
+# ANFS_ENABLED; none is nothing at all, as outside the spaces. The space's policy is
 # the line wsm install recorded beside the role's lease, $ANFS_STATE_HOME/leases/<space id>/
 # coordinator.policy: "claude hooks" (also when there is none: every space has a coordinator by
 # default), "claude task" (the model runs the listener: no listen, the brief and prompt say so) or
@@ -410,6 +413,8 @@ HOOK_CWD="$REPLY"
 anfs_events_space_at "$HOOK_CWD" || exit 0
 HOOK_SID="$ANFS_EV_SID" HOOK_SPATH="$ANFS_EV_SPATH" HOOK_SDIR="${ANFS_EV_SFILE%/*}"
 [[ -n "$HOOK_SPATH" ]] || HOOK_SPATH="${HOOK_SID:-$(anfs_display "$HOOK_SDIR")}"
+# anfs: none in this space (or ANFS_ENABLED=none and the space says nothing): nothing at all
+anfs_space_enabled "$HOOK_SID" || exit 0
 if [[ "$HOOK_ENTRY" == statusline ]]; then _hook_statusline; exit 0; fi
 [[ -n "$HOOK_SID" ]] || exit 0
 # The events this session's hooks write are this session's (events.sh's actor: claude:<8>)

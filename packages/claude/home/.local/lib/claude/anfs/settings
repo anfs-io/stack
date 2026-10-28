@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # stack/claude: the coordinator's hooks and status line in the person's ~/.claude/settings.json
 # (agents/06b2 and the status line, moved out of core/wsm by agents/06's to-stack). Run by this
-# package's install.sh (x_install: settings install; post_remove: settings remove), from the
+# package's install.sh (post_install: settings install; post_remove: settings remove), from the
 # package's own copy: post_remove runs after the unstow.
 #
 #   settings install                  merge ours in (exit 1 when refused or not written)
@@ -9,8 +9,6 @@
 #   settings status                   ok, missing (none of ours there: Claude Code may not be
 #                                     used), outdated, invalid or refused; a warning saying why,
 #                                     and exit 1, for the last three
-#   settings config list|get|set|unset    CLAUDE_ANFS_STATUSLINE (core's lib/anfs/config.sh);
-#                                     set and unset rewrite the file at once
 #
 # The file is user scope: one place, every session on the machine. This package owns its own
 # hooks there and nothing else: the person's keys and hooks (herdr's too) are kept; the file is
@@ -36,9 +34,9 @@
 # into the file when it has no statusLine or has ours (a command ending in the adapter's path and
 # statusline: statusLine has no args, its command runs in a shell, so the path is quoted). A
 # statusLine of the person's is never touched: install says how to compose (their script runs ours
-# with the same stdin and prints its line too). CLAUDE_ANFS_STATUSLINE=off (settings config, in
-# ~/.config/claude-anfs/: this script's settings are the tool claude-anfs's) leaves it out and
-# takes ours out, as remove does.
+# with the same stdin and prints its line too). There is no switch here: whether a space shows a
+# line is the space's anfs: (else the machine's ANFS_ENABLED), which the hook reads as it runs
+# (agents/06's anfs-key).
 
 set -euo pipefail
 
@@ -54,13 +52,12 @@ fi
 source "$_lib/bash.sh"
 # shellcheck source=/dev/null
 source "$_lib/paths.sh"
-for _l in log cli table files config; do
+for _l in log cli table files; do
   # shellcheck source=/dev/null
   source "$ANFS_LIB_DIR/$_l.sh"
 done
 
 CLI_TOOL=claude-anfs
-anfs_tool_paths claude-anfs
 
 HOOK_TIMEOUT=86400
 HOOK="$ANFS_LIB_ROOT/claude/anfs/hook"
@@ -68,13 +65,13 @@ HOOK="$ANFS_LIB_ROOT/claude/anfs/hook"
 cli_cmd install "Merge the coordinator's hooks and the status line into ~/.claude/settings.json"
 cli_cmd remove "Take them out of ~/.claude/settings.json" --alias rm
 cli_cmd status "Whether they are in ~/.claude/settings.json as install writes them"
-anfs_config_declare
 cli_standard
 
 cli_help_epilogue() {
   cat <<'EOF'
-claude-anfs is ~/.local/lib/claude/anfs/settings (stack/claude), run by the package's install.sh;
-its settings are in ~/.config/claude-anfs/. The hooks it writes run ~/.local/lib/claude/anfs/hook.
+claude-anfs is ~/.local/lib/claude/anfs/settings (stack/claude), run by the package's install.sh.
+The hooks it writes run ~/.local/lib/claude/anfs/hook; whether they act in a space is the space's
+anfs: (else ANFS_ENABLED: anfs config).
 EOF
 }
 
@@ -98,16 +95,9 @@ _want() {
   REPLY='{"SessionStart":[{"hooks":['"$start"','"$listen"']}],"Stop":[{"hooks":['"$listen"']}],"UserPromptSubmit":[{"hooks":['"$prompt"']}],"SessionEnd":[{"hooks":['"$end"']}]}'
 }
 
-# The statusLine we want (CLAUDE_ANFS_STATUSLINE, on by default), as JSON into REPLY; "" when
-# off. SL_WARN says when the setting is neither on nor off (taken as off)
+# The statusLine we want, as JSON into REPLY
 _statusline() {
   local q r="'\\''"
-  REPLY="" SL_WARN=""
-  case "${CLAUDE_ANFS_STATUSLINE:-on}" in
-    on) ;;
-    off) return 0 ;;
-    *) SL_WARN="CLAUDE_ANFS_STATUSLINE is on or off, not '$CLAUDE_ANFS_STATUSLINE': taken as off"; return 0 ;;
-  esac
   q="'${HOOK//\'/$r}' statusline"
   _json "$q"
   REPLY='{"type":"command","command":'"$REPLY"'}'
@@ -133,18 +123,16 @@ _merged() {
 # The state of our hooks (and statusLine) in ~/.claude/settings.json, into REPLY: ok, missing
 # (none of ours there), outdated, invalid (not a JSON object), refused (a link); FILE the file,
 # NEW what install writes, BARE the file without ours; SL_THEIRS the person's own statusLine
-# command when the status line is on and finds one ("" otherwise)
+# command when there is one ("" otherwise)
 _state() {
   local cur="" want
-  FILE="$HOME/.claude/settings.json" NEW="" BARE="" SL_THEIRS="" SL_WARN=""
+  FILE="$HOME/.claude/settings.json" NEW="" BARE="" SL_THEIRS=""
   if [[ -L "$FILE" ]]; then REPLY=refused; return 0; fi
   _want; want="$REPLY"
   _statusline
   NEW=$(_merged "$FILE" "$want" "$REPLY") && BARE=$(_merged "$FILE" '{}') ||
     { NEW="" BARE=""; REPLY=invalid; return 0; }
-  if [[ -n "$REPLY" ]]; then
-    SL_THEIRS=$(printf '%s' "$NEW" | yq -p json -r 'select(.statusLine != null and ('"$SL_OURS"' | not)) | .statusLine.command // "(not a command)"' 2>/dev/null) || SL_THEIRS=""
-  fi
+  SL_THEIRS=$(printf '%s' "$NEW" | yq -p json -r 'select(.statusLine != null and ('"$SL_OURS"' | not)) | .statusLine.command // "(not a command)"' 2>/dev/null) || SL_THEIRS=""
   [[ ! -f "$FILE" ]] || cur=$(yq -p json -o json -I2 . "$FILE" 2>/dev/null) || cur=""
   if [[ ! -f "$FILE" || "$cur" == "$BARE" ]]; then REPLY=missing
   elif [[ "$cur" == "$NEW" ]]; then REPLY=ok
@@ -168,7 +156,6 @@ _why() {
 _install() {
   local what="the coordinator's hooks"
   _state
-  [[ -z "$SL_WARN" ]] || warn "$SL_WARN"
   case "$REPLY" in
     invalid|refused) _why "$REPLY"; warn "$REPLY"; return 1 ;;
   esac
@@ -180,7 +167,7 @@ _install() {
     warn "cannot write $(anfs_display "$FILE")"
     return 1
   fi
-  [[ "${CLAUDE_ANFS_STATUSLINE:-on}" != on || -n "$SL_THEIRS" ]] || what+=" and the status line"
+  [[ -n "$SL_THEIRS" ]] || what+=" and the status line"
   echo "claude settings: written ($(anfs_display "$FILE"): $what)"
 }
 
@@ -202,28 +189,11 @@ cmd_remove() {
 cmd_status() {
   local state
   _state; state="$REPLY"
-  [[ -z "$SL_WARN" ]] || warn "$SL_WARN"
   echo "claude settings: $state ($(anfs_display "$FILE"))"
   _why "$state"
   [[ -n "$REPLY" ]] || return 0
   warn "$REPLY"
   return 1
-}
-
-# settings config set|unset (config.sh's anfs_config_changed): CLAUDE_ANFS_STATUSLINE rewrites the
-# file now, with the setting's new effective value (the environment still wins)
-anfs_config_changed() {
-  local n i
-  for n in "$@"; do
-    [[ "$n" == CLAUDE_ANFS_STATUSLINE ]] || continue
-    _anfs_config_collect "$CLI_TOOL"
-    CLAUDE_ANFS_STATUSLINE=""
-    for i in "${!_CF_NAMES[@]}"; do
-      [[ "${_CF_NAMES[$i]}" != CLAUDE_ANFS_STATUSLINE ]] || CLAUDE_ANFS_STATUSLINE="${_CF_VALUES[$i]}"
-    done
-    _install
-    return
-  done
 }
 
 cli_dispatch "$@"

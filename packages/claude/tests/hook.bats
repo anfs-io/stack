@@ -7,6 +7,7 @@
 # Claude Code's do. No real Claude, no bus: wsm and the lease library from the core checkout
 # (helper.bash), the inbox summary a fixture. The helper's isolation and guard (every XDG_*,
 # ANFS_*_HOME, WSM_*_HOME and ANFSD_STATE_HOME in the test's temp directory).
+# anfs: none (or ANFS_ENABLED=none, a space saying nothing) silences every entry (agents/06's anfs-key).
 # The SessionStart pair test is tagged slow (over 10 s) and the idle bound timing.
 # Run: bats packages/claude/tests/hook.bats
 
@@ -586,4 +587,101 @@ statusline() {
   die a
   statusline a "$sp"
   [ "$SOUT" = "space: acme/lgat/next role: none" ]
+}
+
+# --- anfs: enabled|none (agents/06's anfs-key) ---------------------------------------------------
+
+# Every entry of session <n> in the space, and the status line: all silent, nothing claimed, no
+# session file
+silent_everywhere() {
+  local n="$1"
+  hook "$n" session-start SessionStart source=startup
+  [ "$HRC" -eq 0 ] && [ -z "$HOUT" ] && [ -z "$HERR" ] || { echo "session-start: $HOUT $HERR"; return 1; }
+  hook "$n" "listen --max 60" SessionStart source=startup
+  [ "$HRC" -eq 0 ] && [ -z "$HOUT" ] && [ -z "$HERR" ] || { echo "listen: $HOUT $HERR"; return 1; }
+  hook "$n" "listen --max 60" Stop
+  [ "$HRC" -eq 0 ] && [ -z "$HOUT" ] && [ -z "$HERR" ] || { echo "Stop listen: $HOUT $HERR"; return 1; }
+  hook "$n" prompt UserPromptSubmit prompt=x
+  [ "$HRC" -eq 0 ] && [ -z "$HOUT" ] && [ -z "$HERR" ] || { echo "prompt: $HOUT $HERR"; return 1; }
+  statusline "$n"
+  [ -z "$SOUT" ] || { echo "statusline: $SOUT"; return 1; }
+  hook "$n" session-end SessionEnd reason=other
+  [ "$HRC" -eq 0 ] && [ -z "$HOUT" ] && [ -z "$HERR" ] || { echo "session-end: $HOUT $HERR"; return 1; }
+  [ ! -e "$L" ] || { echo "a lease: $(cat "$L")"; return 1; }
+  [ -z "$(ls -A "$XDG_STATE_HOME/anfs/claude" 2>/dev/null)" ] || { ls "$XDG_STATE_HOME/anfs/claude"; return 1; }
+}
+
+# A machine default for agent sessions in the person's anfs.local.env (what anfs config set writes)
+machine() { mkdir -p "$ANFS_CONFIG_HOME"; printf 'ANFS_ENABLED=%s\n' "$1" > "$ANFS_CONFIG_HOME/anfs.local.env"; }
+
+@test "anfs: none silences every entry and the status line: no claim, no listen, no brief, no inbox line" {
+  space_def acme <<<$'id: acmeroot22\nanfs: none'
+  wsm install acme >/dev/null
+  summary '{"v":1,"total":1,"spaces":{"acmeroot22":{"space":"acme","approvals":1,"unhandled":0,"oldest":"2026-10-24T10:00:00.000Z","items":["merge core +1"]}}}'
+  session a
+  silent_everywhere a
+  [ "$(events_of lease.claimed)" -eq 0 ]
+  # a nested space's own anfs: decides there; the parent's none does not reach it
+  space_def acme lgat/next <<<$'id: nextspace1'
+  wsm install acme/lgat/next >/dev/null
+  local sp="$WSM_SPACES_HOME/acme/lgat/next"
+  statusline a "$sp"
+  [ "$SOUT" = "space: acme/lgat/next role: none" ]
+  statusline a "$SP"
+  [ -z "$SOUT" ]
+}
+
+@test "no anfs: follows ANFS_ENABLED both ways (anfs.local.env, the environment); a space with no id too" {
+  summary '{"v":1,"total":1,"spaces":{"acmeroot22":{"space":"acme","approvals":1,"unhandled":0,"oldest":"2026-10-24T10:00:00.000Z","items":["merge core +1"]}}}'
+  [ ! -e "$XDG_STATE_HOME/anfs/leases/acmeroot22/anfs.policy" ]
+  machine none
+  session a
+  silent_everywhere a
+  NOID=1 space_def acme noid <<<'repositories: []'
+  wsm install acme/noid >/dev/null
+  statusline a "$SP/noid"
+  [ -z "$SOUT" ]
+  machine enabled
+  statusline a "$SP/noid"
+  [ "$SOUT" = "space: acme/noid role: none" ]
+  hook a session-start SessionStart source=startup
+  [[ "$HOUT" == "anfs: this session is the coordinator of acme"* ]] || { echo "$HOUT"; false; }
+  statusline a
+  [ "$SOUT" = "space: acme role: coordinator" ]
+  hook a prompt UserPromptSubmit prompt=x
+  [ "$HOUT" = "anfs inbox: 1 waiting here (merge core +1): anfs inbox" ]
+  # the environment wins over the file
+  SOUT=$(ANFS_ENABLED=none "$HOOK" statusline < "$T/sl.in")
+  [ -z "$SOUT" ]
+  rm "$ANFS_CONFIG_HOME/anfs.local.env"
+  SOUT=$("$HOOK" statusline < "$T/sl.in")
+  [ "$SOUT" = "space: acme role: coordinator" ]
+}
+
+@test "the space's anfs: beats ANFS_ENABLED both ways" {
+  summary '{"v":1,"total":1,"spaces":{"acmeroot22":{"space":"acme","approvals":1,"unhandled":0,"oldest":"2026-10-24T10:00:00.000Z","items":["merge core +1"]}}}'
+  space_def acme <<<$'id: acmeroot22\nanfs: none'
+  wsm install acme >/dev/null
+  machine enabled
+  session a
+  silent_everywhere a
+  SOUT=$(ANFS_ENABLED=enabled "$HOOK" statusline < "$T/sl.in")
+  [ -z "$SOUT" ]
+  space_def acme <<<$'id: acmeroot22\nanfs: enabled'
+  wsm install acme >/dev/null
+  machine none
+  hook a session-start SessionStart source=startup
+  [[ "$HOUT" == "anfs: this session is the coordinator of acme"* ]] || { echo "$HOUT"; false; }
+  statusline a
+  [ "$SOUT" = "space: acme role: coordinator" ]
+  SOUT=$(ANFS_ENABLED=none "$HOOK" statusline < "$T/sl.in")
+  [ "$SOUT" = "space: acme role: coordinator" ]
+}
+
+@test "a bad anfs: is recorded as none: silent" {
+  space_def acme <<<$'id: acmeroot22\nanfs: maybe'
+  run wsm install acme
+  [[ "$output" == *"acme: anfs: is enabled or none: treated as none"* ]] || { echo "$output"; false; }
+  session a
+  silent_everywhere a
 }
