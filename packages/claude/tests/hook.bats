@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# lib/anfs.d/claude/hook, the Claude Code adapter (agents/06b, 06b2; moved here from core/anfs's
+# lib/wsm.d/claude/hook, the Claude Code adapter (agents/06b, 06b2; moved here from core/anfs's
 # claude-hook.bats by agents/06's to-stack), fed fake hook input; the sessions inherit the test's
 # WSM_SPACES_HOME, as Claude Code inherits sh/wsm.sh's. A fake Claude Code is a copy of bash named
 # claude (so ps says claude on macOS and Linux) running a driver that runs the hook as its child on
@@ -7,7 +7,7 @@
 # Claude Code's do. No real Claude, no bus: wsm and the lease library from the core checkout
 # (helper.bash), the inbox summary a fixture. The helper's isolation and guard (every XDG_*,
 # ANFS_*_HOME, WSM_*_HOME and ANFSD_STATE_HOME in the test's temp directory).
-# anfs: none (or ANFS_ENABLED=none, a space saying nothing) silences every entry (agents/06's anfs-key).
+# anfs: none (or WSM_ANFS=none, a space saying nothing) silences every entry (agents/06's anfs-key).
 # The SessionStart pair test is tagged slow (over 10 s) and the idle bound timing.
 # Run: bats packages/claude/tests/hook.bats
 
@@ -400,12 +400,12 @@ summary() { mkdir -p "${SUM%/*}"; printf '%s\n' "$1" > "$SUM"; }
 # --- outside the spaces ----------------------------------------------------------------------
 
 @test "outside WSM_SPACES_HOME the hook exits 0 before sourcing a library; unset, it asks wsm config get" {
-  # a copy of the hook whose libraries only leave a mark: <lib>/anfs, found from <lib>/anfs.d/claude
-  mkdir -p "$T/lib/anfs.d/claude" "$T/lib/anfs" "$T/elsewhere" "$R-other"
-  cp "$HOOK" "$T/lib/anfs.d/claude/hook"
+  # a copy of the hook whose libraries only leave a mark: <lib>/anfs, found from <lib>/wsm.d/claude
+  mkdir -p "$T/lib/wsm.d/claude" "$T/lib/anfs" "$T/elsewhere" "$R-other"
+  cp "$HOOK" "$T/lib/wsm.d/claude/hook"
   printf 'echo sourced >> "%s"; exit 0\n' "$T/mark" > "$T/lib/anfs/bash.sh"
   input "$T/in" a SessionStart source=startup
-  local h="$T/lib/anfs.d/claude/hook"
+  local h="$T/lib/wsm.d/claude/hook"
   ( cd "$T/elsewhere" && "$h" session-start < "$T/in" )
   # a sibling whose name starts like the root's is not below it; a relative root is nothing
   ( cd "$R-other" && "$h" session-start < "$T/in" )
@@ -611,8 +611,8 @@ silent_everywhere() {
   [ -z "$(ls -A "$XDG_STATE_HOME/anfs/claude" 2>/dev/null)" ] || { ls "$XDG_STATE_HOME/anfs/claude"; return 1; }
 }
 
-# A machine default for agent sessions in the person's anfs.local.env (what anfs config set writes)
-machine() { mkdir -p "$ANFS_CONFIG_HOME"; printf 'ANFS_ENABLED=%s\n' "$1" > "$ANFS_CONFIG_HOME/anfs.local.env"; }
+# A machine default for agent sessions in the person's wsm.local.env (what wsm config set writes)
+machine() { mkdir -p "$WSM_CONFIG_HOME"; printf 'WSM_ANFS=%s\n' "$1" > "$WSM_CONFIG_HOME/wsm.local.env"; }
 
 @test "anfs: none silences every entry and the status line: no claim, no listen, no brief, no inbox line" {
   space_def acme <<<$'id: acmeroot22\nanfs: none'
@@ -631,7 +631,7 @@ machine() { mkdir -p "$ANFS_CONFIG_HOME"; printf 'ANFS_ENABLED=%s\n' "$1" > "$AN
   [ -z "$SOUT" ]
 }
 
-@test "no anfs: follows ANFS_ENABLED both ways (anfs.local.env, the environment); a space with no id too" {
+@test "no anfs: follows WSM_ANFS both ways (wsm.local.env, wsm.env, the environment); a space with no id too; ANFS_ENABLED is nothing" {
   summary '{"v":1,"total":1,"spaces":{"acmeroot22":{"space":"acme","approvals":1,"unhandled":0,"oldest":"2026-10-24T10:00:00.000Z","items":["merge core +1"]}}}'
   [ ! -e "$XDG_STATE_HOME/anfs/leases/acmeroot22/anfs.policy" ]
   machine none
@@ -651,21 +651,31 @@ machine() { mkdir -p "$ANFS_CONFIG_HOME"; printf 'ANFS_ENABLED=%s\n' "$1" > "$AN
   hook a prompt UserPromptSubmit prompt=x
   [ "$HOUT" = "anfs inbox: 1 waiting here (merge core +1): anfs inbox" ]
   # the environment wins over the file
-  SOUT=$(ANFS_ENABLED=none "$HOOK" statusline < "$T/sl.in")
+  SOUT=$(WSM_ANFS=none "$HOOK" statusline < "$T/sl.in")
   [ -z "$SOUT" ]
-  rm "$ANFS_CONFIG_HOME/anfs.local.env"
+  rm "$WSM_CONFIG_HOME/wsm.local.env"
   SOUT=$("$HOOK" statusline < "$T/sl.in")
+  [ "$SOUT" = "space: acme role: coordinator" ]
+  # wsm.env's line (a package's active one; core's ships it commented, the default)
+  echo 'WSM_ANFS=none' > "$WSM_CONFIG_HOME/wsm.env"
+  SOUT=$("$HOOK" statusline < "$T/sl.in")
+  [ -z "$SOUT" ]
+  rm "$WSM_CONFIG_HOME/wsm.env"
+  # anfs's old name, in its file or the environment, is not read
+  mkdir -p "$ANFS_CONFIG_HOME"
+  echo 'ANFS_ENABLED=none' > "$ANFS_CONFIG_HOME/anfs.local.env"
+  SOUT=$(ANFS_ENABLED=none "$HOOK" statusline < "$T/sl.in")
   [ "$SOUT" = "space: acme role: coordinator" ]
 }
 
-@test "the space's anfs: beats ANFS_ENABLED both ways" {
+@test "the space's anfs: beats WSM_ANFS both ways" {
   summary '{"v":1,"total":1,"spaces":{"acmeroot22":{"space":"acme","approvals":1,"unhandled":0,"oldest":"2026-10-24T10:00:00.000Z","items":["merge core +1"]}}}'
   space_def acme <<<$'id: acmeroot22\nanfs: none'
   wsm install acme >/dev/null
   machine enabled
   session a
   silent_everywhere a
-  SOUT=$(ANFS_ENABLED=enabled "$HOOK" statusline < "$T/sl.in")
+  SOUT=$(WSM_ANFS=enabled "$HOOK" statusline < "$T/sl.in")
   [ -z "$SOUT" ]
   space_def acme <<<$'id: acmeroot22\nanfs: enabled'
   wsm install acme >/dev/null
@@ -674,7 +684,7 @@ machine() { mkdir -p "$ANFS_CONFIG_HOME"; printf 'ANFS_ENABLED=%s\n' "$1" > "$AN
   [[ "$HOUT" == "anfs: this session is the coordinator of acme"* ]] || { echo "$HOUT"; false; }
   statusline a
   [ "$SOUT" = "space: acme role: coordinator" ]
-  SOUT=$(ANFS_ENABLED=none "$HOOK" statusline < "$T/sl.in")
+  SOUT=$(WSM_ANFS=none "$HOOK" statusline < "$T/sl.in")
   [ "$SOUT" = "space: acme role: coordinator" ]
 }
 

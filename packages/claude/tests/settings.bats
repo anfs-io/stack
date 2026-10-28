@@ -1,9 +1,9 @@
 #!/usr/bin/env bats
-# lib/anfs.d/claude/settings (agents/06b2 and the status line; moved here from core/wsm's
+# lib/wsm.d/claude/settings (agents/06b2 and the status line; moved here from core/wsm's
 # claude-settings.bats by agents/06's to-stack). The coordinator's hooks go into the person's
 # ~/.claude/settings.json (the test's HOME), written by this package's install.sh (post_install:
 # settings install) and taken out by its removal: the package owns only the handlers whose command
-# is its adapter (~/.local/lib/anfs.d/claude/hook) and merges them in, keeping everything else;
+# is its adapter (~/.local/lib/wsm.d/claude/hook) and merges them in, keeping everything else;
 # idempotent; not JSON or a link refused; settings status warns when they are wrong. Its
 # statusLine is always written where the slot is free or ours, never over the person's own: there
 # is no switch here (agents/06's anfs-key: a space's anfs:, read by the hook). jq only checks the
@@ -34,7 +34,7 @@ handlers() {
   run settings install
   [ "$status" -eq 0 ]
   [[ "$output" == "claude settings: written (~/.claude/settings.json: the coordinator's hooks and the status line)" ]] || { echo "$output"; false; }
-  [[ "$H" == /* && "$H" == "$HOME/.local/lib/anfs.d/claude/hook" ]]
+  [[ "$H" == /* && "$H" == "$HOME/.local/lib/wsm.d/claude/hook" ]]
   [ "$(handlers SessionStart)" = $'H|session-start|sync|10\nH|listen --max 86340|rewake|86400' ]
   [ "$(handlers Stop)" = "H|listen --max 86340|rewake|86400" ]
   [ "$(handlers UserPromptSubmit)" = "H|prompt|sync|5" ]
@@ -74,7 +74,7 @@ EOF
   [ "$(handlers Stop)" = $'/opt/herdr/hook||sync|7\nH|listen --max 86340|rewake|86400' ]
   [ "$(cat "$HOME/.claude/settings.local.json")" = "$before_local" ]
   # an older entry of ours (another path to the hook) is outdated, then replaced
-  jq '.hooks.Stop += [{"hooks":[{"type":"command","command":"/old/home/.local/lib/anfs.d/claude/hook","args":["listen"]}]}]' "$S" > "$S.n" && mv "$S.n" "$S"
+  jq '.hooks.Stop += [{"hooks":[{"type":"command","command":"/old/home/.local/lib/wsm.d/claude/hook","args":["listen"]}]}]' "$S" > "$S.n" && mv "$S.n" "$S"
   run settings status
   [ "$status" -eq 1 ]
   [[ "$output" == *"~/.claude/settings.json: stack/claude's Claude Code hooks are outdated: ppm install stack/claude writes them"* ]] || { echo "$output"; false; }
@@ -96,20 +96,20 @@ EOF
   [ "$status" -eq 0 ] && [ -z "$output" ] && [ "$(cksum < "$S")" = "$sum" ]
 }
 
-@test "ours are only the adapter's at lib/anfs.d/claude/: an entry or statusLine at another path is not touched" {
+@test "ours are only the adapter's at lib/wsm.d/claude/: an entry or statusLine at another path is not touched" {
   mkdir -p "$HOME/.claude"
-  # what the adapter wrote at its old path, ~/.local/lib/claude/anfs/hook (taken out by hand)
+  # what the adapter wrote at its old path, ~/.local/lib/anfs.d/claude/hook (taken out by hand)
   cat > "$S" <<'EOF'
-{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "/x/.local/lib/claude/anfs/hook", "args": ["listen"]}]}]},
- "statusLine": {"type": "command", "command": "'/x/.local/lib/claude/anfs/hook' statusline"}}
+{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "/x/.local/lib/anfs.d/claude/hook", "args": ["listen"]}]}]},
+ "statusLine": {"type": "command", "command": "'/x/.local/lib/anfs.d/claude/hook' statusline"}}
 EOF
   run settings install
   [ "$status" -eq 0 ]
-  [[ "$output" == *"statusLine is yours ('/x/.local/lib/claude/anfs/hook' statusline): kept"* ]] || { echo "$output"; false; }
-  [ "$(handlers Stop)" = $'/x/.local/lib/claude/anfs/hook|listen|sync|null\nH|listen --max 86340|rewake|86400' ]
+  [[ "$output" == *"statusLine is yours ('/x/.local/lib/anfs.d/claude/hook' statusline): kept"* ]] || { echo "$output"; false; }
+  [ "$(handlers Stop)" = $'/x/.local/lib/anfs.d/claude/hook|listen|sync|null\nH|listen --max 86340|rewake|86400' ]
   settings remove >/dev/null
-  [ "$(handlers Stop)" = "/x/.local/lib/claude/anfs/hook|listen|sync|null" ]
-  [ "$(jq -r .statusLine.command "$S")" = "'/x/.local/lib/claude/anfs/hook' statusline" ]
+  [ "$(handlers Stop)" = "/x/.local/lib/anfs.d/claude/hook|listen|sync|null" ]
+  [ "$(jq -r .statusLine.command "$S")" = "'/x/.local/lib/anfs.d/claude/hook' statusline" ]
 }
 
 @test "remove: a file with only our hooks goes; ~/.claude stays" {

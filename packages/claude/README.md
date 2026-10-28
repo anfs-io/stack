@@ -4,19 +4,19 @@ Claude Code, installed by mise (`.config/mise/conf.d/claude.toml`), the `cc` sho
 
 ## The coordinator adapter
 
-Core does not depend on any one coding agent: it owns what every harness uses (leases, events, `wsm listen --hook`, each space's `coordinator:` policy, anfsd's inbox summary), and the glue for one harness is that harness's package. This is Claude Code's (agents/06b, 06b2, the status line; moved out of core/anfs and core/wsm by agents/06's to-stack). Both scripts are anfs's extension, `~/.local/lib/anfs.d/claude/` (one directory link: core's AGENTS.md, "Linking"), and source core's `~/.local/lib/anfs/*.sh` beside it.
+Core does not depend on any one coding agent: it owns what every harness uses (leases, events, `wsm listen --hook`, each space's `coordinator:` policy, anfsd's inbox summary), and the glue for one harness is that harness's package. This is Claude Code's (agents/06b, 06b2, the status line; moved out of core/anfs and core/wsm by agents/06's to-stack). Both scripts are wsm's extension (they implement wsm's contract: `WSM_SPACES_HOME`, `wsm lease`, `wsm listen --hook`, the `coordinator:` and `anfs:` that `wsm install` records), `~/.local/lib/wsm.d/claude/` (one directory link: core's AGENTS.md, "Linking"), and source core's `~/.local/lib/anfs/*.sh` beside it.
 
-The adapter has no setting of its own (agents/06's anfs-key): whether anfs acts in a space is the space's choice, `anfs: enabled|none` in its `space.yml` (recorded by `wsm install`), else the machine's `ANFS_ENABLED` (`anfs config set ANFS_ENABLED=none`; default `enabled`), as core's `anfs_space_enabled` answers for every harness. In a space where it is `none`, every entry does nothing: no claim, no listen, no takeover, no brief, no inbox line, no status line. `ANFS_COORDINATOR=off` and `ANFS_INBOX_HINT=off` stay one session's environment.
+The adapter has no setting of its own (agents/06's anfs-key): whether anfs acts in a space is the space's choice, `anfs: enabled|none` in its `space.yml` (recorded by `wsm install`), else the machine's `WSM_ANFS` (wsm's setting: `wsm config set WSM_ANFS=none`; default `enabled`), as core's `anfs_space_enabled` answers for every harness. In a space where it is `none`, every entry does nothing: no claim, no listen, no takeover, no brief, no inbox line, no status line. `ANFS_COORDINATOR=off` and `ANFS_INBOX_HINT=off` stay one session's environment.
 
 | Path | What |
 | --- | --- |
-| `~/.local/lib/anfs.d/claude/hook <entry>` | The adapter, run by Claude Code from the hooks below: claims and holds a space's `coordinator` lease for its session, listens for the space's events, prints the inbox line and the status line |
-| `~/.local/lib/anfs.d/claude/settings install\|remove\|status` | The writer of those hooks and the status line into `~/.claude/settings.json`; `post_install` runs `install`, `post_remove` runs `remove` (the package's own copy: `post_remove` runs after the unstow) |
+| `~/.local/lib/wsm.d/claude/hook <entry>` | The adapter, run by Claude Code from the hooks below: claims and holds a space's `coordinator` lease for its session, listens for the space's events, prints the inbox line and the status line |
+| `~/.local/lib/wsm.d/claude/settings install\|remove\|status` | The writer of those hooks and the status line into `~/.claude/settings.json`; `post_install` runs `install`, `post_remove` runs `remove` (the package's own copy: `post_remove` runs after the unstow) |
 
 ### ~/.claude/settings.json
 
 - User scope: one place, every session on the machine. The package keeps **its own hooks, and nothing else**, there: the file is merged, never overwritten (Claude Code writes it too, `/config`); the person's keys and hooks (herdr's) stay, theirs first in an event's list.
-- Its own are the handlers whose `command` ends `/anfs.d/claude/hook`: the adapter's absolute path, exec form (`args`, no shell): SessionStart `session-start` (10 s) and `listen --max 86340` (`asyncRewake`, timeout 86400), Stop `listen` (the same), UserPromptSubmit `prompt` (5 s), SessionEnd `session-end` (3 s), the same for every space.
+- Its own are the handlers whose `command` ends `/wsm.d/claude/hook`: the adapter's absolute path, exec form (`args`, no shell): SessionStart `session-start` (10 s) and `listen --max 86340` (`asyncRewake`, timeout 86400), Stop `listen` (the same), UserPromptSubmit `prompt` (5 s), SessionEnd `session-end` (3 s), the same for every space.
 - Unchanged: not rewritten (`claude settings: up to date`). A file that is not a JSON object, or `settings.json` as a link, is refused, saying so (exit 1; ppm reports it). Remove deletes the file when nothing else is left in it, never `~/.claude/`. `settings.local.json` is never read or written, nor any space's `.claude/`.
 - `settings status` prints `claude settings: <state> (~/.claude/settings.json)`: `ok`, `missing` (none of ours there: Claude Code may not be used), or `outdated`, `invalid`, `refused`, which also warn, naming the fix, and exit 1.
 
@@ -24,14 +24,14 @@ The adapter has no setting of its own (agents/06's anfs-key): whether anfs acts 
 
 - In the same writes: `"statusLine": {"type": "command", "command": "'<hook>' statusline"}` (statusLine has no `args`: its command runs in a shell, so the path is single-quoted). Ours is the one whose command ends in the adapter's path and `statusline`; it is written when the file has no statusLine or has ours (assigned in place: its position kept), and taken out by `remove`. Install always writes it when the slot is free or ours: whether a space shows a line is decided by the hook as it runs (`anfs:`, above).
 - Every session in a space shows the space and its role there: `space: lgat/next role: coordinator` in the session that holds the space's coordinator role, `space: lgat/next role: none` in the others; outside the spaces nothing (nor in runs, without `WSM_SPACES_HOME`, or in a space where anfs is `none`). Claude Code watches the file: a running session picks up a changed `statusLine` without a restart.
-- To hide it in a space, say `anfs: none` in its `space.yml` and `wsm install` it (that turns all of anfs off for agent sessions there); on the whole machine, `anfs config set ANFS_ENABLED=none` (a space's `anfs: enabled` still shows it). A running session picks it up at its next status line.
+- To hide it in a space, say `anfs: none` in its `space.yml` and `wsm install` it (that turns all of anfs off for agent sessions there); on the whole machine, `wsm config set WSM_ANFS=none` (a space's `anfs: enabled` still shows it). A running session picks it up at its next status line.
 - A status line of your own is never touched: install keeps it and prints one line on how to compose. Have your script run ours with the same input and print what it prints, e.g.:
 
 ```bash
 #!/usr/bin/env bash
 input=$(cat)
 echo "your line"
-printf '%s' "$input" | ~/.local/lib/anfs.d/claude/hook statusline   # space: <space> role: coordinator|none, or nothing
+printf '%s' "$input" | ~/.local/lib/wsm.d/claude/hook statusline   # space: <space> role: coordinator|none, or nothing
 ```
 
 ### The hook
@@ -50,7 +50,7 @@ printf '%s' "$input" | ~/.local/lib/anfs.d/claude/hook statusline   # space: <sp
 
 ## Tests
 
-`bats packages/claude/tests </dev/null`. They need a core checkout: `ANFS_TEST_LIB`'s (a core checkout's `lib/anfs`), else the core checkout beside this stack one, else the installed libraries' source; its wsm runs the spaces and the listener. `helper.bash` links the package and core into a temp HOME as ppm would, with every `XDG_*`, the anfs and wsm homes, `ANFSD_STATE_HOME` and `WSM_SPACES_HOME` inside the test's temp directory (`claude_guard` checks), and unsets `ANFS_WORK`, a run's variables, `ANFS_ENABLED` and every `CLAUDE*`.
+`bats packages/claude/tests </dev/null`. They need a core checkout: `ANFS_TEST_LIB`'s (a core checkout's `lib/anfs`), else the core checkout beside this stack one, else the installed libraries' source; its wsm runs the spaces and the listener. `helper.bash` links the package and core into a temp HOME as ppm would, with every `XDG_*`, the anfs and wsm homes, `ANFSD_STATE_HOME` and `WSM_SPACES_HOME` inside the test's temp directory (`claude_guard` checks), and unsets `ANFS_WORK`, a run's variables, `WSM_ANFS` and every `CLAUDE*`.
 
-- `hook.bats`: a fake Claude Code (a copy of bash named `claude` running a driver that runs the hook as its child on request through two FIFOs, so a session's hooks share its pid); fixture inputs and summaries; the listener's wake, rearm, takeover and death; an idle bound for a waiting `listen`; the `WSM_SPACES_HOME` gate before any library, with a copy of the hook whose libraries leave a mark; the recorded policy: `none`, `claude task`, none recorded; the `statusline` entry with `ps` and `wsm` stubs that leave a mark; candidates only at a space's root, a nested space's root its own, a holder below its root; `anfs: none` silencing every entry and the status line, an absent `anfs:` following `ANFS_ENABLED`, the space's value beating it both ways.
+- `hook.bats`: a fake Claude Code (a copy of bash named `claude` running a driver that runs the hook as its child on request through two FIFOs, so a session's hooks share its pid); fixture inputs and summaries; the listener's wake, rearm, takeover and death; an idle bound for a waiting `listen`; the `WSM_SPACES_HOME` gate before any library, with a copy of the hook whose libraries leave a mark; the recorded policy: `none`, `claude task`, none recorded; the `statusline` entry with `ps` and `wsm` stubs that leave a mark; candidates only at a space's root, a nested space's root its own, a holder below its root; `anfs: none` silencing every entry and the status line, an absent `anfs:` following `WSM_ANFS` (the environment, `wsm.local.env`, `wsm.env`; anfs's old `ANFS_ENABLED` ignored), the space's value beating it both ways.
 - `settings.bats`: the merge into the test HOME's `~/.claude/settings.json`, ownership, remove, refusals, `status`, `install.sh`'s hooks; the statusLine: always written when free or ours, the person's kept; no switch (`settings config` gone, no `claude-anfs` config) and no plugin directories. jq checks the JSON.

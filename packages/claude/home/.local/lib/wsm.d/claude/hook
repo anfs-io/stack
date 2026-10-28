@@ -5,7 +5,7 @@
 # shell), so in every session on the machine. Claude Code is one kind of lease holder (core's
 # lib/anfs/lease.sh); this is where it becomes one, and where every session of a space hears what
 # waits in the person's inbox. It sources core's libraries (~/.local/lib/anfs: the layering rule).
-# It is anfs's extension (core AGENTS.md, "Linking"): ~/.local/lib/anfs.d/claude/, one link.
+# It is wsm's extension (core AGENTS.md, "Linking"): ~/.local/lib/wsm.d/claude/, one link.
 #
 #   hook session-start                SessionStart, sync: claim the space's coordinator role, or
 #                                     say who holds it; print the brief (stdout: Claude's context).
@@ -31,7 +31,7 @@
 # Then it exits 0 unless the directory is in an installed space with an id (the status line: in a
 # space), and, in every entry, when anfs does not act there (agents/06's anfs-key): core's
 # anfs_space_enabled, the space's anfs: as wsm install recorded it, else the machine's
-# ANFS_ENABLED; none is nothing at all, as outside the spaces. The space's policy is
+# WSM_ANFS (wsm's setting); none is nothing at all, as outside the spaces. The space's policy is
 # the line wsm install recorded beside the role's lease, $ANFS_STATE_HOME/leases/<space id>/
 # coordinator.policy: "claude hooks" (also when there is none: every space has a coordinator by
 # default), "claude task" (the model runs the listener: no listen, the brief and prompt say so) or
@@ -96,8 +96,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# core's libraries, beside this script's directory: <lib>/anfs.d/claude/hook and <lib>/anfs
-_hook_lib="${BASH_SOURCE[0]%/anfs.d/claude/hook}/anfs"
+# core's libraries, beside this script's directory: <lib>/wsm.d/claude/hook and <lib>/anfs
+_hook_lib="${BASH_SOURCE[0]%/wsm.d/claude/hook}/anfs"
 [ "$_hook_lib" != "${BASH_SOURCE[0]}/anfs" ] && [ -f "$_hook_lib/bash.sh" ] || _hook_lib="$HOME/.local/lib/anfs"
 [ -f "$_hook_lib/bash.sh" ] || exit 0
 # shellcheck source=/dev/null
@@ -414,7 +414,7 @@ HOOK_CWD="$REPLY"
 anfs_events_space_at "$HOOK_CWD" || exit 0
 HOOK_SID="$ANFS_EV_SID" HOOK_SPATH="$ANFS_EV_SPATH" HOOK_SDIR="${ANFS_EV_SFILE%/*}"
 [[ -n "$HOOK_SPATH" ]] || HOOK_SPATH="${HOOK_SID:-$(anfs_display "$HOOK_SDIR")}"
-# anfs: none in this space (or ANFS_ENABLED=none and the space says nothing): nothing at all
+# anfs: none in this space (or WSM_ANFS=none and the space says nothing): nothing at all
 anfs_space_enabled "$HOOK_SID" || exit 0
 if [[ "$HOOK_ENTRY" == statusline ]]; then _hook_statusline; exit 0; fi
 [[ -n "$HOOK_SID" ]] || exit 0

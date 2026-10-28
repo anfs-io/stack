@@ -4,6 +4,6 @@ description: Claude Code (mise) and anfs's coordinator hooks
 categories: [ai]
 meta:
   agent: claude-code
-# the coordinator adapter (hook, settings) is anfs's extension: one link, ~/.local/lib/anfs.d/claude
+# the coordinator adapter (hook, settings) is wsm's extension: one link, ~/.local/lib/wsm.d/claude
 # (core AGENTS.md, "Linking")
-links: [.local/lib/anfs.d/claude/]
+links: [.local/lib/wsm.d/claude/]
