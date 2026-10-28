@@ -13,7 +13,7 @@
 # The file is user scope: one place, every session on the machine. This package owns its own
 # hooks there and nothing else: the person's keys and hooks (herdr's too) are kept; the file is
 # merged, never overwritten (Claude Code writes it too: /config). Its own are the handlers whose
-# command is the adapter beside this script, ~/.local/lib/claude/anfs/hook (absolute: JSON does
+# command is the adapter beside this script, ~/.local/lib/anfs.d/claude/hook (absolute: JSON does
 # not expand ~; exec form, args, no shell): each write takes every one of them out and puts these
 # back at the end of each event's list:
 #
@@ -40,9 +40,9 @@
 
 set -euo pipefail
 
-# core's libraries, beside this script's directory (<lib>/claude/anfs/settings and <lib>/anfs),
+# core's libraries, beside this script's directory (<lib>/anfs.d/claude/settings and <lib>/anfs),
 # else the installed ones: run from the package, as install.sh does
-_lib="${BASH_SOURCE[0]%/claude/anfs/settings}/anfs"
+_lib="${BASH_SOURCE[0]%/anfs.d/claude/settings}/anfs"
 [[ "$_lib" != "${BASH_SOURCE[0]}/anfs" && -f "$_lib/bash.sh" ]] || _lib="$HOME/.local/lib/anfs"
 if [[ ! -f "$_lib/paths.sh" ]]; then
   echo "claude-anfs: ~/.local/lib/anfs is missing; install core/anfs" >&2
@@ -60,7 +60,7 @@ done
 CLI_TOOL=claude-anfs
 
 HOOK_TIMEOUT=86400
-HOOK="$ANFS_LIB_ROOT/claude/anfs/hook"
+HOOK="$ANFS_LIB_ROOT/anfs.d/claude/hook"
 
 cli_cmd install "Merge the coordinator's hooks and the status line into ~/.claude/settings.json"
 cli_cmd remove "Take them out of ~/.claude/settings.json" --alias rm
@@ -69,8 +69,8 @@ cli_standard
 
 cli_help_epilogue() {
   cat <<'EOF'
-claude-anfs is ~/.local/lib/claude/anfs/settings (stack/claude), run by the package's install.sh.
-The hooks it writes run ~/.local/lib/claude/anfs/hook; whether they act in a space is the space's
+claude-anfs is ~/.local/lib/anfs.d/claude/settings (stack/claude), run by the package's install.sh.
+The hooks it writes run ~/.local/lib/anfs.d/claude/hook; whether they act in a space is the space's
 anfs: (else ANFS_ENABLED: anfs config).
 EOF
 }
@@ -106,8 +106,8 @@ _statusline() {
 # <file> (or {} when missing) with our hooks taken out and <want> (JSON hooks) put in, and our
 # statusLine set to <statusline> (JSON) where it is ours or there is none, or taken out (""),
 # printed as the file is written; 1 when it is not a JSON object
-SL_OURS='((.statusLine.command // "") | test("/claude/anfs/hook\x27?[[:space:]]+statusline$"))'
-MERGE='.hooks = ((.hooks // {}) | with_entries(.value |= (map(.hooks |= map(select((.command // "") | test("/claude/anfs/hook$") | not))) | map(select((.hooks | length) > 0))))) | .hooks = (.hooks | with_entries(select(.value | length > 0))) | .hooks = (.hooks *+ (strenv(CLAUDE_WANT) | from_json)) | del(select(.hooks | length == 0) | .hooks) | with(select(strenv(CLAUDE_SL) != "" and (.statusLine == null or '"$SL_OURS"')); .statusLine = (strenv(CLAUDE_SL) | from_json)) | with(select(strenv(CLAUDE_SL) == "" and '"$SL_OURS"'); del(.statusLine))'
+SL_OURS='((.statusLine.command // "") | test("/anfs[.]d/claude/hook\x27?[[:space:]]+statusline$"))'
+MERGE='.hooks = ((.hooks // {}) | with_entries(.value |= (map(.hooks |= map(select((.command // "") | test("/anfs[.]d/claude/hook$") | not))) | map(select((.hooks | length) > 0))))) | .hooks = (.hooks | with_entries(select(.value | length > 0))) | .hooks = (.hooks *+ (strenv(CLAUDE_WANT) | from_json)) | del(select(.hooks | length == 0) | .hooks) | with(select(strenv(CLAUDE_SL) != "" and (.statusLine == null or '"$SL_OURS"')); .statusLine = (strenv(CLAUDE_SL) | from_json)) | with(select(strenv(CLAUDE_SL) == "" and '"$SL_OURS"'); del(.statusLine))'
 _merged() {
   local f="$1" want="$2" sl="${3:-}" body
   if [[ -e "$f" ]]; then

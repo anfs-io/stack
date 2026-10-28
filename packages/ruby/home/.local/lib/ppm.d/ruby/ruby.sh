@@ -1,4 +1,5 @@
-# ruby helpers for ppm
+# ruby helpers for ppm: linked to ~/.local/lib/ppm.d/ruby/ (one directory link) and sourced by ppm,
+# so package hooks can call them
 
 # install_gem <gem>...: add the gems to mise's default gems ($MISE_RUBY_DEFAULT_PACKAGES_FILE,
 # ~/.local/share/ruby/default-gems: ruby.toml), so every ruby mise installs gets them, and install

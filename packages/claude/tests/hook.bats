@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# lib/claude/anfs/hook, the Claude Code adapter (agents/06b, 06b2; moved here from core/anfs's
+# lib/anfs.d/claude/hook, the Claude Code adapter (agents/06b, 06b2; moved here from core/anfs's
 # claude-hook.bats by agents/06's to-stack), fed fake hook input; the sessions inherit the test's
 # WSM_SPACES_HOME, as Claude Code inherits sh/wsm.sh's. A fake Claude Code is a copy of bash named
 # claude (so ps says claude on macOS and Linux) running a driver that runs the hook as its child on
@@ -400,12 +400,12 @@ summary() { mkdir -p "${SUM%/*}"; printf '%s\n' "$1" > "$SUM"; }
 # --- outside the spaces ----------------------------------------------------------------------
 
 @test "outside WSM_SPACES_HOME the hook exits 0 before sourcing a library; unset, it asks wsm config get" {
-  # a copy of the hook whose libraries only leave a mark
-  mkdir -p "$T/lib/claude/anfs" "$T/lib/anfs" "$T/elsewhere" "$R-other"
-  cp "$HOOK" "$T/lib/claude/anfs/hook"
+  # a copy of the hook whose libraries only leave a mark: <lib>/anfs, found from <lib>/anfs.d/claude
+  mkdir -p "$T/lib/anfs.d/claude" "$T/lib/anfs" "$T/elsewhere" "$R-other"
+  cp "$HOOK" "$T/lib/anfs.d/claude/hook"
   printf 'echo sourced >> "%s"; exit 0\n' "$T/mark" > "$T/lib/anfs/bash.sh"
   input "$T/in" a SessionStart source=startup
-  local h="$T/lib/claude/anfs/hook"
+  local h="$T/lib/anfs.d/claude/hook"
   ( cd "$T/elsewhere" && "$h" session-start < "$T/in" )
   # a sibling whose name starts like the root's is not below it; a relative root is nothing
   ( cd "$R-other" && "$h" session-start < "$T/in" )

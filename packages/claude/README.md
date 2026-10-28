@@ -4,19 +4,19 @@ Claude Code, installed by mise (`.config/mise/conf.d/claude.toml`), the `cc` sho
 
 ## The coordinator adapter
 
-Core does not depend on any one coding agent: it owns what every harness uses (leases, events, `wsm listen --hook`, each space's `coordinator:` policy, anfsd's inbox summary), and the glue for one harness is that harness's package. This is Claude Code's (agents/06b, 06b2, the status line; moved out of core/anfs and core/wsm by agents/06's to-stack). Both scripts source core's `~/.local/lib/anfs/*.sh`.
+Core does not depend on any one coding agent: it owns what every harness uses (leases, events, `wsm listen --hook`, each space's `coordinator:` policy, anfsd's inbox summary), and the glue for one harness is that harness's package. This is Claude Code's (agents/06b, 06b2, the status line; moved out of core/anfs and core/wsm by agents/06's to-stack). Both scripts are anfs's extension, `~/.local/lib/anfs.d/claude/` (one directory link: core's AGENTS.md, "Linking"), and source core's `~/.local/lib/anfs/*.sh` beside it.
 
 The adapter has no setting of its own (agents/06's anfs-key): whether anfs acts in a space is the space's choice, `anfs: enabled|none` in its `space.yml` (recorded by `wsm install`), else the machine's `ANFS_ENABLED` (`anfs config set ANFS_ENABLED=none`; default `enabled`), as core's `anfs_space_enabled` answers for every harness. In a space where it is `none`, every entry does nothing: no claim, no listen, no takeover, no brief, no inbox line, no status line. `ANFS_COORDINATOR=off` and `ANFS_INBOX_HINT=off` stay one session's environment.
 
 | Path | What |
 | --- | --- |
-| `~/.local/lib/claude/anfs/hook <entry>` | The adapter, run by Claude Code from the hooks below: claims and holds a space's `coordinator` lease for its session, listens for the space's events, prints the inbox line and the status line |
-| `~/.local/lib/claude/anfs/settings install\|remove\|status` | The writer of those hooks and the status line into `~/.claude/settings.json`; `post_install` runs `install`, `post_remove` runs `remove` (the package's own copy: `post_remove` runs after the unstow) |
+| `~/.local/lib/anfs.d/claude/hook <entry>` | The adapter, run by Claude Code from the hooks below: claims and holds a space's `coordinator` lease for its session, listens for the space's events, prints the inbox line and the status line |
+| `~/.local/lib/anfs.d/claude/settings install\|remove\|status` | The writer of those hooks and the status line into `~/.claude/settings.json`; `post_install` runs `install`, `post_remove` runs `remove` (the package's own copy: `post_remove` runs after the unstow) |
 
 ### ~/.claude/settings.json
 
 - User scope: one place, every session on the machine. The package keeps **its own hooks, and nothing else**, there: the file is merged, never overwritten (Claude Code writes it too, `/config`); the person's keys and hooks (herdr's) stay, theirs first in an event's list.
-- Its own are the handlers whose `command` ends `/claude/anfs/hook`: the adapter's absolute path, exec form (`args`, no shell): SessionStart `session-start` (10 s) and `listen --max 86340` (`asyncRewake`, timeout 86400), Stop `listen` (the same), UserPromptSubmit `prompt` (5 s), SessionEnd `session-end` (3 s), the same for every space.
+- Its own are the handlers whose `command` ends `/anfs.d/claude/hook`: the adapter's absolute path, exec form (`args`, no shell): SessionStart `session-start` (10 s) and `listen --max 86340` (`asyncRewake`, timeout 86400), Stop `listen` (the same), UserPromptSubmit `prompt` (5 s), SessionEnd `session-end` (3 s), the same for every space.
 - Unchanged: not rewritten (`claude settings: up to date`). A file that is not a JSON object, or `settings.json` as a link, is refused, saying so (exit 1; ppm reports it). Remove deletes the file when nothing else is left in it, never `~/.claude/`. `settings.local.json` is never read or written, nor any space's `.claude/`.
 - `settings status` prints `claude settings: <state> (~/.claude/settings.json)`: `ok`, `missing` (none of ours there: Claude Code may not be used), or `outdated`, `invalid`, `refused`, which also warn, naming the fix, and exit 1.
 
@@ -31,7 +31,7 @@ The adapter has no setting of its own (agents/06's anfs-key): whether anfs acts 
 #!/usr/bin/env bash
 input=$(cat)
 echo "your line"
-printf '%s' "$input" | ~/.local/lib/claude/anfs/hook statusline   # space: <space> role: coordinator|none, or nothing
+printf '%s' "$input" | ~/.local/lib/anfs.d/claude/hook statusline   # space: <space> role: coordinator|none, or nothing
 ```
 
 ### The hook

@@ -47,7 +47,7 @@ claude_setup() {
   WSM="$CORE/packages/wsm/home/.local/bin/wsm"
   [[ -x "$WSM" ]] || skip "no core checkout around $lib (its wsm)"
   PKG=$(cd -P "$BATS_TEST_DIRNAME/.." && pwd -P)
-  SET="$PKG/home/.local/lib/claude/anfs/settings"
+  SET="$PKG/home/.local/lib/anfs.d/claude/settings"
   mkdir -p "$BATS_TEST_TMPDIR/home" "$BATS_TEST_TMPDIR/state" "$BATS_TEST_TMPDIR/bin"
   # BATS_TEST_TMPDIR sits under /var on macOS, a symlink to /private/var; wsm canonicalizes the
   # targets it stores, so HOME has to be canonical too or nothing compares equal
@@ -73,12 +73,12 @@ claude_setup() {
   export WSM_CONFIG_HOME WSM_DATA_HOME WSM_CACHE_HOME WSM_STATE_HOME ANFSD_STATE_HOME ANFSD_CONFIG_HOME
   export ANFS_LOG=off   # no log file from tests (lib/anfs/log.sh)
   export ANFS_EVENTS=off   # no event log either (lib/anfs/events.sh); a test about events turns it on
-  # What ppm links: core's libraries and wsm, this package's lib/claude/anfs
-  mkdir -p "$HOME/.local/lib/claude" "$HOME/.local/bin"
+  # What ppm links: core's libraries and wsm, this package's lib/anfs.d/claude (one link each)
+  mkdir -p "$HOME/.local/lib/anfs.d" "$HOME/.local/bin"
   ln -s "$lib" "$HOME/.local/lib/anfs"
-  ln -s "$PKG/home/.local/lib/claude/anfs" "$HOME/.local/lib/claude/anfs"
+  ln -s "$PKG/home/.local/lib/anfs.d/claude" "$HOME/.local/lib/anfs.d/claude"
   ln -s "$WSM" "$HOME/.local/bin/wsm"
-  HOOK="$HOME/.local/lib/claude/anfs/hook"
+  HOOK="$HOME/.local/lib/anfs.d/claude/hook"
   export HOOK
   PATH="$BATS_TEST_TMPDIR/bin:$(dirname "$(command -v bash)"):$(dirname "$(command -v yq)"):$(dirname "$(command -v jq)"):/usr/bin:/bin:/usr/sbin:/sbin"
   export PATH

@@ -5,6 +5,7 @@
 # shell), so in every session on the machine. Claude Code is one kind of lease holder (core's
 # lib/anfs/lease.sh); this is where it becomes one, and where every session of a space hears what
 # waits in the person's inbox. It sources core's libraries (~/.local/lib/anfs: the layering rule).
+# It is anfs's extension (core AGENTS.md, "Linking"): ~/.local/lib/anfs.d/claude/, one link.
 #
 #   hook session-start                SessionStart, sync: claim the space's coordinator role, or
 #                                     say who holds it; print the brief (stdout: Claude's context).
@@ -95,8 +96,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# core's libraries, beside this script's directory: <lib>/claude/anfs/hook and <lib>/anfs
-_hook_lib="${BASH_SOURCE[0]%/claude/anfs/hook}/anfs"
+# core's libraries, beside this script's directory: <lib>/anfs.d/claude/hook and <lib>/anfs
+_hook_lib="${BASH_SOURCE[0]%/anfs.d/claude/hook}/anfs"
 [ "$_hook_lib" != "${BASH_SOURCE[0]}/anfs" ] && [ -f "$_hook_lib/bash.sh" ] || _hook_lib="$HOME/.local/lib/anfs"
 [ -f "$_hook_lib/bash.sh" ] || exit 0
 # shellcheck source=/dev/null
