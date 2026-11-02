@@ -1,4 +1,4 @@
-version: 0.1.0
+version: 0.1.1
 author: rjayroach
 description: oMLX, a local LLM server for Apple silicon (macOS)
 categories: [ai-backends]

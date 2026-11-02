@@ -1,4 +1,4 @@
-version: 0.2.2
+version: 0.2.3
 author: rjayroach
 description: Raspberry Pi cards written from cloud-init profiles (rpi-imager)
 categories: [utils]

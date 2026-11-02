@@ -1,4 +1,4 @@
-version: 0.1.6
+version: 0.1.7
 author: rjayroach
 description: zsh as the login shell, with oh-my-zsh, powerlevel10k and aliases
 categories: [pde]

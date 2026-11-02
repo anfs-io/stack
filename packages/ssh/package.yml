@@ -1,4 +1,4 @@
-version: 0.1.3
+version: 0.1.4
 author: rjayroach
 description: ssh keys (ssh-key), per-host config in ~/.ssh/config.d, and ssh hooks
 categories: [pde]

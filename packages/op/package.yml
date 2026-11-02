@@ -1,4 +1,4 @@
-version: 0.1.5
+version: 0.1.6
 author: rjayroach
 description: 1Password, its CLI and ssh agent, with tokens forwarded to remote hosts
 categories: [pde]
