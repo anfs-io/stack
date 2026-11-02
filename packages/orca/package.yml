@@ -1,0 +1,8 @@
+version: 0.1.0
+author: rjayroach
+description: AI Console (macOS)
+categories: [ai-x]
+# meta:
+#   agent: hermes-agent
+cask:
+  macos: [stablyai/orca/orca]

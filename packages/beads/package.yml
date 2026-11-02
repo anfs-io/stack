@@ -1,0 +1,6 @@
+# packages/beads/package.yml
+version: 0.1.0
+author: rjayroach
+description: bd — dependency-graph issue tracker for coding agents (gastownhall/beads).
+# Homebrew core formula, macOS and Linux; ships the embedded-Dolt build, so no dolt server needed.
+brew: [beads]
